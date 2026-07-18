@@ -121,8 +121,14 @@ public:
 	enum {TILE_4x4, TILE_6x6, TILE_8x8} m_tileMode;
 #endif
 	enum {
-		NORMAL_DRAW_WIDTH = 1 + 4*VERTEX_BUFFER_TILE_LENGTH,
-		NORMAL_DRAW_HEIGHT = 1 + 4*VERTEX_BUFFER_TILE_LENGTH,
+		// TheSuperHackers @tweak ZsoltFeher 18/07/2026 Bumped from 4x to 12x tiles to keep
+		// terrain detail visible at raised MaxCameraHeight zoom levels (e.g. default cap 310
+		// raised to 1200). This is a fixed world-space window, not zoom-reactive - retune
+		// further if perf/visuals need it.
+		NORMAL_DRAW_WIDTH = 1 + 12*VERTEX_BUFFER_TILE_LENGTH,
+		NORMAL_DRAW_HEIGHT = 1 + 12*VERTEX_BUFFER_TILE_LENGTH,
+		STRETCH_DRAW_WIDTH = 1 + 2*VERTEX_BUFFER_TILE_LENGTH,
+		STRETCH_DRAW_HEIGHT = 1 + 2*VERTEX_BUFFER_TILE_LENGTH,
 		LOW_ANGLE_DRAW_WIDTH = 1 + (NORMAL_DRAW_WIDTH-1) * 2,
 		LOW_ANGLE_DRAW_HEIGHT = 1 + (NORMAL_DRAW_HEIGHT-1) * 2,
 	};
