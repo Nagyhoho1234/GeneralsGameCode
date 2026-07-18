@@ -111,6 +111,16 @@ public:
 	virtual void reset();
 	virtual UnsignedInt getID() { return m_id; }
 
+	// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 Scales a configured camera height
+	// (MaxCameraHeight, MinCameraHeight, DefaultCameraHeight from GameData.ini) with the display
+	// aspect ratio. See GitHub issue #78. The GameData.ini heights are tuned for 4:3 displays;
+	// wider resolutions see more horizontal terrain at a given camera height than 4:3 did, so an
+	// unscaled height sits far too close to the ground on widescreen. Formula adapted from
+	// GenTool's community-established aspect-ratio scaling (originally a memory patch for the
+	// retail executable, reimplemented here in source). The scaling factor is clamped at 16:9 so
+	// ultrawide monitors do not get an ever-increasing camera height.
+	static Real scaleCameraHeightForAspectRatio( Real height );
+
 	virtual void setZoomLimited( Bool limit ) { m_zoomLimited = limit; }			///< limit the zoom height
 	virtual Bool isZoomLimited() const { return m_zoomLimited; }							///< get status of zoom limit
 
