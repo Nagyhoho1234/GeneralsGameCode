@@ -121,12 +121,17 @@ public:
 	enum {TILE_4x4, TILE_6x6, TILE_8x8} m_tileMode;
 #endif
 	enum {
-		// TheSuperHackers @tweak ZsoltFeher 18/07/2026 Bumped from 4x to 12x tiles to keep
-		// terrain detail visible at raised MaxCameraHeight zoom levels (e.g. default cap 310
-		// raised to 1200). This is a fixed world-space window, not zoom-reactive - retune
-		// further if perf/visuals need it.
-		NORMAL_DRAW_WIDTH = 1 + 12*VERTEX_BUFFER_TILE_LENGTH,
-		NORMAL_DRAW_HEIGHT = 1 + 12*VERTEX_BUFFER_TILE_LENGTH,
+		// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 A 12x bump here was found to make the
+		// shellmap's terrain render black/missing: LOW_ANGLE_DRAW_WIDTH/HEIGHT below DOUBLES
+		// this value, so 12x compounded into a ~9x D3D8 vertex-buffer count explosion (64->576
+		// buffers created at once), hit hardest by the shellmap's near-horizontal cinematic
+		// camera which takes the low-angle branch. Dialed back to 6x (~2.25x the original
+		// vertex-buffer count - safe headroom, still meaningfully more terrain detail visible
+		// at raised MaxCameraHeight zoom levels than the original 4x). This is a fixed
+		// world-space window, not zoom-reactive - retune further if perf/visuals need it, but
+		// be aware LOW_ANGLE_DRAW_WIDTH/HEIGHT compounds whatever multiplier is used here.
+		NORMAL_DRAW_WIDTH = 1 + 6*VERTEX_BUFFER_TILE_LENGTH,
+		NORMAL_DRAW_HEIGHT = 1 + 6*VERTEX_BUFFER_TILE_LENGTH,
 		STRETCH_DRAW_WIDTH = 1 + 2*VERTEX_BUFFER_TILE_LENGTH,
 		STRETCH_DRAW_HEIGHT = 1 + 2*VERTEX_BUFFER_TILE_LENGTH,
 		LOW_ANGLE_DRAW_WIDTH = 1 + (NORMAL_DRAW_WIDTH-1) * 2,
