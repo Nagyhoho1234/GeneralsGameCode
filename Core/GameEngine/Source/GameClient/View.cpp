@@ -30,6 +30,7 @@
 
 #include "Common/GameEngine.h"
 #include "Common/Xfer.h"
+#include "GameClient/Display.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/View.h"
@@ -96,14 +97,61 @@ void View::init()
 	m_zoomLimited = TRUE;
 
 	m_zoom = 1.0f;
-	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight;
-	m_minHeightAboveGround = TheGlobalData->m_minCameraHeight;
+	// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 Scale the configured camera heights with the
+	// display aspect ratio. See scaleCameraHeightForAspectRatio() and GitHub issue #78.
+	m_maxHeightAboveGround = scaleCameraHeightForAspectRatio(TheGlobalData->m_maxCameraHeight);
+	m_minHeightAboveGround = scaleCameraHeightForAspectRatio(TheGlobalData->m_minCameraHeight);
 	m_okToAdjustHeight = FALSE;
 
 	m_defaultAngle = DEG_TO_RADF(TheGlobalData->m_cameraYaw);
 	m_defaultPitch = DEG_TO_RADF(TheGlobalData->m_cameraPitch);
 	m_angle = m_defaultAngle;
 	m_pitch = m_defaultPitch;
+}
+
+// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 Scales a configured camera height with the display
+// aspect ratio. See GitHub issue #78: MaxCameraHeight/MinCameraHeight in GameData.ini are tuned
+// for 4:3 displays. A wider display shows more horizontal terrain at a given camera height than
+// 4:3 did, so unscaled heights bring the camera far too close to the ground on widescreen.
+// The formula is GenTool's community-established aspect-ratio scaling, adapted from its original
+// memory-patch approach on the retail executable to this source reimplementation:
+// - 4:3 (and narrower) is the baseline and stays unscaled.
+// - Between 4:3 and 16:9, heights scale up by (aspect - 4/3 + 1), softened by a small "nerf"
+//   factor of (1 - (aspect - 4/3) / 12). At 16:9 this yields a factor of ~1.39.
+// - The scaling factor is clamped at 16:9 so ultrawide monitors do not get an ever-increasing
+//   camera height.
+// This is applied at the few places that read the configured heights (view initialization, map
+// default view setup, camera boom offset), not per frame in any hot path. Reading the live
+// display size on each call keeps the values correct if the display mode changes at runtime.
+// Note: GenTool also force-enabled DrawEntireTerrain when raising the camera. That is not needed
+// here, because the terrain draw window is already enlarged (see NORMAL_DRAW_WIDTH/HEIGHT in
+// WorldHeightMap.h) with plenty of headroom for this modest, at most ~1.39x height increase,
+// whereas DrawEntireTerrain would rebuild and render the whole map with a heavy performance cost.
+Real View::scaleCameraHeightForAspectRatio( Real height )
+{
+	if (TheDisplay == nullptr)
+		return height;
+
+	const Int screenWidth = (Int)TheDisplay->getWidth();
+	const Int screenHeight = (Int)TheDisplay->getHeight();
+
+	// The scaling is designed for resolutions wider than 4:3 and at least 640x480.
+	if (screenWidth < 640 || screenHeight < 480)
+		return height;
+
+	const Real aspect_4_3 = 4.0f / 3.0f;
+	const Real aspect_16_9 = 16.0f / 9.0f;
+	Real aspect = (Real)screenWidth / (Real)screenHeight;
+
+	if (aspect <= aspect_4_3)
+		return height;
+
+	if (aspect > aspect_16_9)
+		aspect = aspect_16_9; // clamp the scaling factor at 16:9, do not scale further for ultrawide
+
+	const Real multi = aspect - aspect_4_3 + 1.0f;
+	const Real nerf = 1.0f - (aspect - aspect_4_3) / 12.0f;
+	return height * multi * nerf;
 }
 
 void View::reset()

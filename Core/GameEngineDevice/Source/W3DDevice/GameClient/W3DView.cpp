@@ -675,7 +675,10 @@ Real W3DView::getCameraOffsetZ() const
 	}
 #endif
 
-	return m_pos.z + TheGlobalData->m_maxCameraHeight;
+	// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 Scale the camera boom height with the display
+	// aspect ratio, consistent with the scaled min/max/default heights. See GitHub issue #78 and
+	// View::scaleCameraHeightForAspectRatio().
+	return m_pos.z + scaleCameraHeightForAspectRatio(TheGlobalData->m_maxCameraHeight);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -726,7 +729,9 @@ Real W3DView::getMaxZoom(Real x, Real y) const
 Real W3DView::getScriptZoomReference(Real x, Real y) const
 {
 	// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 See declaration comment in W3DView.h.
-	const Real referenceHeightAboveGround = min(TheGlobalData->m_defaultCameraHeight, m_maxHeightAboveGround);
+	// The default height is scaled with the display aspect ratio like the min/max heights,
+	// see GitHub issue #78 and View::scaleCameraHeightForAspectRatio().
+	const Real referenceHeightAboveGround = min(scaleCameraHeightForAspectRatio(TheGlobalData->m_defaultCameraHeight), m_maxHeightAboveGround);
 	const Real referenceHeight =
 #if PRESERVE_RETAIL_SCRIPTED_CAMERA
 		!m_isUserControlled ? (getHeightAroundPos(x, y) + referenceHeightAboveGround) :
@@ -2250,7 +2255,9 @@ void W3DView::setDefaultView(Real pitch, Real angle, Real maxHeight)
 	// MDC - we no longer want to rotate maps (design made all of them right to begin with)
 	//	m_defaultAngle = angle * M_PI/180.0f;
 	setDefaultPitch(pitch);
-	m_maxHeightAboveGround = TheGlobalData->m_maxCameraHeight*maxHeight;
+	// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 Scale the configured max camera height with
+	// the display aspect ratio. See GitHub issue #78 and View::scaleCameraHeightForAspectRatio().
+	m_maxHeightAboveGround = scaleCameraHeightForAspectRatio(TheGlobalData->m_maxCameraHeight)*maxHeight;
 	if (m_minHeightAboveGround > m_maxHeightAboveGround)
 		m_maxHeightAboveGround = m_minHeightAboveGround;
 }
@@ -2295,7 +2302,10 @@ void W3DView::setZoomToDefault()
 	// independently tunable value (clamped to never exceed the actual max) so raising the
 	// zoom-out ceiling no longer drags the default view out with it.
 	const Real savedMaxHeightAboveGround = m_maxHeightAboveGround;
-	m_maxHeightAboveGround = min(TheGlobalData->m_defaultCameraHeight, m_maxHeightAboveGround);
+	// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 The default height is scaled with the display
+	// aspect ratio like the min/max heights, see GitHub issue #78 and
+	// View::scaleCameraHeightForAspectRatio().
+	m_maxHeightAboveGround = min(scaleCameraHeightForAspectRatio(TheGlobalData->m_defaultCameraHeight), m_maxHeightAboveGround);
 
 	m_heightAboveGround = m_maxHeightAboveGround;
 	m_zoom = getMaxZoom(m_pos.x, m_pos.y);
