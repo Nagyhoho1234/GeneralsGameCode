@@ -1771,6 +1771,23 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector3 *c
 		{
 			newOrgX = (visMaxX+visMinX)/2 - m_x/2;
 			newOrgY = (visMaxY+visMinY)/2 - m_y/2;
+
+			// TheSuperHackers @bugfix ZsoltFeher 18/07/2026 At certain camera angles and distances
+			// (steep pitch combined with a high camera, easily reached with the Debug build's
+			// comma/dot camera pitch/height adjustments) the frustum's terrain footprint grows much
+			// larger than the drawable terrain window. Centering the window on the middle of the
+			// visibility bounding box then pushes it deep into the far background, because the upper
+			// half of the screen sees disproportionately more distant terrain, and the terrain at the
+			// center of the view is simply not drawn (GH #1225). Clamp the window so the camera's
+			// look-at point always stays within the central half of the drawn window. This is a no-op
+			// for normal camera setups, where the visible area fits inside the window and its center
+			// is already near the look-at point.
+			const Int pivotOrgX = REAL_TO_INT(WWMath::Round(cameraPivot->X/MAP_XY_FACTOR)) - m_x/2 + m_map->getBorderSizeInline();
+			const Int pivotOrgY = REAL_TO_INT(WWMath::Round(cameraPivot->Y/MAP_XY_FACTOR)) - m_y/2 + m_map->getBorderSizeInline();
+			if (newOrgX > pivotOrgX + m_x/4) newOrgX = pivotOrgX + m_x/4;
+			if (newOrgX < pivotOrgX - m_x/4) newOrgX = pivotOrgX - m_x/4;
+			if (newOrgY > pivotOrgY + m_y/4) newOrgY = pivotOrgY + m_y/4;
+			if (newOrgY < pivotOrgY - m_y/4) newOrgY = pivotOrgY - m_y/4;
 		}
 	}
 	else
