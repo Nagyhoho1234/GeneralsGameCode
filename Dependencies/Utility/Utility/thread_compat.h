@@ -23,7 +23,16 @@
 
 inline int GetCurrentThreadId()
 {
-  return pthread_self();
+  // pthread_self() returns an integer-like pthread_t on Linux (implicit
+  // conversion to int is fine, if narrowing), but an opaque pointer on
+  // macOS/BSD, which cannot convert to int at all (confirmed via real
+  // macOS CI - a pre-existing gap, not introduced by this port).
+  // pthread_mach_thread_np() is macOS's actual small-integer thread ID.
+#if defined(__APPLE__)
+  return (int)pthread_mach_thread_np(pthread_self());
+#else
+  return (int)pthread_self();
+#endif
 }
 
 inline void Sleep(int ms)

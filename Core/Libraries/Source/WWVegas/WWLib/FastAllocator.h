@@ -39,7 +39,11 @@
 #include "always.h"
 #include "wwdebug.h"
 #include "mutex.h"
-#include <malloc.h>
+// <malloc.h> is a Linux(glibc)/Windows convenience header; this file
+// only uses plain malloc()/free(), which <cstdlib> declares everywhere
+// including macOS, where <malloc.h> doesn't exist (native port plan
+// Phase 2, confirmed via real macOS CI).
+#include <cstdlib>
 #include <stddef.h> //size_t & ptrdiff_t definition
 
 ///////////////////////////////////////////////////////////////////////////////

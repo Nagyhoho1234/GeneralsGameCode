@@ -29,7 +29,17 @@ static inline MMRESULT timeEndPeriod(int) { return TIMERR_NOERROR; }
 inline unsigned int timeGetTime()
 {
   struct timespec ts;
+  // CLOCK_BOOTTIME is Linux-specific (not POSIX, not available on
+  // macOS/BSD - confirmed via real macOS CI, a pre-existing gap not
+  // introduced by this port). CLOCK_MONOTONIC is the portable
+  // fallback; it lacks Linux's distinction of counting through
+  // suspend, which doesn't matter for this function's actual use
+  // (frame/network timing, not wall-clock-since-boot display).
+#ifdef CLOCK_BOOTTIME
   clock_gettime(CLOCK_BOOTTIME, &ts);
+#else
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+#endif
   return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 inline unsigned int GetTickCount()

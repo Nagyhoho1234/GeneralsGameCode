@@ -38,8 +38,13 @@ inline int _wtoi(const wchar_t* str) { return (int)wcstol(str, nullptr, 10); }
 #endif
 
 // iswascii: MSVC CRT extension, no direct POSIX equivalent needed - a
-// wide char is ASCII iff its value fits in 7 bits.
-#ifndef iswascii
+// wide char is ASCII iff its value fits in 7 bits. glibc (Linux) lacks
+// this BSD-ism, but macOS/BSD libc already declares a real iswascii()
+// in <_wctype.h> - defining it as a macro there corrupts that
+// declaration by substituting into its own name (confirmed via real
+// macOS CI, the same failure mode __int64-as-a-macro had with
+// wwprofile.h). Only needed on platforms that don't already have it.
+#if !defined(__APPLE__) && !defined(iswascii)
 #define iswascii(c) ((unsigned int)(c) <= 0x7F)
 #endif
 
