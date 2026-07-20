@@ -1,3 +1,7 @@
+# Entirely D3D8-dependent (100+ D3D8 call sites across this library - see
+# docs/native-port-plan.md). Gated behind WIN32 wholesale (native port plan
+# Phase 1); the actual portable rendering backend is Phase 5.
+if(WIN32)
 set(WW3D2_SRC
     aabtree.cpp
     aabtree.h
@@ -232,6 +236,7 @@ set(WW3D2_SRC
     ww3dids.h
     ww3dtrig.h
 )
+endif() # WIN32
 
 add_library(corei_ww3d2 INTERFACE)
 

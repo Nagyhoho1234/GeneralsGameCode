@@ -1,3 +1,6 @@
+# Entirely W3DDevice/Win32Device residue not yet unified into Core/ - all
+# D3D8/Win32-dependent. Gated behind WIN32 (native port plan Phase 1).
+if(WIN32)
 set(GAMEENGINEDEVICE_SRC
 #    Include/MilesAudioDevice/MilesAudioManager.h
 #    Include/VideoDevice/Bink/BinkVideoPlayer.h
@@ -185,6 +188,7 @@ set(GAMEENGINEDEVICE_SRC
 #    #Source/Win32Device/GameClient/Win32DIMouse.cpp
 #    Source/Win32Device/GameClient/Win32Mouse.cpp
 )
+endif() # WIN32
 
 add_library(z_gameenginedevice STATIC)
 
@@ -194,14 +198,18 @@ target_include_directories(z_gameenginedevice PUBLIC
     Include
 )
 
-target_precompile_headers(z_gameenginedevice PRIVATE
+set(Z_GAMEENGINEDEVICE_PCH_HEADERS
     [["Utility/CppMacros.h"]] # Must be first, to be removed when abandoning VC6
     [["Common/STLTypedefs.h"]]
     [["Common/SubsystemInterface.h"]]
     [["INI.h"]]
     [["WWCommon.h"]]
-    <windows.h>
 )
+if(WIN32)
+    list(APPEND Z_GAMEENGINEDEVICE_PCH_HEADERS <windows.h>)
+endif()
+
+target_precompile_headers(z_gameenginedevice PRIVATE ${Z_GAMEENGINEDEVICE_PCH_HEADERS})
 
 target_link_libraries(z_gameenginedevice PRIVATE
     corei_gameenginedevice_private

@@ -883,7 +883,10 @@ WWINLINE void	Matrix4x4::Transform_Vector(const Matrix4x4 & A,const Vector4 & in
 // TheSuperHackers @info Always convert Matrix4x4 to D3DMATRIX or vice versa with the conversion functions below.
 // Reason being, D3DMATRIX is row-major, and Matrix4x4 is column-major and therefore copying one matrix to the
 // other will always require a transpose.
-
+//
+// D3D8-specific despite living in this otherwise-portable math library - gated behind _WIN32 since their only
+// caller (dx8wrapper.h) is itself Windows-only D3D8 rendering code (native port plan Phase 1/5).
+#ifdef _WIN32
 struct _D3DMATRIX;
 struct D3DXMATRIX;
 
@@ -893,3 +896,4 @@ extern D3DXMATRIX To_D3DXMATRIX(const Matrix4x4& m);
 
 extern void To_Matrix4x4(Matrix4x4& m, const _D3DMATRIX& dxm);
 extern Matrix4x4 To_Matrix4x4(const _D3DMATRIX& dxm);
+#endif

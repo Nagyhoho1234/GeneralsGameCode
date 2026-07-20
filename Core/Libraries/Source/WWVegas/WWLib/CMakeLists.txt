@@ -32,11 +32,6 @@ set(WWLIB_SRC
     #crcstraw.h
     cstraw.cpp
     cstraw.h
-    DbgHelpGuard.cpp
-    DbgHelpGuard.h
-    DbgHelpLoader.cpp
-    DbgHelpLoader.h
-    DbgHelpLoader_minidump.h
     Except.cpp
     Except.h
     FastAllocator.cpp
@@ -154,6 +149,11 @@ set(WWLIB_SRC
 
 if(WIN32)
     list(APPEND WWLIB_SRC
+        DbgHelpGuard.cpp
+        DbgHelpGuard.h
+        DbgHelpLoader.cpp
+        DbgHelpLoader.h
+        DbgHelpLoader_minidump.h
         mpu.cpp
         MPU.h
         rcfile.cpp

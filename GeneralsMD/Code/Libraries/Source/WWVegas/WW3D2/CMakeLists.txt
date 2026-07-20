@@ -1,3 +1,6 @@
+# Entirely D3D8-dependent residue not yet unified into Core/ - gated behind
+# WIN32 wholesale (native port plan Phase 1).
+if(WIN32)
 set(WW3D2_SRC
     #aabtree.cpp
     #aabtree.h
@@ -226,30 +229,44 @@ set(WW3D2_SRC
     #ww3dids.h
     #ww3dtrig.h
 )
+endif() # WIN32
 
-add_library(z_ww3d2 STATIC)
-set_target_properties(z_ww3d2 PROPERTIES OUTPUT_NAME ww3d2)
+if(WIN32)
+    add_library(z_ww3d2 STATIC)
+    set_target_properties(z_ww3d2 PROPERTIES OUTPUT_NAME ww3d2)
 
-target_sources(z_ww3d2 PRIVATE ${WW3D2_SRC})
+    target_sources(z_ww3d2 PRIVATE ${WW3D2_SRC})
 
-target_compile_definitions(z_ww3d2 PRIVATE
-    $<$<BOOL:${IS_VS6_BUILD}>:WINVER=0x0500>
-)
+    target_compile_definitions(z_ww3d2 PRIVATE
+        $<$<BOOL:${IS_VS6_BUILD}>:WINVER=0x0500>
+    )
 
-target_precompile_headers(z_ww3d2 PRIVATE
-    [["Utility/CppMacros.h"]] # Must be first, to be removed when abandoning VC6
-    [["dx8wrapper.h"]]
-    [["always.h"]]
-    [["STLUtils.h"]]
-    [["win.h"]]
-    [["WWCommon.h"]]
-    [["wwstring.h"]]
-    <windows.h>
-)
+    target_precompile_headers(z_ww3d2 PRIVATE
+        [["Utility/CppMacros.h"]] # Must be first, to be removed when abandoning VC6
+        [["dx8wrapper.h"]]
+        [["always.h"]]
+        [["STLUtils.h"]]
+        [["win.h"]]
+        [["WWCommon.h"]]
+        [["wwstring.h"]]
+        <windows.h>
+    )
 
-target_link_libraries(z_ww3d2 PRIVATE
-    core_wwdebug
-    corei_ww3d2
-    z_wwcommon
-    zi_always
-)
+    target_link_libraries(z_ww3d2 PRIVATE
+        core_wwdebug
+        corei_ww3d2
+        z_wwcommon
+        zi_always
+    )
+else()
+    # corei_ww3d2 contributes zero sources on non-Windows (native port plan
+    # Phase 1) - INTERFACE instead of STATIC since a STATIC library needs at
+    # least one source file even when everything it links is empty.
+    add_library(z_ww3d2 INTERFACE)
+    target_link_libraries(z_ww3d2 INTERFACE
+        core_wwdebug
+        corei_ww3d2
+        z_wwcommon
+        zi_always
+    )
+endif()

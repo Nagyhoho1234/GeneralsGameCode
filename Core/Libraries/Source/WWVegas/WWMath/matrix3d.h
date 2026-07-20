@@ -1816,10 +1816,15 @@ public:
 // TheSuperHackers @info Always convert Matrix3D to D3DMATRIX or vice versa with the conversion functions below.
 // Reason being, D3DMATRIX is row-major, and Matrix3D is column-major and therefore copying one matrix to the
 // other will always require a transpose.
-
+//
+// D3D8-specific despite living in this otherwise-portable math library - gated behind _WIN32 since their only
+// callers (dx8wrapper.h, W3DVolumetricShadow.cpp) are themselves Windows-only D3D8 rendering code (native
+// port plan Phase 1/5).
+#ifdef _WIN32
 struct _D3DMATRIX;
 struct D3DXMATRIX;
 
 extern void To_D3DMATRIX(_D3DMATRIX& dxm, const Matrix3D& m);
 extern _D3DMATRIX To_D3DMATRIX(const Matrix3D& m);
 extern D3DXMATRIX To_D3DXMATRIX(const Matrix3D& m);
+#endif

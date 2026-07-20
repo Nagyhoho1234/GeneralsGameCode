@@ -19,6 +19,11 @@
 // This file contains WCHAR and related macros for compatibility with non-windows platforms.
 #pragma once
 
+// For wcslen/wcscmp/wcschr/wcsrchr/wcscasecmp/mbstowcs/wcstombs, used by the
+// aliases below and directly by callers of this header (e.g. UnicodeString.h)
+#include <wchar.h>
+#include <cstdlib>
+
 // WCHAR
 typedef wchar_t WCHAR;
 typedef const WCHAR* LPCWSTR;

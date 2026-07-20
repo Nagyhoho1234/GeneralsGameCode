@@ -1,3 +1,10 @@
+# Every file below this point is W3DDevice/Win32Device/MilesAudioDevice/
+# VideoDevice content - D3D8/Win32/Miles/Bink-dependent, gated behind WIN32
+# for now (native port plan Phase 1: minimum-viable stub so the game target
+# at least builds on non-Windows; real portable device implementations are
+# Phases 4-6). The portable StdDevice file-I/O block further down is
+# deliberately NOT inside this guard - it already works cross-platform.
+if(WIN32)
 set(GAMEENGINEDEVICE_SRC
     Include/MilesAudioDevice/MilesAudioManager.h
     Include/VideoDevice/Bink/BinkVideoPlayer.h
@@ -196,6 +203,7 @@ set(GAMEENGINEDEVICE_SRC
     #Source/Win32Device/GameClient/Win32DIMouse.cpp
     Source/Win32Device/GameClient/Win32Mouse.cpp
 )
+endif() # WIN32
 
 # Add C++ 17 FileSystem implementation for non-VS6 builds
 if(NOT IS_VS6_BUILD)
@@ -227,11 +235,15 @@ target_link_libraries(corei_gameenginedevice_private INTERFACE
 )
 
 target_link_libraries(corei_gameenginedevice_public INTERFACE
-    binkstub
     corei_gameengine_public
-    d3d8lib
-    milesstub
 )
+if(WIN32)
+    target_link_libraries(corei_gameenginedevice_public INTERFACE
+        binkstub
+        d3d8lib
+        milesstub
+    )
+endif()
 
 if(RTS_BUILD_OPTION_FFMPEG)
     find_package(FFMPEG REQUIRED)

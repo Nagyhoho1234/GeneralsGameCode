@@ -33,6 +33,7 @@ inline char *_strlwr(char *str) {
 
 #define strlwr _strlwr
 #define stricmp strcasecmp
+#define _stricmp strcasecmp
 #define strnicmp strncasecmp
 #define strcmpi strcasecmp
 
