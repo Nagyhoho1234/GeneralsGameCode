@@ -62,7 +62,8 @@ wrong estimate as fact.
 - **Windowing/input is not a ~3-file surface.** The narrow
   `Core/GameEngineDevice/Source/Win32Device` directory (7 files) is
   real, but it's not the whole picture:
-  - `GeneralsMD/Code/Main/WinMain.cpp` (1033 lines, per game tree):
+  - `GeneralsMD/Code/Main/WinMain.cpp` (1033 lines; Generals' copy is
+    1006 lines, near-identical):
     window class registration, `CreateWindow`, the message pump, and
     the `WndProc` that feeds `Win32Mouse` its events in the first
     place.
@@ -86,7 +87,7 @@ wrong estimate as fact.
   `OpenALAudioDevice/OpenALAudioManager.h` - a header that doesn't exist
   in this repo. This is very likely a reference to upstream
   GeneralsGameCode's own (more complete) OpenAL device that hasn't been
-  pulled into this tree yet. **Phase 4 should start by checking whether
+  pulled into this tree yet. **Phase 6 should start by checking whether
   upstream already has a working OpenAL backend to port in, rather than
   writing one from scratch.**
 - **Video**: confirmed already solved - `VideoDevice/FFmpeg` exists
@@ -130,12 +131,12 @@ distilled result, including several corrections to the estimates above.
 
 **W3DDevice breakdown (131 files total across the three trees):**
 
-- `GameClient/Drawable/Draw/` - 18 files, 9,444 lines. **Zero direct
+- `GameClient/Drawable/Draw/` - 19 files, 9,444 lines. **Zero direct
   D3D8 dependency across the board** - every file calls the WW3D2
   abstraction layer (`RenderObjClass`/`HLodClass`/etc.), never
   `DX8Wrapper`/raw D3D8 types directly. This entire slice needs no
   rewrite for the graphics-API transition; the rewrite burden is one
-  layer down, in WW3D2 itself. 5 of 18 (`W3DModelDraw`, `W3DSupplyDraw`,
+  layer down, in WW3D2 itself. 5 of 19 (`W3DModelDraw`, `W3DSupplyDraw`,
   `W3DDebrisDraw`, `W3DLaserDraw`, `W3DRopeDraw`) are sim-reachable, but
   only through narrow, confirmed one-way interfaces (GameLogic writes
   visual-feedback parameters in; nothing reads render state back out) -
@@ -185,16 +186,19 @@ distilled result, including several corrections to the estimates above.
   - Practical consequence: any determinism fix here has to be applied
     and re-verified **twice** (once per tree) unless this directory is
     unified into `Core/` first - a natural, small #555 side-quest.
-- `Common/` + `GameClient/` root remainder (the last 67 of 131 files,
+- `Common/` + `GameClient/` root remainder (the last 71 of 131 files,
   now fully inventoried in two follow-up passes) - **entirely
   duplicated per-tree, not unified into `Core/`**, except one file
-  (`W3DRadar.cpp`). 11 "infrastructure" classes (factories, GUI window
+  (`W3DRadar.cpp`). 13 "infrastructure" classes (factories, GUI window
   plumbing, the Shadow subsystem) plus 22 `GameClient/` root classes
-  (asset manager, display, scene, road/bridge buffers, shroud, etc.).
+  (asset manager, display, scene, road/bridge buffers, shroud, etc.) -
+  35 unique classes/tree, ×2 trees + 1 unified `W3DRadar.cpp` = 71.
   Findings that change the plan's earlier assumptions:
-  - **11 of 33 files here are genuinely divergent between trees**, not
-    just cosmetic - and several carry real Zero-Hour-only gameplay
-    features, not just engine drift: stealth-detection material passes
+  - **At least 14 of these 35 classes are genuinely divergent between
+    trees** (3 of the infrastructure classes, 11 of the GameClient-root
+    ones), not just cosmetic - and several carry real Zero-Hour-only
+    gameplay features, not just engine drift: stealth-detection material
+    passes
     and infantry-light scaling (`W3DScene.cpp`), a listening-outpost
     "reveals enemy paths" feature (`W3dWaypointBuffer.cpp`), heat-
     distortion/snow particle hooks (`W3DParticleSys.cpp`), localized-
@@ -252,11 +256,13 @@ should move categories: `WOLBrowser/WebBrowser.cpp` (confirmed pure
 COM/ATL, no networking - matches the separately-flagged ATL dependency)
 and `GUIUtil.cpp` (pure lobby-GUI population code, no networking).
 
-**GameSpy - 20 unique files (not 19), and itself a #555 duplication
-gap:** 12 files in `Core/`, but 5 more Generals-only and 3 more
-GeneralsMD-only .cpp files exist - GameSpy hasn't been unified into
-`Core/` yet either, so (like `W3DDevice/GameLogic`) this work may need
-doing twice unless unified first. Threading is more extensive than the
+**GameSpy - 19 unique logical files (22 total file paths), and itself a
+#555 duplication gap:** 14 .cpp in `Core/`, plus 5 Generals-only and 3
+GeneralsMD-only .cpp files (the 3 GeneralsMD-only names are a subset of
+the 5 Generals-only names, so 8 per-tree-only file *paths* but 5 unique
+per-tree-only logical files) - GameSpy hasn't been unified into `Core/`
+yet either, so (like `W3DDevice/GameLogic`) this work may need doing
+twice unless unified first. Threading is more extensive than the
 plan's "GameResultsThread, PingThread" implied: **5 distinct classes**
 (`BuddyThreadClass`, `GameResultsThreadClass`, `PeerThreadClass`,
 `PSThreadClass`, `PingThreadClass`) all subclass WWLib's `ThreadClass`/
@@ -273,7 +279,8 @@ uses dynamically-loaded ICMP (`ICMP.DLL`) - both are genuinely
 Windows-specific techniques with no POSIX equivalent, needing real
 reimplementation (`getifaddrs()`, raw ICMP sockets), not a 1:1 swap.
 
-**Registry - two separate wrapper layers, different complexity:**
+**Registry - three separate wrapper layers, different complexity** (a
+holistic review pass found a third one this section originally missed):
 
 1. `GameEngine/Source/Common/System/registry.cpp` (202 lines,
    duplicated per-tree, near-identical) - genuinely simple: 4
@@ -293,6 +300,12 @@ reimplementation (`getifaddrs()`, raw ICMP sockets), not a 1:1 swap.
    **dead code** (defined, never called) - the real porting surface is
    just scalar/binary get/set, mechanical but with more API surface
    than the simpler wrapper above.
+3. `Core/Libraries/Source/WWVegas/WWDownload/registry.cpp` (172 lines) -
+   a third, separate implementation, compiled into both game targets
+   and serving the `DownloadManager`/patch-download path this plan's
+   networking section already covers. Not yet characterized in detail;
+   flag for the same config-file treatment as the other two rather than
+   assuming it's identical in scope to either.
 
 **Timers/threads (WWLib) - existing portability scaffolding is a mix
 of genuinely-done and silently-stubbed, which matters a lot for
@@ -371,8 +384,10 @@ is downgraded from blocker to minor task.** All 13 shipped `.vso`/`.pso`
 binaries (plus 3 tiny inline-assembled ps.1.1 shaders in `W3DWater.cpp`)
 have their assembly **source already shipping in-tree, GPL-licensed**,
 at `GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/
-Shaders/*.nvp/.nvv` (14 files, ~700 lines total, 34-72 lines each -
-terrain/water/road-noise/B&W-filter/tree-card effects). Re-authoring
+Shaders/*.nvp/.nvv` (14 files, 571 lines total, terrain/road-noise/
+B&W-filter/tree-card effects) plus the water shader source separately
+at `Core/GameEngineDevice/Source/W3DDevice/GameClient/Water/wave.nvp`/
+`wave.nvv`. Re-authoring
 the complete set in GLSL is a days-scale task, not a project-blocking
 unknown, under either option (a) or (b). Separately, `W3DShaderManager.cpp`'s
 706 D3D8 call sites (previously flagged as the densest file found) are
@@ -487,9 +502,10 @@ rather than reimplement if it exists and is usable.
 stub.** Grouped together because each is independently well-understood
 and mostly mechanical (FreeType+Fontconfig; Winsock→BSD sockets;
 registry→config file; Win32 timer/thread APIs→POSIX equivalents; ATL
-browser→stub-or-remove decision), unlike rendering. Can run partly in
-parallel with Phase 5 once Phase 0's extended networking inventory
-exists, since none of these blocks or is blocked by the graphics work.
+browser→stub-or-remove decision), unlike rendering. Phase 0's file-level
+detail for all of these is now complete (see "Phase 0 results" above),
+so this phase can start directly, in parallel with Phase 5, since none
+of it blocks or is blocked by the graphics work.
 
 **Phase 8 - Determinism validation, broadened.** The original three
 flagged files (`animobj.cpp`, `motchan.cpp`, `meshgeometry.cpp`) are
@@ -545,7 +561,8 @@ touches it):
   small, diverged; `W3DTerrainLogic.cpp` is also the confirmed
   lockstep-determinism-critical file, so this one is worth doing
   *especially* carefully and early.
-- GameSpy (8 of 20 files per-tree-only, `Phase 6`/networking work) -
+- GameSpy (5 unique logical files per-tree-only, `Phase 7`/networking
+  work) -
   small-to-moderate.
 - `registry.cpp` (`Phase 7`) - trivial, 202 lines, near-identical
   already.
@@ -591,10 +608,15 @@ exists.
    first thought: WW3D2 (100+ D3D8 call sites, still the single biggest
    item) + the D3D8-dependent half of W3DDevice's GameClient tree (16
    of 35 files, plus the separately-scoped `Drawable/` slice which
-   turned out to need **no** rewrite at all) + shader-asset
-   re-authoring + a COM/ATL stub decision + a hard 64-bit prerequisite
-   for macOS. Networking turned out meaningfully smaller than
-   estimated (see below). Still a multi-person, multi-month effort at
+   turned out to need **no** rewrite at all) + the Common/GameClient-root
+   remainder's D3D8-heaviest files (`W3DVolumetricShadow.cpp` 105 hits,
+   `W3DProjectedShadow.cpp` 98, `W3DDisplay.cpp` 60 - this last group
+   was under-weighted in an earlier draft of this risk item and is now
+   included) + shader-asset re-authoring (downgraded to days-scale, see
+   above) + a COM/ATL stub decision (now known to span a shared `Core/`
+   base class, not one file) + a hard 64-bit prerequisite for macOS.
+   Networking turned out meaningfully smaller than estimated (see
+   below). Still a multi-person, multi-month effort at
    minimum - just not uniformly so across every subsystem.
 2. The Phase 3 API decision is still un-prototyped; recommending option
    (a) as a bridging step reduces but does not eliminate this risk.
@@ -717,10 +739,10 @@ native-port phases rather than needing further discovery.
   this inventory rather than gone looking for. Formalized
   "unify-before-porting" as an explicit sequencing rule rather than a
   passive observation.
-- Draft 4 (this version): closed the last Phase 0 gap
-  (`W3DDevice/Common`+`GameClient`-root, 67 files, 2 more parallel
-  passes - confirming this entire slice is per-tree-duplicated too, and
-  that 11 of 33 files carry real Zero-Hour-only gameplay features, not
+- Draft 4: closed the last Phase 0 gap (`W3DDevice/Common`+
+  `GameClient`-root, 71 files, 2 more parallel passes - confirming this
+  entire slice is per-tree-duplicated too, and that at least 14 of its
+  35 unique classes carry real Zero-Hour-only gameplay features, not
   just engine drift) and desk-checked the graphics-API decision with a
   focused pass reading `shader.cpp`/`mapper.cpp`/`W3DShaderManager.cpp`
   in full. Major findings: the texture-combiner system is small and
@@ -730,6 +752,22 @@ native-port phases rather than needing further discovery.
   days-scale; and upstream is already building exactly the recommended
   option (a) architecture in live discussion #1575, with a maintainer
   independently stating the same "unify Generals/ZH first" rule this
-  plan had already formalized. Phase 0 is now fully complete; the
-  graphics-API spike is the one remaining gate before real
-  implementation work.
+  plan had already formalized. Phase 0 declared fully complete.
+- Draft 5 (this version): a holistic fable review of the full document
+  (not a narrow section, the first since Draft 2) independently
+  re-verified a sample of compiled claims directly against the repo and
+  re-fetched discussion #1575 to check it wasn't paraphrased into
+  something stronger than what was said - both held up. It also found
+  the Phase 0 arithmetic didn't actually reconcile on paper (18+35+6+67
+  = 126, not 131; the true breakdown is 19+35+6+71=131), the GameSpy
+  file count was wrong (14 in Core, 19 unique logical files, not
+  "12"/"20"), two stale phase-number cross-references had crept in from
+  re-numbering (audio mislabeled Phase 4 instead of 6, GameSpy
+  mislabeled Phase 6 instead of 7), a third registry wrapper
+  (`WWDownload/registry.cpp`) had been missed entirely, and the
+  "Biggest risks" section hadn't been updated to include the D3D8-heavy
+  files Draft 4's own research had just found. All fixed here. No
+  load-bearing conclusion (phase ordering, the option (a) recommendation,
+  the unify-before-porting rule, the thread/mutex-stub or CRC-exclusion
+  findings) needed to change - this pass was arithmetic and
+  cross-reference hygiene, not a substantive correction.
