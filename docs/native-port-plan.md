@@ -541,11 +541,81 @@ scattered set of smaller files (`Image.cpp`, `PartitionManager.cpp`,
 dozen single-error files), plus a few qualitatively different items not
 attempted in this pass: a struct-size `static_assert` failure in
 `LANAPI.h` that looks like a genuine 64-bit alignment issue (Phase 2
-territory, not a simple gating fix), `atlbase.h` in `WebBrowser.h` (real
-COM/ATL work, Phase 7), and a build error inside the vendored
-`gamespy-src` third-party dependency itself (not this codebase's code).
-Real (not 32-bit-only) Linux/macOS CMake presets also still haven't been
-added.
+territory, not a simple gating fix - **correction below, Draft 11: this
+diagnosis was wrong**), `atlbase.h` in `WebBrowser.h` (real COM/ATL
+work, Phase 7), and a build error inside the vendored `gamespy-src`
+third-party dependency itself (not this codebase's code). Real (not
+32-bit-only) Linux/macOS CMake presets also still haven't been added.
+
+**Ninth through fourteenth passes** (commits `f6acfaea0`, `9200ced5a`,
+`580251222`, `0fe95e6b4`, `050e63670`, plus a fable-caught fix folded
+into the second of those) picked the 48-line tail back up, working
+through the `GameSpy` thread files properly this time - and one real
+mistake happened mid-batch, corrected same-session: `PingThread.cpp`/
+`GameResultsThread.cpp` were initially fixed by just re-gating their
+`#include <winsock.h>` behind `_WIN32` with nothing on the other side,
+which **regressed the Linux build from 44 to 117 errors** because both
+files use Winsock APIs (`WSADATA`/`WSAStartup`/`HOSTENT`/
+`gethostbyname`/`WSACleanup`, and in `GameResultsThread.cpp` also
+`connect()`/`send()`/`closesocket()`/`WSAGetLastError()`) directly in
+their bodies, not just via that one include. Properly fixed with the
+same Winsock-to-BSD-sockets treatment as `IPEnumeration.cpp`/
+`Transport.cpp` (POSIX socket headers, `errno`-based error handling
+mirroring the `WSAGetLastError` paths); `PingThread.cpp`'s `doPing()` -
+a ~230-line Windows-only ICMP.DLL ping implementation - got an honest
+stub (`return -1`, "ping unknown") since a real port needs raw-socket
+ICMP echo requiring elevated privileges, real non-mechanical work. A
+fable review of that fix caught one more real gap: `getWSAErrorString()`
+was gated on `DEBUG_LOGGING` only, not `_WIN32`, so a Linux **debug**
+build (not the release-style config used for all Phase 1 verification
+so far) would have failed on its ~50 WSA-named case labels; fixed with
+a `strerror()`-backed equivalent for that build config. Also centralized
+several more MSVC-name compat shims in `compat.h`/`time_compat.h`
+following the `_isnan` precedent (`itoa` - base-10 only, matching every
+call site; `__max`/`__min`; `_access`/`CreateDirectory`), fixed a real
+typo bug unrelated to portability (`StdLocalFileSystem.cpp`'s
+`normalizePath()` referenced an undeclared `unNormalized` where the
+variable is named `nonNormalized` - dead code until this port made the
+branch it lives in compile for the first time), and ported
+`GameState.cpp`'s `iterateSaveFiles()` (both trees) from
+`GetCurrentDirectory`+`FindFirstFile`+chdir to `opendir()` directly,
+matching the `GameStateMap.cpp` precedent from the eighth pass.
+
+**The biggest single fix of this batch: `time_compat.h` gained a
+portable `SYSTEMTIME` struct (Windows-layout-compatible, since
+`Recorder.cpp` binary-serializes it directly into replay files) and
+`GetLocalTime()`.** `GameState.h` declares
+`getUnicodeDateBuffer`/`getUnicodeTimeBuffer` taking a `SYSTEMTIME`, and
+is `#include`d by nearly every GameEngine translation unit - so the
+undeclared-`SYSTEMTIME` error was being reported once per translation
+unit. This one header-level fix (plus a `strftime()`-based portable
+fallback replacing `GameState.cpp`'s `GetVersionEx`/`GetDateFormat`/
+`GetTimeFormatW` body, an honest simplification that can't reach
+per-user Windows regional format overrides, only the process locale)
+resolved roughly 90 of the error total by itself - the same
+one-header-many-errors shape `osdep.h` had in the first pass.
+
+**`KeyDefs.h`'s `#include <dinput.h>` was the single largest remaining
+error contributor (121 of 153 lines at that point) and got the same
+treatment**: the header only uses DirectInput's `DIK_*` scan-code
+*values*, baked directly into the `KeyDefType` enum (`KEY_A = DIK_A`,
+etc.) - no DirectInput COM API is touched anywhere in this file. The
+~85 `DIK_*` values it actually references were reproduced directly
+(standard PC keyboard scan set 1, matching the public DirectX SDK's
+published values) rather than gated out or stubbed, since real
+keyboard-input work later needs real scan codes, not placeholders.
+Fixed in both `Generals/` and `GeneralsMD/`'s copies.
+
+**Net movement, ninth-through-fourteenth passes: 48 -> 446 unique error
+lines - not a regression.** Both `KeyDefs.h` and `GameState.h` are
+extremely widely-included headers that were themselves the reason the
+build died before reaching huge swaths of GUI (`GameClient/GUI/Gadget`,
+`GameClient/GUI/GUICallbacks/Menus`) and `GameNetwork` code. Fixing them
+let the build proceed **much** further than before, and the ~300 newly
+visible errors are code that was previously unreachable, not new
+breakage - confirmed by an unchanged 0-error Windows build after every
+commit in this batch. See "Draft 11" below for the root-cause analysis
+and fix plan for this newly-exposed layer.
 
 **Phase 2 - 64-bit, promoted from "non-goal" to prerequisite (macOS
 only, strongly recommended for Linux too).** Every game-capable preset
@@ -904,6 +974,243 @@ latter flagged above as close to a hard prerequisite for Phase 5(c)'s
 shader/mapper rewrite, though not for the Phase 3 spike itself - see
 Draft 6 history) are both merged (see git history for #555).
 
+## Draft 11: Phase 1's newly-exposed GUI/GameNetwork error layer -
+root-cause verification and fix plan
+
+A fable review pass (planning only, no code written) verified the
+446-error batch the `KeyDefs.h`/`GameState.h` fixes exposed and
+produced the fix plan below. Every claim here was checked against the
+actual code (file:line), not inferred from symbol names.
+
+**Headline finding: `WindowMsgData` is a single-point-of-fix on the
+same order as `KeyDefs.h`/`GameState.h`, and it's safe to widen.**
+`Core/GameEngine/Include/GameClient/GameWindow.h:76` -
+`typedef UnsignedInt WindowMsgData;` - is the argument type of every
+GUI callback signature (`Gadget.h:482-525`'s 20+ free-function
+declarations), and the codebase's universal convention is to pass raw
+pointers through it via cast: `GadgetTextEntry.h:69` -
+`winSendSystemMsg( g, GEM_SET_TEXT, (WindowMsgData)&text, 0 )` (a
+`UnicodeString*`) - and because this is an inline function in a widely
+`#include`d header, this one line accounts for all 42 `GadgetTextEntry.h`
+duplicate errors, the same shape as the `KeyDefs.h` fix. Same pattern at
+10+ sites each in `GadgetPushButton.cpp`, `GadgetTextEntry.cpp`, and
+throughout the Gadget/menu files generally.
+
+Checked for safety on all three axes that would make widening this
+typedef risky, and none apply: **(1) never stored** - dispatch is
+synchronous (`GameWindowManager.cpp:705` -
+`return window->m_system( window, msg, mData1, mData2 );`, no message
+queue), and a repo-wide grep for `WindowMsgData` struct/array members
+found zero; **(2) never serialized** - no `xfer`/`Snapshot`/CRC code
+touches it, GUI messaging is pure transient client-side state, outside
+both the save-file and lockstep-CRC surfaces; **(3) no Windows-build
+impact** - on the only shipping targets (32-bit Win32),
+`uintptr_t` *is* `unsigned int`, so widening is a zero-codegen-change
+no-op there. One implementer note: this codebase still nominally
+supports VC6 (`CPP_11` macros elsewhere), which has no `<cstdint>` -
+get `uintptr_t` via `Dependencies/Utility/Utility/stdint_adapter.h` or
+gate on `_MSC_VER < 1300`.
+
+**Verdict: change `GameWindow.h:76` to a pointer-sized unsigned
+integer. This is exclusively a Phase 1 compile issue with no
+behavioral, save-format, or network contract attached**, and should
+eliminate the `(WindowMsgData)` cast-error family wholesale - `GadgetTextEntry.h`'s
+42, most of `GadgetListBox.cpp`'s 32, the Gadget{PushButton,
+VerticalSlider,ComboBox,CheckBox,TextEntry,RadioButton,
+HorizontalSlider} files (~70 more), most menu files' handful each,
+`ControlBar.cpp`/`GameWindowManager.cpp`/`GameLogicDispatch.cpp`/
+`HotKey.cpp` - a conservative estimate of **~180-250 of the 446 error
+lines from one line changed**.
+
+**A sibling pattern needs per-site edits, not a typedef change**:
+integers stored in `void*` slots via `GadgetListBoxGetItemData()`/
+`winGetUserData()`, cast back with a literal 32-bit target type -
+`(Int)GadgetListBoxGetItemData(...)`, `(GPProfile)...`, etc. (e.g.
+`WOLBuddyOverlay.cpp:218-219,270,396`, `WOLLobbyMenu.cpp:1486,1564,1800`,
+`LanLobbyMenu.cpp:347`, `PopupLadderSelect.cpp:133,376,442,634`,
+`LobbyUtils.cpp:212,699,921`, `LANAPICallbacks.cpp:636`,
+`SkirmishMapSelectMenu.cpp:102`, `W3DProgressBar.cpp:79,189`). These are
+value-truncation-*safe* (the stored value was always an `Int`) but GCC
+correctly rejects the pointer-to-smaller-int cast. Fix:
+`(Int)(uintptr_t)ptr` on retrieval, `(void*)(uintptr_t)value` on store.
+Accounts for `WOLBuddyOverlay.cpp` (7), `LobbyUtils.cpp` (4),
+`GUIUtil.cpp` (3), `LANAPICallbacks.cpp` (1), and part of several other
+files' counts.
+
+**Four corrections to prior claims, found while verifying the above:**
+
+1. **`LANAPI.h`'s `static_assert` is not a 64-bit alignment issue** (this
+   plan's own prior claim, now corrected). `LANMessage` is
+   `#pragma pack(push, 1)` (`LANAPI.h:143`, confirmed) - alignment/padding
+   cannot be the cause. The real cause: the struct is full of `WideChar`
+   arrays, and `WideChar` is `typedef wchar_t` (`Lib/BaseType.h:36`,
+   confirmed) - **2 bytes on Windows, 4 bytes on Linux/macOS** - so the
+   packed struct roughly doubles in size and trips
+   `static_assert(sizeof(LANMessage) <= MAX_LANAPI_PACKET_SIZE)`
+   (`LANAPI.h:270`). This is a wire-format width issue (identical on
+   32-bit Linux too, nothing to do with 64-bit), belongs in Phase 7
+   (networking) alongside the rest of the LAN/GameSpy wire format work,
+   not Phase 2. Interim Phase 1 unblock: relax the assert/ceiling under
+   `!_WIN32` with an explicit "LAN wire format not Windows-compatible
+   yet" comment - real cross-platform LAN play needs an explicit
+   16-bit-wide wire format, not just a bigger buffer.
+2. **`getifaddrs()` (this plan's prior suggestion) is the wrong
+   primitive for `StagingRoomGameInfo.cpp`'s SNMP code.** Reading
+   `GetLocalChatConnectionAddress` (`StagingRoomGameInfo.cpp:101`): the
+   SNMP MIB-II TCP-table walk answers "which *local* IP is my
+   established connection to `peerchat.gamespy.com:6667` using?" - a
+   route-selected source address on a multi-NIC/NAT machine, not an
+   interface list. Correct POSIX equivalent: the standard
+   connected-UDP trick - `socket(AF_INET, SOCK_DGRAM)` -> `connect()` to
+   the server address (sends no packets) -> `getsockname()` -> local IP
+   -> `close()`. ~25 lines replacing ~350 lines of SNMP DLL-loading,
+   strictly more accurate than an interface walk. Unify-before-porting
+   flag: **Generals has a second, un-unified copy of this exact SNMP
+   function** at `Generals/Code/GameEngine/Source/GameNetwork/
+   GameSpyGameInfo.cpp:97` (the old per-tree GameSpy path this plan
+   already flagged elsewhere as still actively built) - it isn't in the
+   current error list only because it lives in a different build
+   target, and will need the same fix when that target is built.
+3. **`GetDoubleClickTime` already has a portable precedent in-tree -
+   no fresh reimplementation needed.** `GlobalData.cpp:1046-1048`
+   (GeneralsMD `:1053-1055`) already branches Windows
+   `GetDoubleClickTime()` vs. a hardcoded `500` default on other
+   platforms. `GadgetListBox.cpp:70` is a second, independent call site
+   predating that fix (and a namespace-scope static initializer, so it
+   can't read `TheGlobalData` even if it wanted the same value at
+   runtime) - fix is a `compat.h` inline returning 500, matching the
+   existing precedent, not a new design decision.
+4. **Draft 9's centralized `__int64` fix does not cover
+   `Network.cpp`.** `stdint_adapter.h`'s `__int64` typedefs and
+   `intrin_compat.h`'s are both MSVC-direction-only / behind
+   `_MSC_VER < 1300`; no non-Windows `__int64` exists anywhere in
+   `Dependencies/Utility`. `Network.cpp` needs
+   `#define __int64 long long` (a macro, so `unsigned __int64` still
+   composes) added there.
+
+Also confirmed fine as-is: `timeGetTime()`/`GetTickCount()` already
+have portable definitions in `time_compat.h:29-41` (from earlier
+passes), so `GadgetListBox.cpp`'s calls to them aren't part of this
+error batch at all.
+
+**Category-by-category classification** (mechanical shim / real
+reimplementation / honest deferral, per this plan's established
+three-way split):
+
+- **`StagingRoomGameInfo.cpp` SNMP** (51 errors) - real reimplementation
+  (correction 2 above); affects actual online NAT/multi-NIC behavior
+  (called from `PeerThread.cpp:2281`), and the portable version is
+  smaller than the original, so worth doing for real rather than
+  stubbing.
+- **`Network.cpp` `__int64`/`LARGE_INTEGER`** (24) - mechanical shim,
+  but must stay behaviorally real: this is live multiplayer frame-pacing
+  code (`Network.cpp:205-207,340,730-810`), same category as
+  `FrameRateLimit.cpp` from an earlier pass. `compat.h`:
+  `#define __int64 long long`. `time_compat.h`: a `LARGE_INTEGER` union
+  with a `QuadPart` member (the code casts `(LARGE_INTEGER*)&`some
+  `__int64`, so layout must match) plus `QueryPerformanceCounter` via
+  `clock_gettime(CLOCK_MONOTONIC)` in nanoseconds and
+  `QueryPerformanceFrequency` = 1e9.
+- **`GameLogic.cpp`'s `setFPMode()`** (7, both trees) - real
+  reimplementation with a documented gap.
+  `_fpreset(); _controlfp(newVal, _MCW_PC|_MCW_RC)` sets rounding to
+  `_RC_NEAR` and precision to `_PC_24`. Non-Windows:
+  `fesetenv(FE_DFL_ENV); fesetround(FE_TONEAREST);` (matches `_RC_NEAR`,
+  same precedent as `SimulationMathCrc.cpp`'s earlier `_fpreset` fix -
+  rounding control needed a second call the earlier fix didn't need).
+  `_PC_24` (x87 80-bit-to-24-bit precision truncation) has no portable
+  equivalent under SSE2 codegen and needs none - x87 precision control
+  doesn't exist there, and MSVC's own `_controlfp` ignores `_MCW_PC` on
+  x86-64 too. Document as a Phase 8 determinism note (an x87 32-bit
+  Windows build vs. an SSE 64-bit Linux build can diverge in FP
+  regardless of this port - a pre-existing cross-platform-lockstep
+  question, not one this shim creates).
+- **`VK_RETURN`** (part of `KeyboardOptionsMenu.cpp`'s 18, both trees) -
+  mechanical. `KeyboardOptionsMenu.cpp:725` compares a `WideChar` from
+  `GWM_IME_CHAR` against `VK_RETURN` - it's really testing for the
+  character `'\r'` (0x0D), not a virtual-key event. This is the *only*
+  `VK_*` use anywhere in Core/Generals/GeneralsMD GameEngine sources
+  (exhaustive grep, 2 hits, both this same line in each tree) - no
+  VK_* table needed, unlike `DIK_*`. `#define VK_RETURN 0x0D` in
+  `compat.h`. The rest of this file's 18 errors are `WindowMsgData`
+  casts.
+- **`ReplayMenu.cpp`** (14) - mixed. `DeleteFile`/`FormatMessage`+
+  `FORMAT_MESSAGE_FROM_SYSTEM`+`GetLastError` (delete-replay button,
+  error toast) are mechanical shims - `compat.h`: `DeleteFile(p)` ->
+  `remove(p)==0` (**note the inverted return convention**: Win32
+  returns nonzero on success, `remove()` returns 0), `GetLastError()` ->
+  `errno`, `FormatMessage`/`FormatMessageW` -> `strerror(errno)` into the
+  caller's buffer. The "copy replay to Desktop" button
+  (`SHGetSpecialFolderLocation(CSIDL_DESKTOPDIRECTORY)`+`LPITEMIDLIST`+
+  `SHGetPathFromIDList`+`CopyFile`) is a real reimplementation:
+  `$HOME/Desktop` plus a stdio-based `CopyFile` shim (read/write loop,
+  Win32 return semantics, not `std::filesystem` given VC6 nominally
+  still applies elsewhere) - also fixes the same shim's use in
+  `Recorder.cpp:738`'s `archiveReplay()`.
+- **`MEMORYSTATUS`** (`GameClient.cpp`, 4/tree) - mechanical shim,
+  diagnostics-only (feeds `DEBUG_LOG` before/after asset preload, zero
+  gameplay risk). `compat.h`: a `MEMORYSTATUS` struct plus
+  `GlobalMemoryStatus()` via `sysinfo()` on Linux (zeroed fallback
+  elsewhere - macOS is 64-bit-Phase-2-blocked anyway so this doesn't
+  need a mac path yet). Correction: this is `GameClient.cpp`-only, not
+  spread across menu files as the raw grep grouping suggested -
+  `SkirmishGameOptionsMenu.cpp`'s 5 errors are unconfirmed and likely
+  `WindowMsgData` casts instead, per the flag below.
+- **`Keyboard.cpp`'s `HKL`** (2) - small real reimplementation.
+  `Keyboard.cpp:342-351` - `GetKeyboardLayout(0)` checked against 5
+  French LANGIDs to switch key-*name* display tables to AZERTY, falling
+  back to the existing `OurLanguage` default otherwise. Non-Windows:
+  detect French from `LC_ALL`/`LC_CTYPE`/`LANG` env prefix `fr` instead.
+  Affects only French users' hotkey display names; real XKB/SDL layout
+  querying belongs to Phase 4 (windowing/input).
+- **Already-deferred items, unchanged**: `WebBrowser.h`/`ftp.h` (COM/ATL,
+  Phase 7), `DbgHelpLoader.h` (imagehlp.h, dead weight when crash-dumps
+  are off), `BezierSegment.h` (d3dx8math.h), `IMEManager.cpp`
+  (mbstring.h, Phase 4 IME), `GlobalLanguage.cpp`'s
+  `Add`/`RemoveFontResource` (no-op stub now, real fonts come from
+  Fontconfig in Phase 7), the pointer-truncation files
+  (`PartitionManager.cpp` etc., Phase 2 - may reuse the same
+  `(uintptr_t)` double-cast idiom the `WindowMsgData` fix establishes).
+  `gamespy-src`'s vendored `gsplatform.h` - worth a 15-minute check
+  first (the GameSpy SDK historically had its own `_LINUX` platform
+  macro; defining it might fix the vendored header without touching
+  vendored code) before falling back to deferring it as before.
+
+**Ordered fix plan** (batch = fix -> WSL2 `ninja -k0` recount -> Windows
+rebuild re-verify -> commit -> push, same workflow as every prior pass):
+
+1. **Batch 1 (do first and alone, so its error-count delta is
+   measurable)**: the `WindowMsgData` typedef change, plus the
+   `(Int)(uintptr_t)`/`(void*)(uintptr_t)` double-cast fixes for the
+   `GadgetListBoxGetItemData`/`winGetUserData` sites the typedef change
+   can't reach. Both trees, since most affected files are per-tree
+   duplicated - fix pairs together.
+2. **Batch 2 (one commit, all in `Dependencies/Utility/Utility/`)**:
+   `__int64` macro, `LARGE_INTEGER`+`QueryPerformanceCounter`/
+   `Frequency`, `VK_RETURN`, `DeleteFile`, `CopyFile`, `GetLastError`+
+   `FormatMessage`/`FormatMessageW`, `GetDoubleClickTime`,
+   `MEMORYSTATUS`/`GlobalMemoryStatus`.
+3. **Batch 3 (real reimplementations, grouped by risk)**: `setFPMode()`
+   in both trees' `GameLogic.cpp`; `GetLocalChatConnectionAddress`
+   connect+`getsockname` rewrite in `StagingRoomGameInfo.cpp` (note
+   Generals' un-unified duplicate in the commit message, don't fix it
+   opportunistically); `Keyboard.cpp`'s locale-based French detection;
+   `ReplayMenu.cpp`'s `$HOME/Desktop` path (both trees).
+4. **Batch 4 (documented deferrals, one commit)**: `LANAPI.h` assert
+   relaxation with the corrected wire-compat comment; the
+   `gsplatform.h` `_LINUX`-define experiment (or defer); confirm
+   everything else stays deferred as already catalogued.
+
+**Flags for the implementer**: `SkirmishGameOptionsMenu.cpp`'s 5 errors
+were grouped with `MEMORYSTATUS` by the raw per-file error count but do
+NOT actually contain it (verified: zero matches) - don't assume, check
+the post-Batch-1 rebuild's residue. The ~20 other unconfirmed
+"probably `WindowMsgData`" menu files (single-digit error counts each)
+will be confirmed or refuted for free by the Batch 1/2 rebuilds - don't
+pre-investigate each one, just diff the error inventory after each
+batch, the same workflow already used successfully for 14 passes
+running.
+
 ## Review history
 
 - Draft 1: initial scope based on a targeted but incomplete grep-level
@@ -1042,3 +1349,33 @@ Draft 6 history) are both merged (see git history for #555).
   rebuild from the prior commit corroborated this. Not every fable
   finding is automatically correct; each one still needs to be checked
   against the actual code before acting on it.
+- Draft 11 (this version): five more commits worked through the
+  48-line tail (one mid-batch mistake - re-gating
+  `PingThread.cpp`/`GameResultsThread.cpp`'s `#include <winsock.h>`
+  without replacing what depended on it, regressing 44->117 errors -
+  caught and properly fixed same-session), then fixing `KeyDefs.h`
+  (the single largest remaining contributor, 121 of 153 error lines)
+  and `GameState.h`/`GameState.cpp` (another ~90 lines from one header)
+  let the build proceed **much** further than before, surfacing 446
+  total error lines across 66 files - not a regression, but a
+  previously-unreachable layer of GUI (`GameClient/GUI/Gadget`,
+  `GUICallbacks/Menus`) and `GameNetwork` code becoming visible for the
+  first time. A fable planning pass (verification only, no code
+  written) analyzed this new batch and found a second single-point-of-fix
+  on the same order: `GameWindow.h`'s `WindowMsgData` typedef
+  (`UnsignedInt`, used to carry raw pointers through the GUI
+  message-callback system) is safe to widen to a pointer-sized integer -
+  verified never stored, never serialized, zero Windows-build impact -
+  and should resolve an estimated ~180-250 of the 446 lines by itself.
+  Also corrected a prior claim: `LANAPI.h`'s `static_assert` failure was
+  previously diagnosed as a 64-bit alignment issue (Phase 2); it's
+  actually a `wchar_t`-width wire-format issue (2 bytes on Windows, 4 on
+  Linux/macOS, inside a `#pragma pack(1)` struct) that exists identically
+  on 32-bit Linux too, and belongs in Phase 7 (networking) instead. Full
+  root-cause analysis, corrections, and an ordered fix plan for the
+  remaining categories (`Network.cpp`'s `__int64`/`LARGE_INTEGER` timer
+  code, `GameLogic.cpp`'s floating-point control word, a Windows SNMP
+  local-IP-detection function that needs a `connect()`+`getsockname()`
+  rewrite instead of the previously-suggested `getifaddrs()`, and
+  several smaller mechanical shims) are in the new section above. Not
+  yet implemented - this draft is the plan, not the fix.
