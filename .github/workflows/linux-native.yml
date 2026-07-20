@@ -77,9 +77,12 @@ jobs:
       - name: Fail if unexpected error count
         if: always()
         run: |
+          # configure-log.txt accumulates both targets' output, so ~17
+          # errors each (34 total) is the expected baseline, not a
+          # regression.
           count=$(grep -c 'error:' configure-log.txt || true)
-          echo "Total error lines: $count"
-          if [ "$count" -gt 20 ]; then
-            echo "::error::Unexpectedly high error count ($count) - a regression may have landed. Expected ~17 (the already-catalogued deferred items)."
+          echo "Total error lines (both targets combined): $count"
+          if [ "$count" -gt 40 ]; then
+            echo "::error::Unexpectedly high error count ($count) - a regression may have landed. Expected ~34 (17 each, the already-catalogued deferred items)."
             exit 1
           fi

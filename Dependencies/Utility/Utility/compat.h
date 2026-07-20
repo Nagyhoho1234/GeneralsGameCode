@@ -196,12 +196,22 @@ inline void FormatMessageW(unsigned int /*flags*/, const void* /*source*/, int m
 #endif
 
 // MEMORYSTATUS / GlobalMemoryStatus - diagnostics-only in this codebase
-// (GameClient.cpp logs before/after asset-preload memory use), so a
-// sysinfo()-backed equivalent is sufficient; zero risk to gameplay.
+// (GameClient.cpp logs before/after asset-preload memory use), so this
+// is zero risk to gameplay regardless of platform.
 // Uses plain `unsigned int` rather than UnsignedInt: this header is
 // included from Lib/BaseTypeCore.h before UnsignedInt itself is
 // declared there, so that typedef isn't available yet at this point.
+#if defined(__linux__)
 #include <sys/sysinfo.h>
+#elif defined(__APPLE__)
+// <sys/sysinfo.h>/sysinfo() is Linux (glibc)-only - does not exist on
+// macOS (confirmed via real macos-latest CI, not guessed). Physical
+// RAM and swap have standard sysctl equivalents; available/free RAM
+// would need the Mach host_statistics64() API - honestly stubbed to 0
+// rather than guessed at without being able to verify the Mach API
+// surface locally (this is diagnostics-only, so no behavioral risk).
+#include <sys/sysctl.h>
+#endif
 #ifndef MEMORYSTATUS
 struct MEMORYSTATUS
 {
@@ -216,14 +226,42 @@ struct MEMORYSTATUS
 };
 inline void GlobalMemoryStatus(MEMORYSTATUS* out)
 {
+	out->dwLength = sizeof(MEMORYSTATUS);
+#if defined(__linux__)
 	struct sysinfo si;
 	sysinfo(&si);
-	out->dwLength = sizeof(MEMORYSTATUS);
 	out->dwMemoryLoad = si.totalram ? (unsigned int)(100ULL * (si.totalram - si.freeram) / si.totalram) : 0;
 	out->dwTotalPhys = (unsigned int)(si.totalram * si.mem_unit);
 	out->dwAvailPhys = (unsigned int)(si.freeram * si.mem_unit);
 	out->dwTotalPageFile = (unsigned int)(si.totalswap * si.mem_unit);
 	out->dwAvailPageFile = (unsigned int)(si.freeswap * si.mem_unit);
+#elif defined(__APPLE__)
+	uint64_t totalPhys = 0;
+	size_t size = sizeof(totalPhys);
+	sysctlbyname("hw.memsize", &totalPhys, &size, nullptr, 0);
+	out->dwTotalPhys = (unsigned int)totalPhys;
+	out->dwAvailPhys = 0; // would need Mach host_statistics64(), stubbed (see above)
+	out->dwMemoryLoad = 0;
+
+	struct xsw_usage swapUsage;
+	size = sizeof(swapUsage);
+	if (sysctlbyname("vm.swapusage", &swapUsage, &size, nullptr, 0) == 0)
+	{
+		out->dwTotalPageFile = (unsigned int)swapUsage.xsu_total;
+		out->dwAvailPageFile = (unsigned int)swapUsage.xsu_avail;
+	}
+	else
+	{
+		out->dwTotalPageFile = 0;
+		out->dwAvailPageFile = 0;
+	}
+#else
+	out->dwMemoryLoad = 0;
+	out->dwTotalPhys = 0;
+	out->dwAvailPhys = 0;
+	out->dwTotalPageFile = 0;
+	out->dwAvailPageFile = 0;
+#endif
 	out->dwTotalVirtual = out->dwTotalPhys;
 	out->dwAvailVirtual = out->dwAvailPhys;
 }
