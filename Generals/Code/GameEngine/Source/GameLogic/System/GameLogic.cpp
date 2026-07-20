@@ -29,6 +29,10 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#ifndef _WIN32
+#include <cfenv>
+#endif
+
 #include "Common/AudioAffect.h"
 #include "Common/AudioHandleSpecialValues.h"
 #include "Common/BuildAssistant.h"
@@ -193,6 +197,7 @@ void setFPMode()
 	// anything as long as it is consistent, really, but this
 	// is in the (vain?) hope of any slight speed boost.
 	//
+#ifdef _WIN32
 	_fpreset();
 
 	UnsignedInt curVal = _statusfp();
@@ -202,6 +207,19 @@ void setFPMode()
 	newVal = (newVal & ~_MCW_PC) | (_PC_24   & _MCW_PC);
 
 	_controlfp(newVal, _MCW_PC | _MCW_RC);
+#else
+	// Portable equivalent (native port plan Phase 1 Draft 11): _MCW_RC's
+	// rounding control maps to fesetround(FE_TONEAREST), matching
+	// _RC_NEAR. _MCW_PC's x87 80-bit-to-24-bit precision truncation has
+	// no SSE2 equivalent and needs none - x87 precision control doesn't
+	// exist under SSE2 codegen (x86-64), and MSVC's own _controlfp
+	// ignores _MCW_PC there too. An x87 32-bit Windows build and an SSE
+	// 64-bit Linux build can diverge in FP regardless of this shim - a
+	// pre-existing cross-platform-lockstep question (see Phase 8), not
+	// one this port creates.
+	fesetenv(FE_DFL_ENV);
+	fesetround(FE_TONEAREST);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------

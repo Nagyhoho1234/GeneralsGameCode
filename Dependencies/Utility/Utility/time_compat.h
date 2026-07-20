@@ -71,3 +71,27 @@ inline void GetLocalTime(SYSTEMTIME* out)
 	out->wMilliseconds = (unsigned short)(tv.tv_usec / 1000);
 }
 
+// LARGE_INTEGER / QueryPerformanceCounter / QueryPerformanceFrequency
+// (native port plan Phase 1 Draft 11): Network.cpp is the only file in
+// this codebase that calls these unconditionally (everywhere else -
+// PerfTimer.cpp, FrameRateLimit.cpp, W3DDevice's timing code, etc. -
+// they're already gated behind #ifdef _WIN32). Network.cpp only ever
+// reinterprets a __int64 as a LARGE_INTEGER via pointer cast (never
+// touches a .QuadPart member), so a plain same-size typedef is
+// sufficient - no union needed.
+typedef __int64 LARGE_INTEGER;
+
+inline int QueryPerformanceCounter(LARGE_INTEGER* out)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	*out = (LARGE_INTEGER)ts.tv_sec * 1000000000LL + ts.tv_nsec;
+	return 1;
+}
+
+inline int QueryPerformanceFrequency(LARGE_INTEGER* out)
+{
+	*out = 1000000000LL; // this codebase's QueryPerformanceCounter ticks in ns
+	return 1;
+}
+

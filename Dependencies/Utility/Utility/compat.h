@@ -93,6 +93,142 @@ inline int CreateDirectory(const char* path, void*)
 }
 #endif
 
+// __int64 is MSVC's pre-C++11 64-bit integer name. wwprofile.h already
+// has an identical `#ifdef _UNIX` typedef for this (pre-existing, not
+// added by this port) - a plain typedef, not a macro, since a macro
+// substitutes into token position wherever __int64 appears, including
+// wwprofile.h's own `typedef ... __int64;` name, corrupting it into
+// `typedef ... long long long long;` (a real regression this exact
+// change caused and had to fix, native port plan Phase 1 Draft 11).
+// Redeclaring an identical typedef is legal in C++, so this is safe
+// regardless of include order relative to wwprofile.h.
+typedef signed long long __int64;
+
+// VK_RETURN: the only VK_* (virtual-key) constant this codebase uses
+// anywhere (KeyboardOptionsMenu.cpp/GadgetTextEntry.cpp, both trees) -
+// unlike DIK_* scan codes, no lookup table is needed.
+#ifndef VK_RETURN
+#define VK_RETURN 0x0D
+#endif
+
+// GetDoubleClickTime: matches the existing GlobalData.cpp precedent
+// (Windows queries the OS setting; non-Windows already hardcodes 500
+// there). This is a second, independent call site predating that fix.
+#ifndef GetDoubleClickTime
+inline unsigned int GetDoubleClickTime() { return 500; }
+#endif
+
+// DeleteFile / CopyFile - Win32 BOOL-return semantics (nonzero success,
+// 0 failure), used directly by ReplayMenu.cpp/PopupReplay.cpp/Recorder.cpp.
+#ifndef DeleteFile
+inline int DeleteFile(const char* path)
+{
+	return remove(path) == 0 ? 1 : 0;
+}
+#endif
+#ifndef CopyFile
+inline int CopyFile(const char* src, const char* dst, int failIfExists)
+{
+	if (failIfExists)
+	{
+		FILE* existing = fopen(dst, "rb");
+		if (existing)
+		{
+			fclose(existing);
+			return 0;
+		}
+	}
+	FILE* in = fopen(src, "rb");
+	if (!in)
+		return 0;
+	FILE* out = fopen(dst, "wb");
+	if (!out)
+	{
+		fclose(in);
+		return 0;
+	}
+	char buf[8192];
+	size_t n;
+	int ok = 1;
+	while ((n = fread(buf, 1, sizeof(buf), in)) > 0)
+	{
+		if (fwrite(buf, 1, n, out) != n)
+		{
+			ok = 0;
+			break;
+		}
+	}
+	fclose(in);
+	fclose(out);
+	return ok;
+}
+#endif
+
+// GetLastError / FormatMessage family - errno-backed. Only ever used
+// together in this codebase (GetLastError() as FormatMessage's
+// messageId argument), so a strerror()-based equivalent is a faithful
+// substitute without reimplementing Windows' message-table lookup.
+#include <cstring>
+#ifndef GetLastError
+#define GetLastError() errno
+#endif
+#ifndef FORMAT_MESSAGE_FROM_SYSTEM
+#define FORMAT_MESSAGE_FROM_SYSTEM 0x00001000
+#endif
+#ifndef FormatMessage
+inline void FormatMessage(unsigned int /*flags*/, const void* /*source*/, int messageId,
+	unsigned int /*languageId*/, char* buffer, unsigned int size, void* /*args*/)
+{
+	strncpy(buffer, strerror(messageId), size);
+	buffer[size - 1] = '\0';
+}
+#endif
+#ifndef FormatMessageW
+inline void FormatMessageW(unsigned int /*flags*/, const void* /*source*/, int messageId,
+	unsigned int /*languageId*/, wchar_t* buffer, unsigned int size, void* /*args*/)
+{
+	const char* msg = strerror(messageId);
+	unsigned int i = 0;
+	for (; msg[i] != '\0' && i < size - 1; ++i)
+		buffer[i] = (wchar_t)(unsigned char)msg[i];
+	buffer[i] = L'\0';
+}
+#endif
+
+// MEMORYSTATUS / GlobalMemoryStatus - diagnostics-only in this codebase
+// (GameClient.cpp logs before/after asset-preload memory use), so a
+// sysinfo()-backed equivalent is sufficient; zero risk to gameplay.
+// Uses plain `unsigned int` rather than UnsignedInt: this header is
+// included from Lib/BaseTypeCore.h before UnsignedInt itself is
+// declared there, so that typedef isn't available yet at this point.
+#include <sys/sysinfo.h>
+#ifndef MEMORYSTATUS
+struct MEMORYSTATUS
+{
+	unsigned int dwLength;
+	unsigned int dwMemoryLoad;
+	unsigned int dwTotalPhys;
+	unsigned int dwAvailPhys;
+	unsigned int dwTotalPageFile;
+	unsigned int dwAvailPageFile;
+	unsigned int dwTotalVirtual;
+	unsigned int dwAvailVirtual;
+};
+inline void GlobalMemoryStatus(MEMORYSTATUS* out)
+{
+	struct sysinfo si;
+	sysinfo(&si);
+	out->dwLength = sizeof(MEMORYSTATUS);
+	out->dwMemoryLoad = si.totalram ? (unsigned int)(100ULL * (si.totalram - si.freeram) / si.totalram) : 0;
+	out->dwTotalPhys = (unsigned int)(si.totalram * si.mem_unit);
+	out->dwAvailPhys = (unsigned int)(si.freeram * si.mem_unit);
+	out->dwTotalPageFile = (unsigned int)(si.totalswap * si.mem_unit);
+	out->dwAvailPageFile = (unsigned int)(si.freeswap * si.mem_unit);
+	out->dwTotalVirtual = out->dwTotalPhys;
+	out->dwAvailVirtual = out->dwAvailPhys;
+}
+#endif
+
 // _MAX_DRIVE, _MAX_DIR, _MAX_FNAME, _MAX_EXT, _MAX_PATH
 #ifndef _MAX_DRIVE
 #define _MAX_DRIVE 3
