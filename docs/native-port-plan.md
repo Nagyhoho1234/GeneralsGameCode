@@ -739,11 +739,27 @@ under a real GL 3.3 core-profile renderer**, not just on paper:
   vs GL bottom-left) needs a V-flip at texture upload or UV-generation
   time - noted in the spike's code but not exercised, since checking it
   properly needs a real D3D8 reference render to diff against, which this
-  spike doesn't have. Also still not run on an actual macOS GL 4.1 core
-  context - Mesa/llvmpipe closes the Linux side of the desk-check's
-  concern, but macOS's own GL implementation (stricter, deprecated-but-
-  present 4.1 core) is a distinct codebase from both NVIDIA's and Mesa's
-  and hasn't been exercised at all yet.
+  spike doesn't have.
+- **macOS GL 4.1 core validation: attempted via GitHub-hosted CI, found
+  to be a platform dead end, not a code problem.**
+  `.github/workflows/macos-spike.yml` was built and run 4 times on
+  `macos-latest`. The spike (after fixing a real portability bug each
+  attempt caught: no `<GL/gl.h>` on macOS at all, needs `<OpenGL/gl3.h>`;
+  then a GLFW error callback added for diagnostics; then minimizing
+  depth/stencil/sample window hints) builds clean every time, but
+  `glfwCreateWindow` always fails with `NSGL: Failed to find a suitable
+  pixel format` (GLFW error 0x10009). Web research found multiple
+  unrelated projects hitting this exact wall on GitHub's hosted macOS
+  runners (go-gl/glfw#335, Razakhel/RaZ#21, go-flutter-desktop/
+  go-flutter#504) - the consistent, independently-reached conclusion is
+  that these runners are VMs without real hardware-accelerated OpenGL/GPU
+  support, and that Xvfb-style workarounds don't help since it isn't a
+  display-server issue. **Conclusion: this specific validation needs a
+  real Mac or a self-hosted runner with actual GPU access - it cannot be
+  done via GitHub-hosted CI, and further attempts there would just be
+  re-discovering the same platform limitation.** The workflow is left in
+  place (with this finding documented in its own header comment) for
+  whenever real macOS hardware is available, rather than deleted.
 
 This resolves the plan's single biggest previously-open unknown: option
 (a) is no longer just evidence-backed by desk-check, it has a working,

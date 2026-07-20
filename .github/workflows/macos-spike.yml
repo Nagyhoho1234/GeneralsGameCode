@@ -8,10 +8,28 @@ name: macOS Phase 3 Spike (native-port-plan)
 # desk-check specifically flagged its stricter core-profile behavior as an
 # open concern.
 #
-# Unlike .github/workflows/macos-native.yml, this is expected to actually
-# pass: native-port-spike/ is a standalone CMake project with its own
-# CMakeLists.txt (see that directory), not gated on the main game build's
-# Phase 1/2 work.
+# CONFIRMED NON-STARTER on GitHub-hosted macos-latest runners: the build
+# succeeds, but glfwCreateWindow always fails with "NSGL: Failed to find a
+# suitable pixel format" (GLFW error 0x10009), reproduced across 4 runs
+# (build succeeded on 3 of them; the first also failed to build for an
+# unrelated reason, fixed separately) even after minimizing every pixel-
+# format-affecting window hint (depth/stencil/samples all set to 0). Web
+# research turned up multiple independent, unrelated projects hitting this
+# exact same wall (go-gl/glfw#335, Razakhel/RaZ#21, go-flutter-desktop/
+# go-flutter#504) - the consistent conclusion is that GitHub's hosted macOS
+# runners are VMs without real hardware-accelerated OpenGL/GPU support, and
+# Xvfb-style workarounds do not help since it isn't a display-server
+# problem. This is a platform limitation, not something fixable in this
+# workflow or in native-port-spike/'s code. Left in place for whenever a
+# real Mac or a self-hosted macOS runner with actual GPU access becomes
+# available - do not re-attempt on macos-latest without new evidence this
+# has changed.
+#
+# Unlike .github/workflows/macos-native.yml, this doesn't fail for a
+# version-mismatch/build-system reason - native-port-spike/ is a standalone
+# CMake project with its own CMakeLists.txt (see that directory), not gated
+# on the main game build's Phase 1/2 work. It fails purely on runtime GPU
+# context creation, after a clean build.
 #
 # Manually triggered only, matching macos-native.yml's convention.
 
