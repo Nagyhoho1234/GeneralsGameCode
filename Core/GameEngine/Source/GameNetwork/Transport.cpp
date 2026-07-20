@@ -88,6 +88,7 @@ Bool Transport::init( UnsignedInt ip, UnsignedShort port )
 	// ----- Initialize Winsock -----
 	if (!m_winsockInit)
 	{
+#ifdef _WIN32
 		WORD verReq = MAKEWORD(2, 2);
 		WSADATA wsadata;
 
@@ -100,6 +101,8 @@ Bool Transport::init( UnsignedInt ip, UnsignedShort port )
 			WSACleanup();
 			return false;
 		}
+#endif
+		// BSD sockets (Linux/macOS) need no equivalent of WSAStartup.
 		m_winsockInit = true;
 	}
 
@@ -166,7 +169,9 @@ void Transport::reset()
 
 	if (m_winsockInit)
 	{
+#ifdef _WIN32
 		WSACleanup();
+#endif
 		m_winsockInit = false;
 	}
 }
@@ -326,7 +331,7 @@ Bool Transport::doRecv()
 		}
 
 		// Something there; stick it somewhere
-//		DEBUG_LOG(("Saw %d bytes from %d:%d", len, ntohl(from.sin_addr.S_un.S_addr), ntohs(from.sin_port)));
+//		DEBUG_LOG(("Saw %d bytes from %d:%d", len, ntohl(from.sin_addr.s_addr), ntohs(from.sin_port)));
 		m_incomingPackets[m_statisticsSlot]++;
 		m_incomingBytes[m_statisticsSlot] += len;
 
@@ -344,7 +349,7 @@ Bool Transport::doRecv()
 						(Int)(TheGlobalData->m_latencyAmplitude * sin(now * TheGlobalData->m_latencyPeriod)) +
 						GameClientRandomValue(-TheGlobalData->m_latencyNoise, TheGlobalData->m_latencyNoise);
 					m_delayedInBuffer[i].message.length = incomingMessage.length;
-					m_delayedInBuffer[i].message.addr = ntohl(from.sin_addr.S_un.S_addr);
+					m_delayedInBuffer[i].message.addr = ntohl(from.sin_addr.s_addr);
 					m_delayedInBuffer[i].message.port = ntohs(from.sin_port);
 					memcpy(&m_delayedInBuffer[i].message, buf, len);
 					break;
@@ -357,7 +362,7 @@ Bool Transport::doRecv()
 				{
 					// Empty slot; use it
 					m_inBuffer[i].length = incomingMessage.length;
-					m_inBuffer[i].addr = ntohl(from.sin_addr.S_un.S_addr);
+					m_inBuffer[i].addr = ntohl(from.sin_addr.s_addr);
 					m_inBuffer[i].port = ntohs(from.sin_port);
 					memcpy(&m_inBuffer[i], buf, len);
 					break;

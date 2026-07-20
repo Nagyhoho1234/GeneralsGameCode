@@ -18,11 +18,22 @@
 #include "PreRTS.h"
 #include "GameClient/ClientInstance.h"
 
+#ifndef _WIN32
+#include <cstdio>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+#endif
+
 #define GENERALS_GUID "685EAFF2-3216-4265-B047-251C5F4B82F3"
 
 namespace rts
 {
+#ifdef _WIN32
 HANDLE ClientInstance::s_mutexHandle = nullptr;
+#else
+int ClientInstance::s_mutexHandle = -1;
+#endif
 UnsignedInt ClientInstance::s_instanceIndex = 0;
 
 #if defined(RTS_MULTI_INSTANCE)
@@ -30,6 +41,31 @@ Bool ClientInstance::s_isMultiInstance = true;
 #else
 Bool ClientInstance::s_isMultiInstance = false;
 #endif
+
+namespace
+{
+#ifndef _WIN32
+// POSIX equivalent of the named-Windows-mutex "is another instance already
+// running" check (native port plan Phase 1): a non-blocking flock() on a
+// well-known lock file. Returns an open fd holding the lock on success, or
+// -1 if another instance already holds it (matching CreateMutex + a
+// GetLastError()==ERROR_ALREADY_EXISTS check).
+int tryLockInstance(const char* name)
+{
+	char path[256];
+	snprintf(path, sizeof(path), "/tmp/%s.lock", name);
+	int fd = open(path, O_CREAT | O_RDWR, 0666);
+	if (fd < 0)
+		return -1;
+	if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+	{
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+#endif
+}
 
 bool ClientInstance::initialize()
 {
@@ -48,10 +84,15 @@ bool ClientInstance::initialize()
 			if (s_instanceIndex > 0u)
 			{
 				char idStr[33];
+#ifdef _WIN32
 				itoa(s_instanceIndex, idStr, 10);
+#else
+				snprintf(idStr, sizeof(idStr), "%u", s_instanceIndex);
+#endif
 				guidStr.push_back('-');
 				guidStr.append(idStr);
 			}
+#ifdef _WIN32
 			s_mutexHandle = CreateMutex(nullptr, FALSE, guidStr.c_str());
 			if (GetLastError() == ERROR_ALREADY_EXISTS)
 			{
@@ -64,9 +105,19 @@ bool ClientInstance::initialize()
 				++s_instanceIndex;
 				continue;
 			}
+#else
+			s_mutexHandle = tryLockInstance(guidStr.c_str());
+			if (s_mutexHandle < 0)
+			{
+				// Try again with a new instance.
+				++s_instanceIndex;
+				continue;
+			}
+#endif
 		}
 		else
 		{
+#ifdef _WIN32
 			s_mutexHandle = CreateMutex(nullptr, FALSE, getFirstInstanceName());
 			if (GetLastError() == ERROR_ALREADY_EXISTS)
 			{
@@ -77,6 +128,13 @@ bool ClientInstance::initialize()
 				}
 				return false;
 			}
+#else
+			s_mutexHandle = tryLockInstance(getFirstInstanceName());
+			if (s_mutexHandle < 0)
+			{
+				return false;
+			}
+#endif
 		}
 		break;
 	}
@@ -86,7 +144,11 @@ bool ClientInstance::initialize()
 
 bool ClientInstance::isInitialized()
 {
+#ifdef _WIN32
 	return s_mutexHandle != nullptr;
+#else
+	return s_mutexHandle >= 0;
+#endif
 }
 
 bool ClientInstance::isMultiInstance()

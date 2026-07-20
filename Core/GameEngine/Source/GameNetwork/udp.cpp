@@ -35,6 +35,15 @@
 //#include "GameNetwork/NetworkInterface.h"
 #include "GameNetwork/udp.h"
 
+// Winsock's getsockname/recvfrom/getsockopt length parameters are plain int;
+// BSD sockets (Linux/macOS) use socklen_t instead - a portable stand-in type
+// avoids touching every call site individually (native port plan Phase 1).
+#ifdef _WIN32
+typedef int socklen_compat_t;
+#else
+typedef socklen_t socklen_compat_t;
+#endif
+
 
 //-------------------------------------------------------------------------
 
@@ -122,7 +131,11 @@ UDP::UDP()
 UDP::~UDP()
 {
 	if (fd)
+#ifdef _WIN32
 		closesocket(fd);
+#else
+		close(fd);
+#endif
 }
 
 Int UDP::Bind(const char *Host,UnsignedShort port)
@@ -177,7 +190,7 @@ Int UDP::Bind(UnsignedInt IP,UnsignedShort Port)
     return(status);
   }
 
-  int namelen=sizeof(addr);
+  socklen_compat_t namelen=sizeof(addr);
   getsockname(fd, (struct sockaddr *)&addr, &namelen);
 
   myIP=ntohl(addr.sin_addr.s_addr);
@@ -262,7 +275,7 @@ Int UDP::Write(const unsigned char *msg,UnsignedInt len,UnsignedInt IP,UnsignedS
 Int UDP::Read(unsigned char *msg,UnsignedInt len,sockaddr_in *from)
 {
   Int retval;
-  int    alen=sizeof(sockaddr_in);
+  socklen_compat_t alen=sizeof(sockaddr_in);
 
   if (from!=nullptr)
   {
@@ -373,8 +386,12 @@ UDP::sockStat UDP::GetStatus()
       return ALREADY;
     case EAGAIN:
       return AGAIN;
+#if EWOULDBLOCK != EAGAIN
+    // On glibc/Linux, EWOULDBLOCK and EAGAIN are the same value - only add
+    // this as a separate case where the platform actually distinguishes them.
     case EWOULDBLOCK:
       return WOULDBLOCK;
+#endif
     case EBADF:
       return BADF;
     default:
@@ -505,7 +522,8 @@ Int UDP::SetOutputBuffer(UnsignedInt bytes)
 
 int UDP::GetInputBuffer()
 {
-   int retval,arg=0,len=sizeof(int);
+   int retval,arg=0;
+   socklen_compat_t len=sizeof(int);
 
    retval=getsockopt(fd,SOL_SOCKET,SO_RCVBUF,
      (char *)&arg,&len);
@@ -515,7 +533,8 @@ int UDP::GetInputBuffer()
 
 int UDP::GetOutputBuffer()
 {
-   int retval,arg=0,len=sizeof(int);
+   int retval,arg=0;
+   socklen_compat_t len=sizeof(int);
 
    retval=getsockopt(fd,SOL_SOCKET,SO_SNDBUF,
      (char *)&arg,&len);

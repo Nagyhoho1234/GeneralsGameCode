@@ -49,7 +49,14 @@ public:
 	static const char* getFirstInstanceName();
 
 private:
+#ifdef _WIN32
 	static HANDLE s_mutexHandle;
+#else
+	// POSIX equivalent of the Windows named-mutex instance lock (native
+	// port plan Phase 1): an open file descriptor holding an flock() lock,
+	// or -1 if not initialized.
+	static int s_mutexHandle;
+#endif
 	static UnsignedInt s_instanceIndex;
 	static Bool s_isMultiInstance;
 };
