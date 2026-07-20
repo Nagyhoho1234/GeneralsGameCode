@@ -275,6 +275,61 @@ existing Windows build, not just the three originally-named files.
    slips, macOS is not reachable at all regardless of progress
    elsewhere.
 
+## Provenance and licensing of external reference material
+
+Two external forks are referenced above as architectural evidence that
+native ports are achievable (upstream discussion #2886 for macOS,
+Fighter19's fork for Linux/DXVK per upstream issue #2088). Checked
+directly before relying on either further:
+
+- This project's own license is genuinely GPLv3 (EA released the
+  original C&C Generals/Zero Hour source under it, with additional
+  terms) - GitHub's "Other" classification is just because the
+  additional terms don't cleanly match a standard SPDX tag, not because
+  the license is actually unclear.
+- `dvcdsys/GeneralsGameCode-macOS` is a fork of *this exact repository*
+  - as a derivative work it is bound by the same GPLv3 terms regardless
+  of what license file (if any) it carries itself. Legal risk in
+  referencing it is therefore low. But the author's own discussion post
+  states it plainly: "built with heavy use of AI coding tools ... not a
+  hand-crafted monument" - self-described as informal, casually-tested
+  work (verified in normal play, not held to a contribution-review bar).
+- Fighter19's fork shows no detected license file (`NOASSERTION`) -
+  almost certainly still GPLv3-bound as a derivative work, but this
+  hasn't been independently confirmed the way the macOS fork's lineage
+  was.
+
+**Rule for implementation**: treat both forks as architectural/
+approach references only - "this shape of change is achievable, here's
+roughly what area of the engine it touches" - not as a source to copy
+code from. Whoever implements each phase should independently derive
+and verify the actual code against this repo's own structure and
+conventions (the same discipline already used throughout this session:
+verify claims against ground truth, don't trust a source - internal or
+external - blindly), rather than porting logic across from either fork
+wholesale.
+
+## Readiness assessment
+
+**Not implementation-ready as a whole.** This is a validated, scoped
+roadmap (Phase 0 through 8), not a work-ready backlog. Two concrete
+gates stand between this plan and writing real Phase 5 rendering code:
+
+1. Phase 0's extended inventory (W3DDevice's 131 files, networking's
+   48+ files, registry/timer call sites) is still a count and a
+   sampling, not a real file-by-file list - the kind of thing that
+   should be done before committing effort estimates to it, the same
+   way this plan's own first draft turned out to be short by ~2-3x
+   once someone actually checked.
+2. The Phase 3 graphics-API decision is a recommendation on paper, not
+   a validated spike. Nothing past Phase 4 should start until that
+   spike (render2d + one ShaderClass-driven textured mesh, not a bare
+   triangle) has actually run.
+
+Phase 0 and the Phase 1 build-system slice, by contrast, are concrete
+and ready to start now - they're inventory and CMake-gating work with
+no open design questions blocking them.
+
 ## Review history
 
 - Draft 1: initial scope based on a targeted but incomplete grep-level
@@ -285,4 +340,5 @@ existing Windows build, not just the three originally-named files.
   repo. Corrected: inventory undercounted ~2-3x, W3DDevice was nearly
   absent, build-system and 64-bit work were mis-sequenced, shader
   assets and several whole subsystems (networking, registry, timers,
-  COM/ATL) were missing outright.
+  COM/ATL) were missing outright. Added explicit provenance/licensing
+  review of the two external forks referenced as evidence.
