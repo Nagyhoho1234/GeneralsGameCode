@@ -163,6 +163,60 @@
             "displayName": "Unix 32bit VCPKG Release"
         },
         {
+            "name": "linux-x64",
+            "displayName": "Linux 64bit Release (native)",
+            "description": "Native 64-bit Linux build with the system compiler directly, no vcpkg toolchain (native port plan Phase 1/2). Builds the currently-portable subset of the game (Core/GameEngine + Core/GameEngineDevice's non-D3D8/non-Win32 sources for both Generals and GeneralsMD) - the full game executable still needs Phase 3-7 (rendering/audio/windowing) before it links.",
+            "generator": "Ninja",
+            "hidden": false,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "linux-x64-debug",
+            "inherits": "linux-x64",
+            "hidden": false,
+            "displayName": "Linux 64bit Debug (native)",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "RTS_BUILD_OPTION_DEBUG": "ON"
+            }
+        },
+        {
+            "name": "macos-arm64",
+            "displayName": "macOS 64bit Release (native, Apple Silicon)",
+            "description": "Native macOS build with the system Clang toolchain directly, no vcpkg (native port plan Phase 1/2). Same portable subset as linux-x64. Advisory - the main game build has not yet been run against real Apple hardware for this preset (only the standalone native-port-spike graphics prototype has, in macos-native CI).",
+            "generator": "Ninja",
+            "hidden": false,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+                "CMAKE_BUILD_TYPE": "Release",
+                "CMAKE_OSX_ARCHITECTURES": "arm64"
+            }
+        },
+        {
+            "name": "macos-arm64-debug",
+            "inherits": "macos-arm64",
+            "hidden": false,
+            "displayName": "macOS 64bit Debug (native, Apple Silicon)",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "RTS_BUILD_OPTION_DEBUG": "ON"
+            }
+        },
+        {
+            "name": "macos-x64",
+            "inherits": "macos-arm64",
+            "hidden": false,
+            "displayName": "macOS 64bit Release (native, Intel)",
+            "cacheVariables": {
+                "CMAKE_OSX_ARCHITECTURES": "x86_64"
+            }
+        },
+        {
             "name": "mingw-w64-i686",
             "displayName": "MinGW-w64 32-bit (i686) Release",
             "generator": "Unix Makefiles",
@@ -273,6 +327,36 @@
             "displayName": "Build Unix 32bit VCPKG Release",
             "description": "Build Unix 32bit VCPKG Release",
             "configuration": "Release"
+        },
+        {
+            "name": "linux-x64",
+            "configurePreset": "linux-x64",
+            "displayName": "Build Linux 64bit Release (native)",
+            "description": "Build Linux 64bit Release (native)"
+        },
+        {
+            "name": "linux-x64-debug",
+            "configurePreset": "linux-x64-debug",
+            "displayName": "Build Linux 64bit Debug (native)",
+            "description": "Build Linux 64bit Debug (native)"
+        },
+        {
+            "name": "macos-arm64",
+            "configurePreset": "macos-arm64",
+            "displayName": "Build macOS 64bit Release (native, Apple Silicon)",
+            "description": "Build macOS 64bit Release (native, Apple Silicon)"
+        },
+        {
+            "name": "macos-arm64-debug",
+            "configurePreset": "macos-arm64-debug",
+            "displayName": "Build macOS 64bit Debug (native, Apple Silicon)",
+            "description": "Build macOS 64bit Debug (native, Apple Silicon)"
+        },
+        {
+            "name": "macos-x64",
+            "configurePreset": "macos-x64",
+            "displayName": "Build macOS 64bit Release (native, Intel)",
+            "description": "Build macOS 64bit Release (native, Intel)"
         },
         {
             "name": "mingw-w64-i686",
@@ -447,6 +531,71 @@
                 {
                     "type": "build",
                     "name": "unix"
+                }
+            ]
+        },
+        {
+            "name": "linux-x64",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "linux-x64"
+                },
+                {
+                    "type": "build",
+                    "name": "linux-x64"
+                }
+            ]
+        },
+        {
+            "name": "linux-x64-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "linux-x64-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "linux-x64-debug"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64"
+                }
+            ]
+        },
+        {
+            "name": "macos-arm64-debug",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-arm64-debug"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-arm64-debug"
+                }
+            ]
+        },
+        {
+            "name": "macos-x64",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "macos-x64"
+                },
+                {
+                    "type": "build",
+                    "name": "macos-x64"
                 }
             ]
         },
