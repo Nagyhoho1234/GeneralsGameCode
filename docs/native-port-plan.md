@@ -446,18 +446,57 @@ networking's 48+ files, and the registry/timer/thread call sites -
 these are not small enough to estimate from a grep count the way the
 smaller subsystems are.
 
-**Phase 1 (moved earlier from "Phase 6") - Build system, minimum
-viable slice.** This must land before any prototyping can happen at
-all: `CMakeLists.txt` currently includes `dx8.cmake`/`miles.cmake`/
-`bink.cmake` only under `(WIN32 ...) AND CMAKE_SIZEOF_VOID_P EQUAL 4`,
-but `Core/GameEngineDevice/CMakeLists.txt:229-234` links
-`d3d8lib`/`milesstub`/`binkstub` **unconditionally**, and no game
-target CMakeLists gates on `WIN32` at all. Configure fails on Linux/
-macOS today before a single line of porting code runs. This phase is:
-gate the Windows-only link dependencies and device-layer sources behind
-`if(WIN32)`, add a minimal `if(NOT WIN32)` stub path so the game
-target at least configures, and add real (not 32-bit-only) Linux/macOS
-CMake presets.
+**Phase 1 (moved earlier from "Phase 6") - Build system. In progress;
+scope was corrected empirically, not just re-estimated.** The original
+framing here - "`Core/GameEngineDevice/CMakeLists.txt:229-234` links
+`d3d8lib`/`milesstub`/`binkstub` unconditionally... Configure fails on
+Linux/macOS today before a single line of porting code runs" - was
+wrong on the specific mechanism, discovered by actually running
+`cmake -S . -B ... -G Ninja` on Linux (WSL2 Ubuntu 26.04, no vcpkg/
+preset) rather than reasoning from the source alone: **CONFIGURE
+already succeeds today**, unchanged. CMake's `target_link_libraries`
+does not error at configure time for a plain library name like
+`d3d8lib` when no CMake target by that name exists - it only fails at
+link time. The real blocker is at BUILD time, and starts far earlier
+than GameEngineDevice: even `WWLib`/`WWMath` (linked by essentially
+everything) didn't compile on Linux.
+
+Fixed so far (commit `1ad028e5e`): `cmake/config-build.cmake` already
+unconditionally defines `_UNIX` on UNIX (prior upstream work, `e53e4d266`
+"Fix Linux compilation of WWLib (#698)"), which activates
+`#ifdef _UNIX / #include "osdep.h"` blocks in `WWMath`'s
+`vector3.h`/`matrix3d.h` and `WWSaveLoad`'s `pointerremap.h` - but
+`osdep.h` was never added. Confirmed via full git history (present
+since the initial 2003 EA source commit) this header has never existed
+in any public release of this codebase - it almost certainly referred
+to an internal Westwood build-system header shared across their
+W3D-engine titles, never part of the Generals/Zero Hour release. Added
+as an empty, documented stub (confirmed empirically neither file
+actually uses a symbol from it). Also fixed, once this stopped masking
+them: an unconditional `<windows.h>` in `WWLib`'s precompiled-header
+list; an unconditional, unused `<windows.h>` in `WWSaveLoad/saveload.cpp`;
+and `WWLib/stringex.h`'s `strlcpy`/`strlcat`/`wcslcpy`/`wcslcat`
+fallbacks conflicting with glibc 2.38+'s own versions (the `#ifndef
+HAVE_STRLCPY`-style guards were already there, clearly designed for
+exactly this, but nothing defined the macros; wired up
+`check_symbol_exists` detection; also found a second unguarded
+declaration block the original guard didn't cover).
+
+**Remaining, catalogued but not yet fixed** (surfaced by actually
+building `g_gameenginedevice` on Linux with `ninja -k0` to collect
+every independent error rather than stopping at the first): D3D8
+(`dx8wrapper.h`, and - surprising - `WWMath`'s own `matrix3d.cpp`/
+`matrix4.cpp` directly include `d3d8types.h`), Winsock/`imagehlp.h`/
+`atlbase.h`/`process.h` (`WWDownload`'s legacy FTP/WOL-browser code,
+`WWLib`'s `DbgHelpLoader`, `PreRTS.h`), a non-standard `<new.h>` include
+in `GameMemory.h`, and a third `registry.cpp` (`WWDownload`'s - distinct
+from the one already unified into `Core/GameEngine` in this plan's
+unify-before-porting work) calling the Windows Registry API directly
+with zero gating. Gating all of this out (accepting a non-functional
+stub, not a working non-Windows renderer/network/audio layer - that's
+Phases 4-7) is a materially larger, differently-shaped task than "gate
+one CMakeLists.txt link line," and real (not 32-bit-only) Linux/macOS
+CMake presets still haven't been added either.
 
 **Phase 2 - 64-bit, promoted from "non-goal" to prerequisite (macOS
 only, strongly recommended for Linux too).** Every game-capable preset
@@ -878,3 +917,19 @@ Draft 6 history) are both merged (see git history for #555).
   `shader.cpp`/`mapper.cpp`/`vertmaterial.cpp` unification in progress.
   The Phase 3 spike ran for the first time - see "Readiness assessment"
   for what it did and didn't validate.
+- Draft 7: Phase 3 fully closed (spike passed on a third independent GL
+  implementation, real macOS GL 4.1 core via a vendored GLFW fix after
+  an initial "platform dead end" CI conclusion turned out to be wrong;
+  texture-origin V-flip validated too). `W3DDevice/GameLogic` unified.
+  Phase 1 work started and its scope corrected empirically rather than
+  re-estimated from reading source: CONFIGURE was already found to
+  succeed on Linux (contrary to this doc's prior claim), and the real
+  blocker turned out to start at BUILD time, in WWLib/WWMath - much
+  earlier and more foundational than the GameEngineDevice-focused
+  description this doc had. Fixed the foundational blockers found there
+  (a decades-old missing `osdep.h` traced through full git history to
+  Westwood's original 2003 source release; three related portability
+  bugs it had been masking); catalogued, but did not yet fix, a longer
+  tail of D3D8/Winsock/ATL/registry issues found by building
+  `g_gameenginedevice` on Linux with `ninja -k0` to collect every
+  independent error at once.
