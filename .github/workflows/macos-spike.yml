@@ -1,0 +1,64 @@
+name: macOS Phase 3 Spike (native-port-plan)
+
+# Builds and runs native-port-spike/ (docs/native-port-plan.md Phase 3) on a
+# real macOS GL 4.1 core-profile implementation - the one GL implementation
+# this spike hadn't been validated against yet. Windows/NVIDIA and Linux/
+# Mesa-llvmpipe were already checked locally (see the plan doc's Phase 3
+# section); macOS's own GL stack is a distinct codebase from both and the
+# desk-check specifically flagged its stricter core-profile behavior as an
+# open concern.
+#
+# Unlike .github/workflows/macos-native.yml, this is expected to actually
+# pass: native-port-spike/ is a standalone CMake project with its own
+# CMakeLists.txt (see that directory), not gated on the main game build's
+# Phase 1/2 work.
+#
+# Manually triggered only, matching macos-native.yml's convention.
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+
+jobs:
+  macos-spike:
+    name: Build + run native-port-spike on macos-latest
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Show toolchain versions
+        run: |
+          echo "### Toolchain" >> $GITHUB_STEP_SUMMARY
+          clang --version | tee -a $GITHUB_STEP_SUMMARY
+          cmake --version | tee -a $GITHUB_STEP_SUMMARY
+          uname -a | tee -a $GITHUB_STEP_SUMMARY
+
+      - name: Install build dependencies (Homebrew)
+        run: brew install ninja || true
+
+      - name: Configure
+        run: cmake -S native-port-spike -B native-port-spike/build -G Ninja
+
+      - name: Build
+        run: cmake --build native-port-spike/build
+
+      - name: Run spike
+        working-directory: native-port-spike/build
+        run: ./native_port_spike
+
+      - name: Upload spike output image
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-spike-output
+          path: native-port-spike/build/spike_output.png
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### macOS Phase 3 spike run" >> $GITHUB_STEP_SUMMARY
+          echo "See the uploaded spike_output.png artifact and the 'Run spike' step's stdout (clip-space delta, GL_VERSION/GL_RENDERER, non-background pixel count) above." >> $GITHUB_STEP_SUMMARY
