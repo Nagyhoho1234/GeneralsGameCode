@@ -1025,3 +1025,20 @@ Draft 6 history) are both merged (see git history for #555).
   failure (Phase 2 territory), real COM/ATL work (`WebBrowser.h`, Phase
   7), and an error inside a vendored third-party dependency's own header
   (not this codebase's code to fix).
+- Draft 10: a fable review of the Draft 9 batch (`ffd7fd552`..`2f63f1e53`)
+  confirmed the "both trees fixed" check held everywhere, and found
+  three real issues (commit `22a13a291`): `PerfTimer.cpp` assumed x86
+  unconditionally on non-Windows (`__rdtsc()` via `<x86intrin.h>`),
+  which would have broken on Apple Silicon macOS - a real target of this
+  port, not a hypothetical one; `ClientInstance.cpp`'s `flock()` lock
+  conflated a real `open()` failure with "another instance is running,"
+  risking an infinite retry loop, and used a predictable, shared,
+  world-writable `/tmp` path; and three `_NSGetExecutablePath`/`readlink`
+  call sites didn't initialize their buffer before the call, risking
+  operating on uninitialized stack memory on failure. All three fixed.
+  One flagged finding (a `compat.h` macro allegedly leaking onto
+  Windows) was independently re-verified as a false positive - the
+  macro was already correctly scoped, and the already-passing Windows
+  rebuild from the prior commit corroborated this. Not every fable
+  finding is automatically correct; each one still needs to be checked
+  against the actual code before acting on it.
