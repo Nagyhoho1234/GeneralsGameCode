@@ -28,7 +28,16 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#ifdef _WIN32
 #include <winsock.h>	// This one has to be here. Prevents collisions with windsock2.h
+#else
+#include <errno.h>
+#include <netdb.h> // gethostbyname, struct hostent, h_errno
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#endif
 
 #include "GameNetwork/GameSpy/PingThread.h"
 #include "mutex.h"
@@ -246,11 +255,14 @@ void PingThreadClass::Thread_Function()
 	try {
 	PingRequest req;
 
+#ifdef _WIN32
 	WSADATA wsaData;
 
 	// Fire up winsock (prob already done, but doesn't matter)
 	WORD wVersionRequested = MAKEWORD(1, 1);
 	WSAStartup( wVersionRequested, &wsaData );
+#endif
+	// BSD sockets (Linux/macOS) need no equivalent of WSAStartup.
 
 	while ( running )
 	{
@@ -269,7 +281,11 @@ void PingThreadClass::Thread_Function()
 			}
 			else
 			{
+#ifdef _WIN32
 				HOSTENT *hostStruct;
+#else
+				struct hostent *hostStruct;
+#endif
 				in_addr *hostNode;
 				hostStruct = gethostbyname(hostnameBuffer);
 				if (hostStruct == nullptr)
@@ -320,7 +336,9 @@ void PingThreadClass::Thread_Function()
 		Switch_Thread();
 	}
 
+#ifdef _WIN32
 	WSACleanup();
+#endif
 	} catch ( ... ) {
 		DEBUG_CRASH(("Exception in ping thread!"));
 	}
@@ -332,6 +350,12 @@ void PingThreadClass::Thread_Function()
 //-------------------------------------------------------------------------
 //-------------------------------------------------------------------------
 //-------------------------------------------------------------------------
+
+// The rest of this file implements doPing() via Windows' ICMP.DLL.
+// A portable version needs a raw-socket ICMP echo implementation (which
+// requires elevated privileges/CAP_NET_RAW on Linux/macOS) - real work,
+// not a straightforward reimplementation. Deferred; see native port plan.
+#ifdef _WIN32
 
 HANDLE WINAPI IcmpCreateFile(); /* INVALID_HANDLE_VALUE on error */
 BOOL WINAPI IcmpCloseHandle(HANDLE IcmpHandle); /* FALSE on error */
@@ -569,5 +593,15 @@ cleanup:
    return pingTime;
 }
 
+#else // !_WIN32
+
+Int PingThreadClass::doPing(UnsignedInt IP, Int timeout)
+{
+	// Honest stub (native port plan Phase 1): no portable ICMP echo yet.
+	// Report "ping unknown" rather than fabricate a value.
+	return -1;
+}
+
+#endif // _WIN32
 
 //-------------------------------------------------------------------------

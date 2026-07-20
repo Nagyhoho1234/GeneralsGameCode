@@ -28,7 +28,16 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#ifdef _WIN32
 #include <winsock.h>	// This one has to be here. Prevents collisions with winsock2.h
+#else
+#include <errno.h>
+#include <netdb.h> // gethostbyname, struct hostent, h_errno
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#endif
 
 #include "GameNetwork/GameSpy/GameResultsThread.h"
 #include "mutex.h"
@@ -208,11 +217,14 @@ void GameResultsThreadClass::Thread_Function()
 	try {
 	GameResultsRequest req;
 
+#ifdef _WIN32
 	WSADATA wsaData;
 
 	// Fire up winsock (prob already done, but doesn't matter)
 	WORD wVersionRequested = MAKEWORD(1, 1);
 	WSAStartup( wVersionRequested, &wsaData );
+#endif
+	// BSD sockets (Linux/macOS) need no equivalent of WSAStartup.
 
 	while ( running )
 	{
@@ -231,7 +243,11 @@ void GameResultsThreadClass::Thread_Function()
 			}
 			else
 			{
+#ifdef _WIN32
 				HOSTENT *hostStruct;
+#else
+				struct hostent *hostStruct;
+#endif
 				in_addr *hostNode;
 				hostStruct = gethostbyname(hostnameBuffer);
 				if (hostStruct == nullptr)
@@ -262,7 +278,9 @@ void GameResultsThreadClass::Thread_Function()
 		Switch_Thread();
 	}
 
+#ifdef _WIN32
 	WSACleanup();
+#endif
 	} catch ( ... ) {
 		DEBUG_CRASH(("Exception in results thread!"));
 	}
@@ -361,6 +379,7 @@ Int GameResultsThreadClass::sendGameResults( UnsignedInt IP, UnsignedShort port,
 	// Start the connection process....
 	if( connect( sock, (struct sockaddr *)&sockAddr, sizeof( sockAddr ) ) == -1 )
 	{
+#ifdef _WIN32
 		error = WSAGetLastError();
 		DEBUG_LOG(("GameResultsThreadClass::sendGameResults() - connect() returned %d(%s)", error, getWSAErrorString(error)));
 		if( ( error == WSAEWOULDBLOCK ) || ( error == WSAEINVAL ) || ( error == WSAEALREADY ) )
@@ -373,8 +392,23 @@ Int GameResultsThreadClass::sendGameResults( UnsignedInt IP, UnsignedShort port,
 			closesocket( sock );
 			return( -1 );
 		}
+#else
+		error = errno;
+		DEBUG_LOG(("GameResultsThreadClass::sendGameResults() - connect() returned %d(errno %d)", error, error));
+		if( ( error == EWOULDBLOCK ) || ( error == EINVAL ) || ( error == EALREADY ) )
+		{
+			return( -1 );
+		}
+
+		if( error != EISCONN )
+		{
+			close( sock );
+			return( -1 );
+		}
+#endif
 	}
 
+#ifdef _WIN32
 	if (send( sock, results.c_str(), results.length(), 0 ) == SOCKET_ERROR)
 	{
 		error = WSAGetLastError();
@@ -384,6 +418,17 @@ Int GameResultsThreadClass::sendGameResults( UnsignedInt IP, UnsignedShort port,
 	}
 
 	closesocket(sock);
+#else
+	if (send( sock, results.c_str(), results.length(), 0 ) == -1)
+	{
+		error = errno;
+		DEBUG_LOG(("GameResultsThreadClass::sendGameResults() - send() returned %d(errno %d)", error, error));
+		close(sock);
+		return -error;
+	}
+
+	close(sock);
+#endif
 
 	return results.length();
 }

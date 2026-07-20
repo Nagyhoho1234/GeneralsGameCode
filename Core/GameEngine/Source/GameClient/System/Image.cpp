@@ -33,6 +33,10 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#ifndef _WIN32
+#include <glob.h>
+#endif
+
 #define DEFINE_IMAGE_STATUS_NAMES
 #include "Lib/BaseType.h"
 #include "Common/Debug.h"
@@ -248,12 +252,22 @@ void ImageCollection::load( Int textureSize )
 	char buffer[ _MAX_PATH ];
 	INI ini;
 	// first load in the user created mapped image files if we have them.
-	WIN32_FIND_DATA findData;
 	AsciiString userDataPath;
 	if(TheGlobalData)
 	{
 		userDataPath.format("%sINI\\MappedImages\\*.ini",TheGlobalData->getPath_UserData().str());
-		if(FindFirstFile(userDataPath.str(), &findData) !=INVALID_HANDLE_VALUE)
+#ifdef _WIN32
+		WIN32_FIND_DATA findData;
+		bool anyMatch = FindFirstFile(userDataPath.str(), &findData) != INVALID_HANDLE_VALUE;
+#else
+		// Portable equivalent of a FindFirstFile wildcard existence check
+		// (native port plan Phase 1): glob() supports the same "*.ini"
+		// pattern natively.
+		glob_t globResult;
+		bool anyMatch = glob(userDataPath.str(), 0, nullptr, &globResult) == 0 && globResult.gl_pathc > 0;
+		globfree(&globResult);
+#endif
+		if(anyMatch)
 		{
 			userDataPath.format("%sINI\\MappedImages",TheGlobalData->getPath_UserData().str());
 			ini.loadDirectory(userDataPath, INI_LOAD_OVERWRITE, nullptr );

@@ -31,6 +31,15 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#ifndef _WIN32
+// SOCKET_ERROR is Winsock's name for the same -1 BSD sockets already
+// return on error (native port plan Phase 1).
+#define SOCKET_ERROR (-1)
+typedef socklen_t socklen_compat_t;
+#else
+typedef int socklen_compat_t;
+#endif
+
 #include "Common/Registry.h"
 #include "Common/OptionPreferences.h"
 #include "Common/version.h"
@@ -1125,7 +1134,7 @@ void checkQR2Queries( PEER peer, SOCKET sock )
 {
 	static char indata[INBUF_LEN];
 	struct sockaddr_in saddr;
-	int saddrlen = sizeof(struct sockaddr_in);
+	socklen_compat_t saddrlen = sizeof(struct sockaddr_in);
 	fd_set set;
 	struct timeval timeout = {0,0};
 	int error;
