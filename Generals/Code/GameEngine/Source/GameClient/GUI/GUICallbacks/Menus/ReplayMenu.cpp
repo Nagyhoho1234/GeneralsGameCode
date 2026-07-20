@@ -807,13 +807,22 @@ void copyReplay()
 	translate.translate(GetReplayFilenameFromListbox(listboxReplayFiles, selected));
 	filename.concat(translate);
 
+	AsciiString newFilename;
+#ifdef _WIN32
 	char path[1024];
 	LPITEMIDLIST pidl;
 	SHGetSpecialFolderLocation(nullptr, CSIDL_DESKTOPDIRECTORY, &pidl);
 	SHGetPathFromIDList(pidl,path);
-	AsciiString newFilename;
 	newFilename.set(path);
 	newFilename.concat("\\");
+#else
+	// Portable equivalent (native port plan Phase 1 Draft 11): $HOME/Desktop,
+	// matching the $HOME/Documents precedent already used for
+	// GlobalData.cpp's user-data path.
+	const char* home = getenv("HOME");
+	newFilename.set(home ? home : "");
+	newFilename.concat("/Desktop/");
+#endif
 	newFilename.concat(translate);
 	if(CopyFile(filename.str(),newFilename.str(), FALSE) == 0)
 	{

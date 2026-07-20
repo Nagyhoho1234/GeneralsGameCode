@@ -339,6 +339,7 @@ void Keyboard::initKeyNames()
 
 	_set_keyname_(L' ',		L' ',		L'\0',	KEY_SPACE  );
 
+#ifdef _WIN32
 	HKL kLayout = GetKeyboardLayout(0);
 
 	Int low = (UnsignedInt)kLayout & 0xFFFF;
@@ -349,6 +350,20 @@ void Keyboard::initKeyNames()
 		 || low == 0x100c
 		 || low == 0x140c)
 		currentLanguage = LANGUAGE_ID_FRENCH;
+#else
+	// Portable equivalent (native port plan Phase 1 Draft 11): detect
+	// French from the process locale rather than a real keyboard layout
+	// query (real XKB/SDL layout querying belongs to Phase 4 windowing/
+	// input work). Affects only French users' hotkey display names.
+	LanguageID currentLanguage = OurLanguage;
+	const char* locale = getenv("LC_ALL");
+	if (!locale || !locale[0])
+		locale = getenv("LC_CTYPE");
+	if (!locale || !locale[0])
+		locale = getenv("LANG");
+	if (locale && strncmp(locale, "fr", 2) == 0)
+		currentLanguage = LANGUAGE_ID_FRENCH;
+#endif
 
 	switch( currentLanguage )
 	{

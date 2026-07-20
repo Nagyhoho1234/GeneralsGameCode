@@ -28,6 +28,14 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#ifndef _WIN32
+#include <netdb.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#endif
+
 #include "Common/GameState.h"
 #include "Common/Player.h"
 #include "Common/PlayerList.h"
@@ -71,10 +79,12 @@ GameSpyGameSlot::GameSpyGameSlot()
 ** Function definitions for the MIB-II entry points.
 */
 
+#ifdef _WIN32
 BOOL (__stdcall *SnmpExtensionInitPtr)(IN DWORD dwUpTimeReference, OUT HANDLE *phSubagentTrapEvent, OUT AsnObjectIdentifier *pFirstSupportedRegion);
 BOOL (__stdcall *SnmpExtensionQueryPtr)(IN BYTE bPduType, IN OUT RFC1157VarBindList *pVarBindList, OUT AsnInteger32 *pErrorStatus, OUT AsnInteger32 *pErrorIndex);
 LPVOID (__stdcall *SnmpUtilMemAllocPtr)(IN DWORD bytes);
 VOID (__stdcall *SnmpUtilMemFreePtr)(IN LPVOID pMem);
+#endif
 
 typedef struct tConnInfoStruct {
 	unsigned int State;
@@ -100,6 +110,7 @@ typedef struct tConnInfoStruct {
  *=============================================================================================*/
 Bool GetLocalChatConnectionAddress(AsciiString serverName, UnsignedShort serverPort, UnsignedInt& localIP)
 {
+#ifdef _WIN32
 	//return false;
 	/*
 	** Local defines.
@@ -431,6 +442,51 @@ Bool GetLocalChatConnectionAddress(AsciiString serverName, UnsignedShort serverP
 	FreeLibrary(snmpapi_dll);
 	FreeLibrary(mib_ii_dll);
 	return(found);
+#else
+	// Portable equivalent (native port plan Phase 1 Draft 11): rather than
+	// walking the MIB-II TCP connection table via a dynamically-loaded
+	// Windows SNMP DLL (no POSIX equivalent), use the standard
+	// connected-UDP trick to ask the kernel which local address the
+	// routing table would use to reach the server. connect() on a UDP
+	// socket sends no packets, so this is safe to do speculatively.
+	struct hostent *host_info = gethostbyname(serverName.str());
+	if (!host_info)
+	{
+		DEBUG_LOG(("gethostbyname failed! h_errno is %d", h_errno));
+		return false;
+	}
+
+	int sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock < 0)
+		return false;
+
+	struct sockaddr_in serverAddr;
+	memset(&serverAddr, 0, sizeof(serverAddr));
+	serverAddr.sin_family = AF_INET;
+	serverAddr.sin_port = htons(serverPort);
+	memcpy(&serverAddr.sin_addr, host_info->h_addr_list[0], 4);
+
+	if (connect(sock, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) != 0)
+	{
+		close(sock);
+		return false;
+	}
+
+	struct sockaddr_in localAddr;
+	socklen_t addrLen = sizeof(localAddr);
+	if (getsockname(sock, (struct sockaddr*)&localAddr, &addrLen) != 0)
+	{
+		close(sock);
+		return false;
+	}
+
+	close(sock);
+	// Network byte order, matching this function's existing contract -
+	// every caller applies ntohl() themselves (see GameSpyGameInfo.cpp/
+	// PeerThread.cpp).
+	localIP = localAddr.sin_addr.s_addr;
+	return true;
+#endif
 }
 
 // GameSpyGameSlot ----------------------------------------

@@ -1231,6 +1231,7 @@ void GameSpyPlayerInfoOverlayInit( WindowLayout *layout, void *userData )
 	GadgetCheckBoxSetChecked(checkBoxAsianFont,!pref.getDisallowAsianText());
 	GadgetCheckBoxSetChecked(checkBoxNonAsianFont,!pref.getDisallowNonAsianText());
 
+#ifdef _WIN32
 	OSVERSIONINFO	osvi;
 	osvi.dwOSVersionInfoSize=sizeof(OSVERSIONINFO);
 	if (GetVersionEx(&osvi))
@@ -1243,6 +1244,10 @@ void GameSpyPlayerInfoOverlayInit( WindowLayout *layout, void *userData )
 				checkBoxNonAsianFont->winEnable(FALSE);
 		}
 	}
+	// Win9x doesn't exist on non-Windows, so this block is a no-op there,
+	// same as on any modern (NT-family) Windows build (native port plan
+	// Phase 1 Draft 11).
+#endif
 
 	//TheWindowManager->winSetModal(parent);
 }
