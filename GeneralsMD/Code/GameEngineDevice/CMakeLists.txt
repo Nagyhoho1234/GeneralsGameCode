@@ -78,9 +78,6 @@ set(GAMEENGINEDEVICE_SRC
     Include/W3DDevice/GameClient/W3DWaypointBuffer.h
     Include/W3DDevice/GameClient/W3DWebBrowser.h
 #    Include/W3DDevice/GameClient/WorldHeightMap.h
-    Include/W3DDevice/GameLogic/W3DGameLogic.h
-    Include/W3DDevice/GameLogic/W3DGhostObject.h
-    Include/W3DDevice/GameLogic/W3DTerrainLogic.h
 #    Include/Win32Device/Common/Win32BIGFile.h
 #    Include/Win32Device/Common/Win32BIGFileSystem.h
     Include/Win32Device/Common/Win32GameEngine.h
@@ -178,9 +175,6 @@ set(GAMEENGINEDEVICE_SRC
 #    Source/W3DDevice/GameClient/Water/W3DWater.cpp
 #    Source/W3DDevice/GameClient/Water/W3DWaterTracks.cpp
 #    Source/W3DDevice/GameClient/WorldHeightMap.cpp
-    Source/W3DDevice/GameLogic/W3DGameLogic.cpp
-    Source/W3DDevice/GameLogic/W3DGhostObject.cpp
-    Source/W3DDevice/GameLogic/W3DTerrainLogic.cpp
 #    Source/Win32Device/Common/Win32BIGFile.cpp
 #    Source/Win32Device/Common/Win32BIGFileSystem.cpp
     Source/Win32Device/Common/Win32GameEngine.cpp
