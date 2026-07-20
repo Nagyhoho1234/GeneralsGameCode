@@ -26,25 +26,76 @@
 // Khronos headers themselves handle non-Windows platforms.
 #define APIENTRY
 #endif
+
+#if defined(__APPLE__)
+// macOS has no <GL/gl.h> at all - GL 3.2+ core-profile entry points live in
+// <OpenGL/gl3.h> as part of the OpenGL framework, and (unlike Windows/Linux)
+// are real linked symbols, not just runtime-resolved ones. This header still
+// defines the same GL_* constants/typedefs (GLenum, GLuint, ...) the rest of
+// this file relies on, so no other code in this loader needs to change -
+// gl_core33_load() below still resolves gl_GenVertexArrays etc. via
+// glfwGetProcAddress uniformly across platforms; GLFW documents that this
+// works correctly on its Cocoa/NSGL backend too, it's just not the only
+// valid way to get these symbols on macOS the way it is elsewhere.
+#include <OpenGL/gl3.h>
+#else
 #include <GL/gl.h>
+#endif
 
 // --- constants (Khronos registry values) ---
+// Guarded with #ifndef throughout: Apple's <OpenGL/gl3.h> is itself a GL 3.2
+// core header and almost certainly already defines most of these (unlike
+// Windows' GL/gl.h, which is GL 1.1-only) - guarding avoids a macro
+// redefinition error if the values ever differ, and is a no-op otherwise
+// since these are all stable Khronos registry constants.
+#ifndef GL_ARRAY_BUFFER
 #define GL_ARRAY_BUFFER                  0x8892
+#endif
+#ifndef GL_ELEMENT_ARRAY_BUFFER
 #define GL_ELEMENT_ARRAY_BUFFER          0x8893
+#endif
+#ifndef GL_STATIC_DRAW
 #define GL_STATIC_DRAW                   0x88E4
+#endif
+#ifndef GL_FRAGMENT_SHADER
 #define GL_FRAGMENT_SHADER               0x8B30
+#endif
+#ifndef GL_VERTEX_SHADER
 #define GL_VERTEX_SHADER                 0x8B31
+#endif
+#ifndef GL_COMPILE_STATUS
 #define GL_COMPILE_STATUS                0x8B81
+#endif
+#ifndef GL_LINK_STATUS
 #define GL_LINK_STATUS                   0x8B82
+#endif
+#ifndef GL_INFO_LOG_LENGTH
 #define GL_INFO_LOG_LENGTH               0x8B84
+#endif
+#ifndef GL_FRAMEBUFFER
 #define GL_FRAMEBUFFER                   0x8D40
+#endif
+#ifndef GL_RENDERBUFFER
 #define GL_RENDERBUFFER                  0x8D41
+#endif
+#ifndef GL_COLOR_ATTACHMENT0
 #define GL_COLOR_ATTACHMENT0             0x8CE0
+#endif
+#ifndef GL_DEPTH_ATTACHMENT
 #define GL_DEPTH_ATTACHMENT              0x8D00
+#endif
+#ifndef GL_DEPTH_COMPONENT24
 #define GL_DEPTH_COMPONENT24             0x81A6
+#endif
+#ifndef GL_FRAMEBUFFER_COMPLETE
 #define GL_FRAMEBUFFER_COMPLETE          0x8CD5
+#endif
+#ifndef GL_TEXTURE0
 #define GL_TEXTURE0                      0x84C0
+#endif
+#ifndef GL_CLAMP_TO_EDGE
 #define GL_CLAMP_TO_EDGE                 0x812F
+#endif
 
 #include <cstddef> // ptrdiff_t - MSVC pulls this in transitively via windows.h, GCC/Clang do not
 
