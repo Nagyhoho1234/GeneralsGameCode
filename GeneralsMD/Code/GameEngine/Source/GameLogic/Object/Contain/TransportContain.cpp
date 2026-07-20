@@ -595,7 +595,11 @@ Bool TransportContain::isSpecificRiderFreeToExit(Object* specificObject)
 		return FALSE;
 
 	const Locomotor *hisLocomotor = specificObject->getAIUpdateInterface()->getCurLocomotor();
-	if( hisLocomotor == FALSE )
+	// Genuine pre-existing bug, not platform-specific: FALSE is `false`
+	// (Lib/BaseTypeCore.h), not a standard null pointer constant - MSVC
+	// tolerated this comparison in permissive mode, GCC correctly rejects
+	// it (native port plan Phase 1 Draft 11/14).
+	if( hisLocomotor == nullptr )
    	return FALSE;
 
   // He can't get to this spot naturally, so I can't force him there.  (amphib transport)
