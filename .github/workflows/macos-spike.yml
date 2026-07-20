@@ -8,28 +8,26 @@ name: macOS Phase 3 Spike (native-port-plan)
 # desk-check specifically flagged its stricter core-profile behavior as an
 # open concern.
 #
-# CONFIRMED NON-STARTER on GitHub-hosted macos-latest runners: the build
-# succeeds, but glfwCreateWindow always fails with "NSGL: Failed to find a
-# suitable pixel format" (GLFW error 0x10009), reproduced across 4 runs
-# (build succeeded on 3 of them; the first also failed to build for an
-# unrelated reason, fixed separately) even after minimizing every pixel-
-# format-affecting window hint (depth/stencil/samples all set to 0). Web
-# research turned up multiple independent, unrelated projects hitting this
-# exact same wall (go-gl/glfw#335, Razakhel/RaZ#21, go-flutter-desktop/
-# go-flutter#504) - the consistent conclusion is that GitHub's hosted macOS
-# runners are VMs without real hardware-accelerated OpenGL/GPU support, and
-# Xvfb-style workarounds do not help since it isn't a display-server
-# problem. This is a platform limitation, not something fixable in this
-# workflow or in native-port-spike/'s code. Left in place for whenever a
-# real Mac or a self-hosted macOS runner with actual GPU access becomes
-# available - do not re-attempt on macos-latest without new evidence this
-# has changed.
+# PASSES as of the GLFW NSGL patch below. Runs 1-4 (before the patch) all
+# failed at glfwCreateWindow with "NSGL: Failed to find a suitable pixel
+# format" (GLFW error 0x10009) - GitHub's hosted macOS runners genuinely
+# lack a working *accelerated* GPU device (actions/runner-images#7085), and
+# GLFW's src/nsgl_context.m unconditionally requires one with no opt-out,
+# which is what turned "no accelerated GPU" into "no context at all," even
+# though Apple's software GL renderer is present on these VMs and does serve
+# real GL 3.2+/4.1 core contexts (independently confirmed: libsdl-org/
+# SDL#1180). native-port-spike/patch_glfw_nsgl.cmake vendors the fix
+# (glfw/glfw#2080, never merged upstream) as this project's GLFW
+# FetchContent PATCH_COMMAND. Run 5, with the patch in place, passed
+# completely: GL_VERSION 4.1 APPLE-23.1.1, GL_RENDERER "Apple Software
+# Renderer", pixel-identical output to the Windows/NVIDIA and Linux/Mesa-
+# llvmpipe runs. See docs/native-port-plan.md's readiness assessment for
+# the full history if this ever regresses.
 #
-# Unlike .github/workflows/macos-native.yml, this doesn't fail for a
-# version-mismatch/build-system reason - native-port-spike/ is a standalone
-# CMake project with its own CMakeLists.txt (see that directory), not gated
-# on the main game build's Phase 1/2 work. It fails purely on runtime GPU
-# context creation, after a clean build.
+# Unlike .github/workflows/macos-native.yml, this doesn't depend on the
+# main game build's Phase 1/2 work at all - native-port-spike/ is a
+# standalone CMake project with its own CMakeLists.txt (see that
+# directory).
 #
 # Manually triggered only, matching macos-native.yml's convention.
 

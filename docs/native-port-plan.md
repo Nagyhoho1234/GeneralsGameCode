@@ -472,18 +472,16 @@ not deferred indefinitely.
 
 **Phase 3 - Decide and prototype the graphics API approach** (per the
 revised "Open decision" above), using the render2d+textured-mesh spike,
-not a bare triangle. **This spike has now run on two independent GL
-implementations, and the texture-origin V-flip is validated** -
-`native-port-spike/`, GL 3.3 core profile, standalone/not wired into the
-main build - see "Readiness assessment" below for results. Remaining
-before this phase can be called closed: a real macOS GL 4.1 core-profile
-run. Attempted via GitHub-hosted CI and initially concluded to be a
-platform dead end - a follow-up investigation found that conclusion was
-wrong (GLFW's NSGL backend unconditionally requires *hardware-accelerated*
-pixel formats, which these VMs genuinely lack, but a one-line patch
-exists to request the software renderer instead, which still exercises
-real Apple GL 4.1 core-profile semantics); see "Readiness assessment"
-below for the fix and current status.
+not a bare triangle. **Closed.** This spike (`native-port-spike/`, GL 3.3
+core profile, standalone/not wired into the main build) has now run on
+three independent GL implementations - Windows/NVIDIA, Linux/Mesa-
+llvmpipe, and real macOS (Apple Software Renderer, GL 4.1 core,
+`GL_VERSION: 4.1 APPLE-23.1.1`) - producing pixel-identical output on all
+three (same ~2e-7 clip-space delta, same 114113/262144 non-background
+pixel count), and the texture-origin V-flip is validated on all three
+too. See "Readiness assessment" below for the full history, including a
+GitHub CI limitation that was initially misdiagnosed as a platform dead
+end and then correctly root-caused and fixed.
 
 **Phase 4 - Windowing + input**, now correctly scoped to include
 `WinMain.cpp`'s window/message-pump code and `Win32GameEngine`'s
@@ -754,34 +752,40 @@ under a real GL 3.3 core-profile renderer**, not just on paper:
   the intended authoring) and numerically (sampling known pixel positions
   and checking which quadrant color landed where), confirmed on both
   Windows/NVIDIA and Linux/Mesa-llvmpipe.
-- **macOS GL 4.1 core validation: initial "platform dead end" conclusion
-  was wrong - root cause is GLFW, not the platform, and a fix exists.**
-  `.github/workflows/macos-spike.yml` was built and run 4 times on
-  `macos-latest`; every run built clean (after fixing a real portability
-  bug: no `<GL/gl.h>` on macOS, needs `<OpenGL/gl3.h>`) but
+- **macOS GL 4.1 core validation: done. An initial "platform dead end"
+  conclusion was wrong - root cause was GLFW, not the platform, and the
+  fix worked.** `.github/workflows/macos-spike.yml` was built and run 5
+  times on `macos-latest`. Runs 1-4 all built clean (after fixing a real
+  portability bug: no `<GL/gl.h>` on macOS, needs `<OpenGL/gl3.h>`) but
   `glfwCreateWindow` always failed with `NSGL: Failed to find a suitable
   pixel format` (GLFW error 0x10009), even after minimizing depth/
   stencil/sample window hints. First-pass web research (go-gl/glfw#335,
   Razakhel/RaZ#21, go-flutter-desktop/go-flutter#504) concluded this was
   a fundamental GitHub-hosted-runner limitation with no fix. A follow-up
-  fable investigation found that conclusion doesn't hold up: GitHub's
+  fable investigation found that conclusion didn't hold up: GitHub's
   macOS VMs do lack a working *accelerated* GPU device (tracked upstream
-  at actions/runner-images#7085), but the actual proximate cause is that
+  at actions/runner-images#7085), but the actual proximate cause was that
   GLFW's `src/nsgl_context.m` unconditionally requests
   `NSOpenGLPFAAccelerated` with no way to opt out, which is what turns
   "no accelerated GPU" into "no context at all" - Apple's software GL
   renderer is present on these VMs and does serve real GL 3.2+/4.1 core
-  contexts (confirmed independently: libsdl-org/SDL#1180), it's just
-  being excluded by GLFW's hardcoded request. A one-line patch
-  (glfw/glfw#2080: swap `NSOpenGLPFAAccelerated` for
-  `NSOpenGLPFARendererID`/`kCGLRendererGenericFloatID`) was proposed
-  upstream, tested by third parties as working on exactly this kind of
-  VM (glfw/glfw#2571 comments), but never merged - needs to be vendored
-  (e.g. building GLFW from source in the workflow with this patch
-  applied via `sed`) rather than obtained from upstream GLFW as-is.
-  **Not yet applied or re-verified as of this writing** - the next step
-  is patching `macos-spike.yml` to build GLFW with this fix and
-  re-running it, not treating this as closed.
+  contexts (confirmed independently: libsdl-org/SDL#1180), it was just
+  being excluded by GLFW's hardcoded request. Vendored the one-line fix
+  proposed upstream but never merged (glfw/glfw#2080: swap
+  `NSOpenGLPFAAccelerated` for `NSOpenGLPFARendererID`/
+  `kCGLRendererGenericFloatID`) as a CMake `PATCH_COMMAND`
+  (`native-port-spike/patch_glfw_nsgl.cmake`, portable `file(READ)`/
+  `string(REPLACE)`/`file(WRITE)` rather than `sed`, so it runs
+  identically cross-platform - a no-op everywhere except the GLFW source
+  tree's own macOS-only file). **Run 5, with the patch applied, passed
+  completely**: `GL_VERSION: 4.1 APPLE-23.1.1`, `GL_RENDERER: Apple
+  Software Renderer` - real Apple GL 4.1 core-profile semantics, not a
+  mock - producing output pixel-identical to both the Windows/NVIDIA and
+  Linux/Mesa-llvmpipe runs (same ~2e-7 clip-space delta, same
+  114113/262144 non-background pixel count), with the texture-origin
+  V-flip check also passing. This is now genuine three-independent-
+  implementation agreement on the exact question Phase 3 existed to
+  answer.
 
 This resolves the plan's single biggest previously-open unknown: option
 (a) is no longer just evidence-backed by desk-check, it has a working,
