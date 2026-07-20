@@ -472,13 +472,12 @@ not deferred indefinitely.
 
 **Phase 3 - Decide and prototype the graphics API approach** (per the
 revised "Open decision" above), using the render2d+textured-mesh spike,
-not a bare triangle. **A first pass of this spike has run** -
-`native-port-spike/`, GL 3.3 core profile, standalone/not wired into the
-main build - see "Readiness assessment" below for results. Remaining
-before this phase can be called closed: texture-origin (V-flip)
-validation, and a headless Mesa/llvmpipe or real macOS run to check the
-desk-check's core-profile-strictness concern, not just the Windows
-concept run.
+not a bare triangle. **This spike has now run on two independent GL
+implementations** - `native-port-spike/`, GL 3.3 core profile, standalone/
+not wired into the main build - see "Readiness assessment" below for
+results. Remaining before this phase can be called closed: texture-origin
+(V-flip) validation, and a real macOS GL 4.1 core-profile run (Mesa/
+llvmpipe is now done, see below).
 
 **Phase 4 - Windowing + input**, now correctly scoped to include
 `WinMain.cpp`'s window/message-pump code and `Win32GameEngine`'s
@@ -720,15 +719,31 @@ under a real GL 3.3 core-profile renderer**, not just on paper:
   both rendered correctly to an offscreen FBO, confirmed by pixel
   inspection (not just a non-crash check) - including correct
   `GL_DEPTH_TEST` occlusion against a third nearer opaque quad.
-- **Not yet validated**: texture-origin convention (D3D8 top-left vs
-  GL bottom-left) needs a V-flip at texture upload or UV-generation time
-  - noted in the spike's code but not exercised, since checking it
-  properly needs a real D3D8 reference render to diff against, which
-  this spike doesn't have. Also not yet run headless under Mesa/
-  llvmpipe (Linux) or on an actual macOS GL 4.1 core context, both flagged
-  as necessary before treating the desk-check's macOS-strictness concern
-  as closed - this Windows run only confirms the *concept*, not that
-  every driver accepts it.
+- **Now also run headless under Mesa/llvmpipe** (WSL2 Ubuntu 26.04, Mesa
+  26.0.3, `LIBGL_ALWAYS_SOFTWARE=1` forcing the software rasterizer, no
+  GPU passthrough): after two portability fixes (`gl_core33.h`'s
+  Windows-only `windows.h`/`APIENTRY` handling made conditional on
+  `_WIN32`; a missing `<cstddef>` include for `ptrdiff_t`, which MSVC
+  pulls in transitively via `windows.h` but GCC does not) and disabling
+  GLFW's Wayland backend (`-DGLFW_BUILD_WAYLAND=OFF` - not installed in
+  this environment, X11 already available and sufficient), the spike
+  built clean and produced **pixel-identical output** to the Windows/
+  NVIDIA run: same ~2e-7 clip-space delta, same 114113/262144 non-
+  background pixel count, visually identical render. This is real
+  independent-implementation evidence, not just a second data point on
+  the same driver - Mesa's llvmpipe core-profile GL 3.3/4.5 implementation
+  is written independently of NVIDIA's, so agreement between the two is
+  the actual signal the desk-check's core-profile-strictness concern was
+  asking for.
+- **Still not yet validated**: texture-origin convention (D3D8 top-left
+  vs GL bottom-left) needs a V-flip at texture upload or UV-generation
+  time - noted in the spike's code but not exercised, since checking it
+  properly needs a real D3D8 reference render to diff against, which this
+  spike doesn't have. Also still not run on an actual macOS GL 4.1 core
+  context - Mesa/llvmpipe closes the Linux side of the desk-check's
+  concern, but macOS's own GL implementation (stricter, deprecated-but-
+  present 4.1 core) is a distinct codebase from both NVIDIA's and Mesa's
+  and hasn't been exercised at all yet.
 
 This resolves the plan's single biggest previously-open unknown: option
 (a) is no longer just evidence-backed by desk-check, it has a working,

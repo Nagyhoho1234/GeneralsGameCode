@@ -12,12 +12,20 @@
 // code.
 #pragma once
 
+#if defined(_WIN32)
 // GL/gl.h's WINGDIAPI/APIENTRY macros are only self-consistent when
 // windows.h has already been included - without it, its own fallback
 // definitions conflict with themselves in the same header.
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+#else
+// Linux/macOS: APIENTRY is a Windows calling-convention artifact with no
+// equivalent need elsewhere - defined empty here so the same typedefs below
+// compile unchanged on every platform this spike targets, matching how the
+// Khronos headers themselves handle non-Windows platforms.
+#define APIENTRY
+#endif
 #include <GL/gl.h>
 
 // --- constants (Khronos registry values) ---
@@ -37,6 +45,8 @@
 #define GL_FRAMEBUFFER_COMPLETE          0x8CD5
 #define GL_TEXTURE0                      0x84C0
 #define GL_CLAMP_TO_EDGE                 0x812F
+
+#include <cstddef> // ptrdiff_t - MSVC pulls this in transitively via windows.h, GCC/Clang do not
 
 typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;

@@ -43,4 +43,15 @@ add_executable(native_port_spike
     gl_core33.cpp
 )
 target_include_directories(native_port_spike PRIVATE ${stb_SOURCE_DIR})
-target_link_libraries(native_port_spike PRIVATE glfw opengl32)
+
+if(WIN32)
+    target_link_libraries(native_port_spike PRIVATE glfw opengl32)
+else()
+    # Linux/macOS: link the system GL library (Mesa's libGL, or macOS's
+    # OpenGL framework via find_package) instead of Windows' opengl32 import
+    # lib. GL 3.3+ entry points are still resolved dynamically via
+    # glfwGetProcAddress (gl_core33.*) either way - this only supplies the
+    # GL 1.1 symbols gl_core33.h calls directly (glClear, glGenTextures, ...).
+    find_package(OpenGL REQUIRED)
+    target_link_libraries(native_port_spike PRIVATE glfw OpenGL::GL)
+endif()
