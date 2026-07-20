@@ -120,6 +120,180 @@ wrong estimate as fact.
   game executable doesn't link MFC, and tools are separate build
   targets tracked by upstream issue #642.
 
+## Phase 0 results (completed - file-by-file, not sampled)
+
+Five parallel research passes covered W3DDevice (131 files, split into
+Drawable/Draw, GameClient/GUI+root, and GameLogic), GameNetwork's
+non-GameSpy transport layer, and GameSpy+registry+timers/threads. Full
+per-file tables live in the session history; this section is the
+distilled result, including several corrections to the estimates above.
+
+**W3DDevice breakdown (131 files total across the three trees):**
+
+- `GameClient/Drawable/Draw/` - 18 files, 9,444 lines. **Zero direct
+  D3D8 dependency across the board** - every file calls the WW3D2
+  abstraction layer (`RenderObjClass`/`HLodClass`/etc.), never
+  `DX8Wrapper`/raw D3D8 types directly. This entire slice needs no
+  rewrite for the graphics-API transition; the rewrite burden is one
+  layer down, in WW3D2 itself. 5 of 18 (`W3DModelDraw`, `W3DSupplyDraw`,
+  `W3DDebrisDraw`, `W3DLaserDraw`, `W3DRopeDraw`) are sim-reachable, but
+  only through narrow, confirmed one-way interfaces (GameLogic writes
+  visual-feedback parameters in; nothing reads render state back out) -
+  lower risk than the terrain-height/bone-transform paths below.
+- `GameClient/` (excluding Drawable) + `GUI/Gadget/` + `GUI/GUICallbacks/`
+  + `Water/` - 35 files, 36,680 lines. 16 of 35 are D3D8-dependent
+  (`BaseHeightMap`, `HeightMap`, `FlatHeightMap`, `TerrainTex`,
+  `W3DShaderManager` (706 call sites - the single densest file found),
+  `W3DWater` (179), `W3DTreeBuffer`, `W3DSnow`, `W3DSmudge`,
+  `W3DTerrainBackground`, `W3DWaterTracks`, `W3DProfilerFrameCapture`,
+  plus 4 lighter ones). **19 of 35 have zero direct D3D8 touch**,
+  including all 11 GUI gadget files and `W3DControlBar.cpp` (HUD/
+  command-bar) - cheap porting candidates. **Correction**: the GUI
+  "gadgets" (`W3DPushButton` etc.) aren't classes, they're pairs of free
+  draw-callback functions assigned as `GameWindow` function pointers -
+  if anything easier to port than a class hierarchy would be. **0 of 35
+  files in this subtree are sim-reachable** - clean presentation-only
+  layer.
+- `GameLogic/` (sibling to `GameClient/`, both under `W3DDevice/`) -
+  **path correction: this directory does not exist under `Core/` at
+  all.** It's duplicated per-tree at `Generals/Code/GameEngineDevice/
+  Source/W3DDevice/GameLogic/` and `GeneralsMD/Code/GameEngineDevice/
+  Source/W3DDevice/GameLogic/`, and the two copies have diverged (not
+  byte-identical). 3 files each, 6 total, ~1,670 lines/tree:
+  - `W3DTerrainLogic.cpp` (385 lines) - **confirmed genuinely
+    lockstep-determinism-critical**, not just plausible risk.
+    `getGroundHeight`/`getLayerHeight`/`isCliffCell`/
+    `getMaximumPathfindExtent` are called from 15+ sites in
+    `AIPathfind.cpp` via the `TheTerrainLogic` global; this class is the
+    *only* `TerrainLogic` subclass in the repo, so every pathfinding
+    height query in the game resolves here. Zero direct D3D8 calls
+    itself, but reads through the render-layer heightmap object to
+    answer queries.
+  - `W3DGhostObject.cpp` (~1,250 lines) - sim-*adjacent*, but a
+    **different risk category than terrain logic**: its `xfer()`
+    persists fogged-object render-state into save files (save/load
+    correctness risk), and both its own and its base class's `crc()`
+    are no-ops - **this data is explicitly excluded from the
+    multiplayer lockstep CRC check**. Deeply coupled to the mid-level
+    WW3D2 render-object API (`Clone()`, `Set_Transform()`,
+    `Set_Animation()`), so a rendering rewrite will need real, careful
+    work here, but validate it against save/load compatibility, not
+    network desync.
+  - `W3DGameLogic.cpp` (33 lines) - negligible; the .cpp is just a
+    license header, all content is two one-line factory methods in the
+    header. Not a real risk surface.
+  - Practical consequence: any determinism fix here has to be applied
+    and re-verified **twice** (once per tree) unless this directory is
+    unified into `Core/` first - a natural, small #555 side-quest.
+- `Common/` subdirectory of `W3DDevice/` was not covered by this pass -
+  the 131-file total doesn't fully reconcile from the pieces above
+  (53 + 6 = 59), so there's a remaining ~70 files (`Common/`, plus
+  likely `Drawable/`'s own per-tree pieces if any exist) still
+  uninventoried. Flagging honestly rather than presenting the picture
+  as complete.
+
+**GameNetwork transport layer (non-GameSpy) - smaller and more
+contained than the original estimate:**
+
+31 logical files (~20,750 LOC) outside GameSpy. **The true socket
+boundary is `udp.cpp`/`udp.h` (534 lines) alone**, and it is **already
+partially cross-platform** - it has an existing `#ifdef _WIN32 ...
+#else // UNIX` split for includes, `SetBlocking()`, and error-code
+mapping, with the core socket calls (`socket`/`bind`/`sendto`/
+`recvfrom`/`setsockopt`) already written in POSIX-compatible form. Only
+7 of 31 files make direct Winsock calls at all
+(`DownloadManager.cpp`, `FirewallHelper.cpp`, `IPEnumeration.cpp`,
+`NAT.cpp`, `NetworkUtil.cpp`, `Transport.cpp`, `udp.cpp`), and most of
+those are either `WSAStartup`/`WSACleanup`/`WSAGetLastError` init
+boilerplate (duplicated across 3 files independently - a minor
+cleanup, not a portability blocker) or `htons`/`htonl`/`gethostbyname`-
+family calls that have **identical signatures on POSIX**, just a
+different header. The other 24 files are pure session/logic/
+serialization code with zero direct socket calls. **Verdict: this is
+closer to "finish an existing partial port and consolidate duplicate
+init calls" than "port Winsock to BSD sockets from scratch."** Two
+files were mis-filed under "networking" by directory location only and
+should move categories: `WOLBrowser/WebBrowser.cpp` (confirmed pure
+COM/ATL, no networking - matches the separately-flagged ATL dependency)
+and `GUIUtil.cpp` (pure lobby-GUI population code, no networking).
+
+**GameSpy - 20 unique files (not 19), and itself a #555 duplication
+gap:** 12 files in `Core/`, but 5 more Generals-only and 3 more
+GeneralsMD-only .cpp files exist - GameSpy hasn't been unified into
+`Core/` yet either, so (like `W3DDevice/GameLogic`) this work may need
+doing twice unless unified first. Threading is more extensive than the
+plan's "GameResultsThread, PingThread" implied: **5 distinct classes**
+(`BuddyThreadClass`, `GameResultsThreadClass`, `PeerThreadClass`,
+`PSThreadClass`, `PingThreadClass`) all subclass WWLib's `ThreadClass`/
+`MutexClass`, so GameSpy's own threading work is entirely gated on
+WWLib's thread abstraction actually being ported (see timers/threads
+below) rather than being separate work. Most files are pure logic/UI
+with zero Windows dependency. **Two real, non-mechanical exceptions**
+worth flagging specifically since they don't fit the "swap the API"
+pattern: `MainMenuUtils.cpp` spawns a raw `CreateThread` (bypasses
+WWLib entirely, needs hand conversion) for async DNS resolution; and
+`StagingRoomGameInfo.cpp` does local-IP enumeration via a legacy
+SNMP DLL walk (`LoadLibrary("SNMPAPI.DLL")`) while `PingThread.cpp`
+uses dynamically-loaded ICMP (`ICMP.DLL`) - both are genuinely
+Windows-specific techniques with no POSIX equivalent, needing real
+reimplementation (`getifaddrs()`, raw ICMP sockets), not a 1:1 swap.
+
+**Registry - two separate wrapper layers, different complexity:**
+
+1. `GameEngine/Source/Common/System/registry.cpp` (202 lines,
+   duplicated per-tree, near-identical) - genuinely simple: 4
+   primitives (get/set string/int), no file associations, no DLL
+   registration, no COM. The three files the original draft named
+   (`UserPreferences.cpp`, `GameText.cpp`, `GlobalLanguage.cpp`) each
+   make **exactly one call**, all to the same read-only
+   `GetRegistryLanguage()` convenience wrapper, for locale/language
+   selection - trivial once `registry.cpp` itself is rewritten to a
+   config file (and that file should be unified into `Core/` first,
+   same rationale as GameSpy/`W3DDevice/GameLogic` above).
+2. WWLib's `RegistryClass` (`Core/Libraries/Source/WWVegas/WWLib/
+   registry.cpp`, 734 lines) - a separate, richer wrapper (binary
+   blobs, value enumeration, bulk tree import/export), used by
+   `dx8wrapper.cpp` (render-device settings) and `WWAudio.cpp` (3 call
+   sites). Good news: its bulk tree-import/export operations are
+   **dead code** (defined, never called) - the real porting surface is
+   just scalar/binary get/set, mechanical but with more API surface
+   than the simpler wrapper above.
+
+**Timers/threads (WWLib) - existing portability scaffolding is a mix
+of genuinely-done and silently-stubbed, which matters a lot for
+effort estimation:**
+
+- **Already done, no work needed**: `FastCriticalSectionClass`
+  (portable `std::atomic_flag` implementation already in place), the
+  `TIMEGETTIME` macro's definition (correctly branches to
+  `gettimeofday()` on non-Windows), and CPUID/RDTSC in `cpudetect.cpp`
+  (already routed through a portable `intrin_compat.h` shim with GCC/
+  clang builtins).
+- **Scaffolded but non-functional - looks portable, isn't**:
+  `thread.cpp`'s `ThreadClass::Execute()`/`Stop()` have `#ifdef _UNIX`
+  branches that are literally `return;` - threads never actually start
+  on non-Windows today. `mutex.cpp`'s `MutexClass` and
+  `CriticalSectionClass` (not `FastCriticalSectionClass`, which is
+  fine) have `_UNIX` branches that are `//assert(0)` stubs. All of
+  GameSpy's 5 threaded classes depend on these being real.
+- **A genuinely live, currently-broken bug, not just missing
+  scaffolding**: `SysTimeClass::Get()` and `systimer.cpp`'s `Reset()`
+  call the literal `timeGetTime()` symbol directly instead of the
+  portable `TIMEGETTIME` macro. There's a preprocessor guard intended
+  to redefine `timeGetTime` to the portable path, but it only fires if
+  `timeGetTime` is already a macro - on both MSVC and MinGW it's a real
+  winmm function declaration, so the guard **never triggers**. No
+  non-Windows definition of `timeGetTime` exists anywhere in the tree.
+  Corrected file count: **86 files** (not 51) call `timeGetTime`/
+  `GetTickCount` directly across all three trees - every one needs
+  sweeping onto `TIMEGETTIME()`, or a real `timeGetTime` shim needs to
+  be added for non-Windows.
+- **Unimplemented, honestly labeled as such already**:
+  `cpudetect.cpp`'s `Init_Memory()`/`Init_OS()` are `#ifdef WIN32`-only
+  with `#warning FIX Init_Memory()`/`#warning FIX Init_OS()` on the
+  other branch - genuinely missing, not yet scaffolded, small but real
+  work (`sysconf`/`/proc/meminfo`/`sysctl` equivalents).
+
 ## Open decision: target graphics API
 
 D3D8 is a fixed-function-plus-early-shader era API. This decision now
@@ -256,24 +430,59 @@ existing Windows build, not just the three originally-named files.
 - Solving Wine/Proton compatibility for players who prefer that route -
   this plan is about removing the *need* for it, not breaking it.
 
-## Biggest risks (revised)
+## Related #555 unification gaps found during Phase 0
 
-1. Total scope is genuinely large - WW3D2 (100+ D3D8 call sites) +
-   W3DDevice (131 files, partially sim-critical) + shader-asset
-   re-authoring + networking + registry + timers/threads + a COM/ATL
-   stub decision + a hard 64-bit prerequisite for macOS. This is a
-   multi-person, multi-month effort at minimum; Phase-based structure
-   makes it incremental and testable, but should not be sold as smaller
-   than it is.
+Three areas turned up during this inventory that are duplicated
+per-tree rather than unified into `Core/`, meaning porting work there
+would otherwise need doing twice: `W3DDevice/GameLogic/` (3 files,
+diverged between trees), GameSpy (8 of 20 files are per-tree-only,
+5 Generals-only + 3 GeneralsMD-only), and `GameEngine/Source/Common/
+System/registry.cpp`. None of these were touched or unified as part of
+this planning pass - flagging them as natural, small, low-risk
+follow-on candidates for issue #555 before or alongside the relevant
+native-port phase, the same way finishing WW3D2's residue was already
+noted as paying off Phase 5 twice-over.
+
+## Biggest risks (revised again after Phase 0)
+
+1. Total scope is still genuinely large, but less uniformly risky than
+   first thought: WW3D2 (100+ D3D8 call sites, still the single biggest
+   item) + the D3D8-dependent half of W3DDevice's GameClient tree (16
+   of 35 files, plus the separately-scoped `Drawable/` slice which
+   turned out to need **no** rewrite at all) + shader-asset
+   re-authoring + a COM/ATL stub decision + a hard 64-bit prerequisite
+   for macOS. Networking turned out meaningfully smaller than
+   estimated (see below). Still a multi-person, multi-month effort at
+   minimum - just not uniformly so across every subsystem.
 2. The Phase 3 API decision is still un-prototyped; recommending option
    (a) as a bridging step reduces but does not eliminate this risk.
-3. Determinism risk is broader than three files - bone-transform and
-   terrain-height/pathfinding paths specifically need explicit
-   save/replay-matching tests, not just visual QA, because they're
-   reachable from GameLogic today.
+3. Determinism risk is now precisely scoped rather than broadly
+   flagged: `W3DTerrainLogic.cpp`'s 4 pathfinding-height methods are
+   *confirmed* lockstep-critical (real `AIPathfind.cpp` call sites,
+   not just plausible risk), while `W3DGhostObject.cpp` is a save/load
+   risk specifically excluded from the multiplayer CRC check - these
+   are two different failure modes needing two different kinds of
+   testing (network-desync matching vs. save-file compatibility), not
+   one blanket "test determinism" bucket.
 4. 64-bit is a hard macOS blocker, not a nice-to-have - if this phase
    slips, macOS is not reachable at all regardless of progress
    elsewhere.
+5. **Downgraded risk, upgraded confidence**: networking (previously "a
+   genuine missing phase, mostly mechanical") is now known to be a
+   small, clean-boundary port centered on one 534-line file that's
+   already half-ported, plus 3 specific non-mechanical items (raw
+   `CreateThread` in `MainMenuUtils.cpp`, SNMP-based IP detection and
+   dynamically-loaded ICMP in the GameSpy ping/staging-room code) that
+   need real reimplementation rather than a mechanical Winsock swap.
+6. **New finding, not previously visible**: WWLib's thread/mutex
+   portability code looks done (has `#ifdef _UNIX` branches) but isn't
+   - `ThreadClass`/`MutexClass`/`CriticalSectionClass`'s non-Windows
+   paths are no-op stubs, and a broken preprocessor guard means literal
+   `timeGetTime()` calls (86 files, not 51) silently have no
+   non-Windows definition at all today. This is exactly the kind of
+   thing that would cause confusing runtime failures (not compile
+   failures) if not caught before Phase 4/6 work starts, since the code
+   compiles and looks portable at a glance.
 
 ## Provenance and licensing of external reference material
 
@@ -311,34 +520,55 @@ wholesale.
 
 ## Readiness assessment
 
-**Not implementation-ready as a whole.** This is a validated, scoped
-roadmap (Phase 0 through 8), not a work-ready backlog. Two concrete
-gates stand between this plan and writing real Phase 5 rendering code:
+**Phase 0 is now substantially complete** for W3DDevice (except the
+`Common/` subdirectory, ~70 files still uninventoried - see the note
+above), GameNetwork's transport layer, GameSpy, registry, and
+timers/threads. **Still not implementation-ready as a whole**, though -
+one gate remains before Phase 5 (rendering) can start with real
+confidence, and one smaller gate before Phase 0 can be called fully
+closed:
 
-1. Phase 0's extended inventory (W3DDevice's 131 files, networking's
-   48+ files, registry/timer call sites) is still a count and a
-   sampling, not a real file-by-file list - the kind of thing that
-   should be done before committing effort estimates to it, the same
-   way this plan's own first draft turned out to be short by ~2-3x
-   once someone actually checked.
-2. The Phase 3 graphics-API decision is a recommendation on paper, not
-   a validated spike. Nothing past Phase 4 should start until that
-   spike (render2d + one ShaderClass-driven textured mesh, not a bare
-   triangle) has actually run.
+1. The Phase 3 graphics-API decision is still a recommendation on
+   paper, not a validated spike. Nothing past Phase 4 should start
+   until that spike (render2d + one ShaderClass-driven textured mesh,
+   not a bare triangle) has actually run. This is now the single
+   biggest remaining unknown in the whole plan.
+2. `W3DDevice/Common/` (~70 files, the piece of the 131-file total this
+   pass didn't reach) should get the same file-by-file treatment before
+   Phase 5(e) is scoped in detail - everything else in W3DDevice turned
+   out to have real surprises (zero-D3D8 Drawable slice, diverged
+   per-tree GameLogic, precisely-scoped-not-broadly-flagged determinism
+   risk) worth not assuming away for the remaining fifth of the
+   directory.
 
-Phase 0 and the Phase 1 build-system slice, by contrast, are concrete
-and ready to start now - they're inventory and CMake-gating work with
-no open design questions blocking them.
+Phase 1 (build-system slice) remains concrete and ready to start now -
+CMake-gating work with no open design questions blocking it. The
+networking, GameSpy, registry, and timer/thread findings above are
+detailed enough to start Phase 7's implementation work directly,
+ahead of the rendering phases, since none of it blocks or is blocked
+by the Phase 3 API decision.
 
 ## Review history
 
 - Draft 1: initial scope based on a targeted but incomplete grep-level
   inventory.
-- Draft 2 (this version): revised after an independent verification
-  pass that checked file counts, call graphs (`DX8Wrapper::` callers,
-  bone-position callers), and build-system gating directly against the
-  repo. Corrected: inventory undercounted ~2-3x, W3DDevice was nearly
-  absent, build-system and 64-bit work were mis-sequenced, shader
-  assets and several whole subsystems (networking, registry, timers,
-  COM/ATL) were missing outright. Added explicit provenance/licensing
-  review of the two external forks referenced as evidence.
+- Draft 2: revised after an independent verification pass that checked
+  file counts, call graphs (`DX8Wrapper::` callers, bone-position
+  callers), and build-system gating directly against the repo.
+  Corrected: inventory undercounted ~2-3x, W3DDevice was nearly absent,
+  build-system and 64-bit work were mis-sequenced, shader assets and
+  several whole subsystems (networking, registry, timers, COM/ATL)
+  were missing outright. Added explicit provenance/licensing review of
+  the two external forks referenced as evidence.
+- Draft 3 (this version): folded in completed Phase 0 file-by-file
+  inventories (5 parallel research passes) for W3DDevice, GameNetwork,
+  GameSpy, registry, and timers/threads. Notable corrections: the
+  `W3DDevice/GameLogic` path doesn't exist under `Core/` (duplicated
+  and diverged per-tree instead); `Drawable/Draw`'s 18 files need zero
+  rewrite (all D3D8 work is one layer down in WW3D2); networking is a
+  small, mostly-already-half-ported job, not the genuine missing phase
+  it looked like; WWLib's thread/mutex "portability" scaffolding is
+  largely non-functional stubs despite compiling cleanly; and three
+  areas (`W3DDevice/GameLogic`, GameSpy, `registry.cpp`) turned out to
+  be their own un-unified #555 duplication gaps, found as a side effect
+  of this inventory rather than gone looking for.
