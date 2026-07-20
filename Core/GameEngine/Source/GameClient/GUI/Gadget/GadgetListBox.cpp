@@ -1792,7 +1792,12 @@ WindowMsgHandledType GadgetListBoxSystem( GameWindow *window, UnsignedInt msg,
 		{
 
 			if( list->multiSelect )
-				*(Int*)mData2 = (Int)list->selections;
+				// mData2 carries the address of the caller's Int* variable (see
+				// GadgetListBoxGetSelected's multi-select contract) - write the
+				// full pointer through it, not a truncated Int (native port plan
+				// Phase 1 Draft 11: WindowMsgData is now pointer-sized, but a
+				// plain (Int) cast here would still only write 4 of 8 bytes).
+				*(Int**)mData2 = list->selections;
 			else
 				*(Int*)mData2 = list->selectPos;
 

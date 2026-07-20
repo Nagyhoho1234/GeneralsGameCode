@@ -73,7 +73,12 @@ enum { WIN_COLOR_UNDEFINED = GAME_COLOR_UNDEFINED };
 
 // WindowMsgData --------------------------------------------------------------
 //-----------------------------------------------------------------------------
-typedef UnsignedInt WindowMsgData;
+// Pointer-sized so raw pointers (GameWindow*, UnicodeString*, void*, ...) can
+// round-trip through it without truncation. Never stored in a struct or
+// serialized (GUI message dispatch is synchronous, client-side only), so
+// this is a safe, zero-effect-on-Windows widening (native port plan Phase 1
+// Draft 11): uintptr_t == UnsignedInt on the only shipping 32-bit targets.
+typedef uintptr_t WindowMsgData;
 
 //-----------------------------------------------------------------------------
 enum WindowMsgHandledType CPP_11(: Int) { MSG_IGNORED, MSG_HANDLED };
