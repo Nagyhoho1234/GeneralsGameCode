@@ -48,7 +48,9 @@
 #include "PreRTS.h"
 
 #include <fcntl.h>
+#ifdef _WIN32
 #include <io.h>
+#endif
 #include <sys/stat.h>
 #include <stdlib.h>
 #include <ctype.h>

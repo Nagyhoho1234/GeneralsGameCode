@@ -19,6 +19,7 @@
 // This file contains the time functions for compatibility with non-windows platforms.
 #pragma once
 #include <time.h>
+#include <sys/time.h>
 
 #define TIMERR_NOERROR 0
 typedef int MMRESULT;
@@ -37,5 +38,36 @@ inline unsigned int GetTickCount()
   clock_gettime(CLOCK_MONOTONIC, &ts);
   // Return ms since boot
   return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+// SYSTEMTIME / GetLocalTime (native port plan Phase 1). Field layout
+// matches Windows' SYSTEMTIME so Recorder.cpp's binary replay-header
+// serialization (raw byte read/write of this struct) stays compatible.
+struct SYSTEMTIME
+{
+	unsigned short wYear;
+	unsigned short wMonth;
+	unsigned short wDayOfWeek;
+	unsigned short wDay;
+	unsigned short wHour;
+	unsigned short wMinute;
+	unsigned short wSecond;
+	unsigned short wMilliseconds;
+};
+
+inline void GetLocalTime(SYSTEMTIME* out)
+{
+	struct timeval tv;
+	gettimeofday(&tv, nullptr);
+	struct tm local;
+	localtime_r(&tv.tv_sec, &local);
+	out->wYear = (unsigned short)(local.tm_year + 1900);
+	out->wMonth = (unsigned short)(local.tm_mon + 1);
+	out->wDayOfWeek = (unsigned short)local.tm_wday;
+	out->wDay = (unsigned short)local.tm_mday;
+	out->wHour = (unsigned short)local.tm_hour;
+	out->wMinute = (unsigned short)local.tm_min;
+	out->wSecond = (unsigned short)local.tm_sec;
+	out->wMilliseconds = (unsigned short)(tv.tv_usec / 1000);
 }
 

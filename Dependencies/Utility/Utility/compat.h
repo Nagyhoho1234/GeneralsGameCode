@@ -39,6 +39,15 @@ inline char* itoa(int value, char* str, int base)
 }
 #endif
 
+// __max / __min are MSVC's old CRT macros (superseded by std::max/min,
+// but still used directly across this codebase).
+#ifndef __max
+#define __max(a,b) (((a) > (b)) ? (a) : (b))
+#endif
+#ifndef __min
+#define __min(a,b) (((a) < (b)) ? (a) : (b))
+#endif
+
 // _isnan is MSVC's pre-C++11 name for isnan(); many call sites across this
 // codebase still use it directly (native port plan Phase 1).
 #ifndef _isnan
