@@ -147,12 +147,19 @@ void mat4_transform(const Mat4& m, float x, float y, float z, float out[4])
     }
 }
 
-// Validates the D3D8-vs-GL clip-space conversion numerically: projects a
+// Checks the D3D8-vs-GL clip-space row-remap formula numerically: projects a
 // handful of view-space sample points through both the native-GL matrix and
 // the D3D matrix-then-converted matrix, and checks the resulting NDC
-// coordinates agree. This is the concrete, running-code check for the
-// "D3D-vs-GL clip-space convention" item the plan's desk-check flagged as
-// unresolved on paper.
+// coordinates agree. Scope, precisely: this validates the remap formula
+// against a hand-written D3D8-NDC-range *model* (mat4_perspective_d3d
+// above), not against real D3D8 output or this engine's actual camera
+// matrices (WW3D's camera.cpp builds its own frustum matrices, not
+// exercised here) - both sides are built from the same fov/aspect code and
+// differ only in the z-row, so the remap recovering GL's coefficients is an
+// algebraic identity, not independent evidence D3D8 itself works this way.
+// It would pass even if the hand-written D3D8 model were wrong. Useful as a
+// check that this file's own row-remap code does what it claims to, not as
+// proof the real conversion is correct end to end.
 bool validate_clip_space_conversion(float fovy_rad, float aspect, float n, float f)
 {
     Mat4 gl_proj = mat4_perspective_gl(fovy_rad, aspect, n, f);
@@ -328,6 +335,12 @@ int main()
     }
     glfwMakeContextCurrent(window);
 
+    // Function-pointer-to-function-pointer reinterpret_cast is technically
+    // conditionally-supported rather than portable C++, but it's the
+    // standard pattern every mainstream GL loader (glad, GLEW, GLFW's own
+    // examples) relies on, and it's well-defined in practice on every ABI
+    // this spike targets (Windows/Linux/macOS all represent function
+    // pointers as plain addresses).
     if (!gl_core33_load(reinterpret_cast<void* (*)(const char*)>(&glfwGetProcAddress))) {
         fprintf(stderr, "SPIKE_FAIL: failed to resolve a required GL 3.3 core entry point\n");
         return 1;
@@ -435,7 +448,7 @@ int main()
     // opaque textured modulate (ShaderBitsSpike::OPAQUE_MODULATE). ---
     {
         Mat4 proj = mat4_ortho_gl(0.0f, (float)W, 0.0f, (float)H, -1.0f, 1.0f);
-        Mat4 model = mat4_multiply(mat4_translate(128.0f, W - 128.0f, 0.0f),
+        Mat4 model = mat4_multiply(mat4_translate(128.0f, H - 128.0f, 0.0f),
                                     [] { Mat4 s = mat4_identity(); s.m[0] = 200.0f; s.m[5] = 200.0f; return s; }());
         Mat4 mvp = mat4_multiply(proj, model);
         gl_UniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp.m);

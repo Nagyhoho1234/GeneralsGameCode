@@ -970,8 +970,13 @@ void ShaderClass::Apply()
 			// in this function, alongside a "#pragma message: Generals added a feature here ... which
 			// needs to be merged properly" TODO that was never resolved. Rather than guess at completing
 			// that TODO (which would change render output for one or both games in a way that can't be
-			// verified here), this is gated on RTS_GENERALS/RTS_ZEROHOUR so each game keeps exactly the
-			// behavior it already ships: Generals keeps the override, Zero Hour keeps it absent.
+			// verified here), this is gated on RTS_GENERALS/RTS_ZEROHOUR so each game keeps the behavior
+			// it already ships on this (non-Voodoo3) path: Generals keeps the override, Zero Hour keeps
+			// it absent. Note this guard only covers the non-Voodoo3 branch above - on actual Voodoo3
+			// hardware, Generals now takes the new Voodoo3 stage-shuffling branch too and so no longer
+			// applies this override there either, where pre-merge Generals always did. Left as-is: real
+			// Voodoo3 hardware is a non-concern in 2026, and threading the override through the
+			// Voodoo3 branch as well would mean guessing at interactions upstream itself never resolved.
 #if RTS_GENERALS
 			if (WW3D::Is_Coloring_Enabled())
 			{
