@@ -1,5 +1,5 @@
 /*
-**	Command & Conquer Generals(tm)
+**	Command & Conquer Generals Zero Hour(tm)
 **	Copyright 2025 Electronic Arts Inc.
 **
 **	This program is free software: you can redistribute it and/or modify
@@ -59,11 +59,13 @@ WaterTool::~WaterTool()
 	// m_poly_plusCursor/m_poly_moveCursor; it reuses the protected HCURSOR members inherited
 	// from PolygonTool. Destroying them here left the handles non-null, so the implicitly
 	// invoked PolygonTool::~PolygonTool() that runs right after this body destroyed the same
-	// already-destroyed HCURSOR handles a second time. This double DestroyCursor() call on
-	// process shutdown (freeing the same handle twice, with the handle value potentially
-	// already reused by an unrelated cursor by then) is what corrupted the heap and crashed
-	// WorldBuilder in Tool::~Tool() on quit. The base class destructor already frees these
-	// members, so this derived destructor must leave them alone.
+	// already-destroyed HCURSOR handles a second time. This double DestroyCursor() call
+	// (freeing the same handle twice, with the handle value potentially already reused by an
+	// unrelated cursor by then) is the shutdown-time heap corruption reported as issue #1220,
+	// which crashes WorldBuilder in Tool::~Tool() on quit. It is normally masked in this build
+	// because CWorldBuilderApp::~CWorldBuilderApp() calls _exit(0) before these Tool destructors
+	// ever run. The base class destructor already frees these members, so this derived
+	// destructor must leave them alone.
 }
 
 /// Clears it's is active flag.

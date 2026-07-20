@@ -434,7 +434,12 @@ void WorldHeightMapEdit::loadDirectoryOfImages(const char *pFilePath)
 	FilenameList::iterator it = filenameList.begin();
 	do {
 		AsciiString filename = *it;
-		strlcpy(fileBuf, filename.str(), ARRAY_SIZE(fileBuf));
+
+		// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 strlcpy(fileBuf, filename.str(), ...) only
+		// copied the bare filename into fileBuf, silently dropping the dirBuf directory prefix, so
+		// loadBitmap() was handed a path with no directory component. Build the full path by
+		// concatenating dirBuf and filename, matching Generals.
+		snprintf(fileBuf, ARRAY_SIZE(fileBuf), "%s%s", dirBuf, filename.str());
 		loadBitmap(fileBuf, filename.str());
 
 		++it;
@@ -1167,7 +1172,10 @@ void WorldHeightMapEdit::blendSpecificTiles(Int xIndex, Int yIndex, Int srcXInde
 			//force the primary layer to flip if the extra blend layer needs flip.
 			//we only do this on vertical/horizontal base blends because they work in either flip cases.
 			if (flipped && !baseIsDiagonal)
-			{	//Find a new tile so as not to affect other cells using the base one.
+			{	// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 m_blendedTiles entries are deduplicated
+				// and can be shared by multiple map cells (see findOrCreateBlendTile()), so mutating
+				// the shared entry in place here would flip every other cell that happens to reference
+				// the same blend tile index. Find a new tile so as not to affect other cells using the base one.
 				TBlendTileInfo tempBlendTileInfo=m_blendedTiles[m_blendTileNdxes[ndx]];
 				tempBlendTileInfo.inverted |= FLIPPED_MASK;
 				Short newNdx = findOrCreateBlendTile(&tempBlendTileInfo);
@@ -3432,8 +3440,13 @@ void WorldHeightMapEdit::findBoundaryNear(Coord3D *pt, float okDistance, Int *ou
 	}
 
 	(*outNdx) = -1;
-	// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 Respect the "outHandle can be null" contract
-	// documented on this function's declaration; this write was previously unconditional.
+	// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 This not-found path never wrote *outHandle at all,
+	// leaving callers' handle output (e.g. BorderTool::mouseDown()'s local `motion`) as uninitialized
+	// stack garbage whenever no boundary handle was near the click point -- the same defect class as
+	// #470's uninitialized Coord3D read. It happened to be harmless in the current caller (which only
+	// acts on the handle when *outNdx >= 0, and this path always sets *outNdx = -1), but is still
+	// undefined behavior. Fixed by respecting the "outHandle can be null" contract documented on this
+	// function's declaration and writing -1 through it here too.
 	if (outHandle) {
 		(*outHandle) = -1;
 	}

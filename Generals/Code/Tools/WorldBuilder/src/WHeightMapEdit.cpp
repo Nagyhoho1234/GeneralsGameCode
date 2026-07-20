@@ -120,7 +120,11 @@ WorldHeightMapEdit::WorldHeightMapEdit(Int width, Int height, UnsignedByte initi
 	// Note - we have one less cell than the width & height. But for paranoia, allocate
 	// extra row. jba.
 	//
-	Int numBytesX = (m_width+1)/8;	//how many bytes to fit all bitflags
+	// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 (m_width+1)/8 under-allocates the byte width of
+	// this per-row bitflag array whenever m_width isn't a multiple of 8 (e.g. width 9 needs 2 bytes
+	// but the old formula gave 1), causing out-of-bounds writes into m_cellFlipState/m_cellCliffState.
+	// Use (m_width+7)/8, which correctly rounds up to the nearest byte, matching GeneralsMD.
+	Int numBytesX = (m_width+7)/8;	//how many bytes to fit all bitflags
 	Int numBytesY = m_height;
 
 	m_flipStateWidth=numBytesX;
@@ -209,7 +213,9 @@ m_warnTooManyBlend(false)
 	// Note - we have one less cell than the width & height. But for paranoia, allocate
 	// extra row. jba.
 	//
-	Int numBytesX = (m_width+1)/8;	//how many bytes to fit all bitflags
+	// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 (m_width+1)/8 under-allocates this bitflag array
+	// for non-multiple-of-8 widths; use (m_width+7)/8 to round up to the nearest byte (see constructor above).
+	Int numBytesX = (m_width+7)/8;	//how many bytes to fit all bitflags
 	Int numBytesY = m_height;
 
 	m_flipStateWidth=numBytesX;
@@ -505,38 +511,6 @@ void WorldHeightMapEdit::loadImagesFromTerrainType( TerrainType *terrain )
 	m_numGlobalTextureClasses++;
 
 }
-
-
-Bool  WorldHeightMapEdit::getRawTileData(Short tileNdx, Int width,
-																				 UnsignedByte *buffer, Int bufLen)
-{
-	TileData *pSrc = nullptr;
-	if (tileNdx/4 < NUM_SOURCE_TILES) {
-		pSrc = m_sourceTiles[tileNdx/4];
-	}
-	if (bufLen < (width*width*TILE_BYTES_PER_PIXEL)) {
-		return(false);
-	}
-	if (pSrc && pSrc->hasRGBDataForWidth(2*width)) {
-		Int j;
-		UnsignedByte *pSrcData = pSrc->getRGBDataForWidth(2*width);
-		Int xOffset=0;
-		Int yOffset=0;
-		if (tileNdx & 1) xOffset = width;
-		if (tileNdx & 2) yOffset = width;
-		for (j=0; j<width; j++) {
-			UnsignedByte *pDestData = buffer;
-			pDestData += j*(width)*TILE_BYTES_PER_PIXEL;
-			UnsignedByte *pSrc = pSrcData;
-			pSrc += (j+yOffset)*width*TILE_BYTES_PER_PIXEL*2;
-			pSrc += xOffset*TILE_BYTES_PER_PIXEL;
-			memcpy(pDestData, pSrc, width*TILE_BYTES_PER_PIXEL);
-		}
-		return(true);
-	}
-	return(false);
-}
-
 
 
 UnsignedByte * WorldHeightMapEdit::getPointerToClassTileData(Int texClass)
@@ -1200,7 +1174,15 @@ void WorldHeightMapEdit::blendSpecificTiles(Int xIndex, Int yIndex, Int srcXInde
 			//force the primary layer to flip if the extra blend layer needs flip.
 			//we only do this on vertical/horizontal base blends because they work in either flip cases.
 			if (flipped && !baseIsDiagonal)
-				m_blendedTiles[m_blendTileNdxes[ndx]].inverted |= FLIPPED_MASK;
+			{	// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 m_blendedTiles entries are deduplicated
+				// and can be shared by multiple map cells (see findOrCreateBlendTile()), so mutating
+				// the shared entry in place here would flip every other cell that happens to reference
+				// the same blend tile index. Find a new tile so as not to affect other cells using the base one.
+				TBlendTileInfo tempBlendTileInfo=m_blendedTiles[m_blendTileNdxes[ndx]];
+				tempBlendTileInfo.inverted |= FLIPPED_MASK;
+				Short newNdx = findOrCreateBlendTile(&tempBlendTileInfo);
+				m_blendTileNdxes[ndx] = newNdx;	//remap this tile to use a new one.
+			}
 		}
 		else
 			m_blendTileNdxes[ndx] = newNdx;
@@ -1886,7 +1868,9 @@ Bool WorldHeightMapEdit::resize(Int newXSize, Int newYSize, Int newHeight, Int n
 	m_dataSize = newDataSize;
 	delete(m_cellCliffState);
 	delete(m_cellFlipState);
-	Int numBytesX = (m_width+1)/8;	//how many bytes to fit all bitflags
+	// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 (m_width+1)/8 under-allocates this bitflag array
+	// for non-multiple-of-8 widths; use (m_width+7)/8 to round up to the nearest byte (see constructor above).
+	Int numBytesX = (m_width+7)/8;	//how many bytes to fit all bitflags
  	m_flipStateWidth=numBytesX;
 
 	m_cellFlipState	= MSGNEW("WorldHeightMapEdit::resize") UnsignedByte[numBytesX*m_height];
@@ -3463,10 +3447,10 @@ void WorldHeightMapEdit::findBoundaryNear(Coord3D *pt, float okDistance, Int *ou
 	// TheSuperHackers @bugfix ZsoltFeher 07/20/2026 This not-found path never wrote *outHandle at all,
 	// leaving callers' handle output (e.g. BorderTool::mouseDown()'s local `motion`) as uninitialized
 	// stack garbage whenever no boundary handle was near the click point -- the same defect class as
-	// #470's uninitialized Coord3D read. It happened to be harmless in the current BorderTool caller
-	// (which only acts on the handle when *outNdx >= 0, and this path always sets *outNdx = -1), but is
-	// still undefined behavior. Matches GeneralsMD's equivalent write (also null-checked to respect the
-	// "outHandle can be null" contract documented on this function's declaration).
+	// #470's uninitialized Coord3D read. It happened to be harmless in the current caller (which only
+	// acts on the handle when *outNdx >= 0, and this path always sets *outNdx = -1), but is still
+	// undefined behavior. Fixed by respecting the "outHandle can be null" contract documented on this
+	// function's declaration and writing -1 through it here too.
 	if (outHandle) {
 		(*outHandle) = -1;
 	}
