@@ -31,6 +31,7 @@
 #ifdef _WIN32
 #include <winsock.h>	// This one has to be here. Prevents collisions with winsock2.h
 #else
+#include <cstring> // strerror
 #include <errno.h>
 #include <netdb.h> // gethostbyname, struct hostent, h_errno
 #include <sys/socket.h>
@@ -288,7 +289,14 @@ void GameResultsThreadClass::Thread_Function()
 
 //-------------------------------------------------------------------------
 
-#ifdef DEBUG_LOGGING
+#if defined(DEBUG_LOGGING) && !defined(_WIN32)
+// Portable equivalent for debug builds on Linux/macOS (native port plan
+// Phase 1): the WSA* error codes below don't exist off Windows.
+static const char *getWSAErrorString( Int error )
+{
+	return strerror(error);
+}
+#elif defined(DEBUG_LOGGING)
 #define CASE(x) case (x): return #x;
 
 static const char *getWSAErrorString( Int error )

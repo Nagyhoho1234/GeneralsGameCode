@@ -26,6 +26,18 @@
 #include <cctype>
 // For std::isnan, aliased as _isnan below
 #include <cmath>
+// For sprintf, used by itoa below
+#include <cstdio>
+
+// itoa is a non-standard MSVC function; this codebase only ever calls it
+// with base 10 (native port plan Phase 1).
+#ifndef itoa
+inline char* itoa(int value, char* str, int base)
+{
+	sprintf(str, "%d", value);
+	return str;
+}
+#endif
 
 // _isnan is MSVC's pre-C++11 name for isnan(); many call sites across this
 // codebase still use it directly (native port plan Phase 1).
