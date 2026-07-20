@@ -312,6 +312,10 @@ int main()
         return 1;
     }
 
+    glfwSetErrorCallback([](int error_code, const char* description) {
+        fprintf(stderr, "GLFW error 0x%x: %s\n", error_code, description);
+    });
+
     if (!glfwInit()) {
         fprintf(stderr, "SPIKE_FAIL: glfwInit failed\n");
         return 1;
