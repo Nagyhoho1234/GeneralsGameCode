@@ -29,6 +29,11 @@
 
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"
+#ifndef _WIN32
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 #include "Common/file.h"
 #include "Common/FileSystem.h"
 #include "Common/GameState.h"
@@ -441,6 +446,7 @@ void GameStateMap::xfer( Xfer *xfer )
 	* their own file so that those map files could be loaded as a part of the load game
 	* process */
 // ------------------------------------------------------------------------------------------------
+#ifdef _WIN32
 void GameStateMap::clearScratchPadMaps()
 {
 
@@ -509,3 +515,35 @@ void GameStateMap::clearScratchPadMaps()
 	SetCurrentDirectory( currentDirectory );
 
 }
+#else // !_WIN32 - portable equivalent (native port plan Phase 1): opendir/
+      // readdir/stat/unlink in place of FindFirstFile/FindNextFile/DeleteFile.
+void GameStateMap::clearScratchPadMaps()
+{
+	char currentDirectory[ _MAX_PATH ];
+	if (!getcwd(currentDirectory, sizeof(currentDirectory)))
+		return;
+
+	if (chdir(TheGameState->getSaveDirectory().str()) != 0)
+		return;
+
+	DIR *dir = opendir(".");
+	if (dir)
+	{
+		struct dirent *entry;
+		while ((entry = readdir(dir)) != nullptr)
+		{
+			struct stat st;
+			if (stat(entry->d_name, &st) != 0 || S_ISDIR(st.st_mode))
+				continue;
+
+			// see if there is a ".map" at end of this filename
+			const char *c = strrchr(entry->d_name, '.');
+			if (c && strcasecmp(c, ".map") == 0)
+				unlink(entry->d_name);
+		}
+		closedir(dir);
+	}
+
+	chdir(currentDirectory);
+}
+#endif // _WIN32
