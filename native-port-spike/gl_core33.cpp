@@ -1,0 +1,87 @@
+#include "gl_core33.h"
+
+PFNGLGENVERTEXARRAYSPROC gl_GenVertexArrays;
+PFNGLBINDVERTEXARRAYPROC gl_BindVertexArray;
+PFNGLDELETEVERTEXARRAYSPROC gl_DeleteVertexArrays;
+PFNGLGENBUFFERSPROC gl_GenBuffers;
+PFNGLBINDBUFFERPROC gl_BindBuffer;
+PFNGLBUFFERDATAPROC gl_BufferData;
+PFNGLDELETEBUFFERSPROC gl_DeleteBuffers;
+PFNGLVERTEXATTRIBPOINTERPROC gl_VertexAttribPointer;
+PFNGLENABLEVERTEXATTRIBARRAYPROC gl_EnableVertexAttribArray;
+PFNGLCREATESHADERPROC gl_CreateShader;
+PFNGLSHADERSOURCEPROC gl_ShaderSource;
+PFNGLCOMPILESHADERPROC gl_CompileShader;
+PFNGLGETSHADERIVPROC gl_GetShaderiv;
+PFNGLGETSHADERINFOLOGPROC gl_GetShaderInfoLog;
+PFNGLDELETESHADERPROC gl_DeleteShader;
+PFNGLCREATEPROGRAMPROC gl_CreateProgram;
+PFNGLATTACHSHADERPROC gl_AttachShader;
+PFNGLLINKPROGRAMPROC gl_LinkProgram;
+PFNGLGETPROGRAMIVPROC gl_GetProgramiv;
+PFNGLGETPROGRAMINFOLOGPROC gl_GetProgramInfoLog;
+PFNGLUSEPROGRAMPROC gl_UseProgram;
+PFNGLDELETEPROGRAMPROC gl_DeleteProgram;
+PFNGLGETUNIFORMLOCATIONPROC gl_GetUniformLocation;
+PFNGLUNIFORM1IPROC gl_Uniform1i;
+PFNGLUNIFORM1FPROC gl_Uniform1f;
+PFNGLUNIFORM4FPROC gl_Uniform4f;
+PFNGLUNIFORMMATRIX4FVPROC gl_UniformMatrix4fv;
+PFNGLGENFRAMEBUFFERSPROC gl_GenFramebuffers;
+PFNGLBINDFRAMEBUFFERPROC gl_BindFramebuffer;
+PFNGLFRAMEBUFFERTEXTURE2DPROC gl_FramebufferTexture2D;
+PFNGLCHECKFRAMEBUFFERSTATUSPROC gl_CheckFramebufferStatus;
+PFNGLDELETEFRAMEBUFFERSPROC gl_DeleteFramebuffers;
+PFNGLGENRENDERBUFFERSPROC gl_GenRenderbuffers;
+PFNGLBINDRENDERBUFFERPROC gl_BindRenderbuffer;
+PFNGLRENDERBUFFERSTORAGEPROC gl_RenderbufferStorage;
+PFNGLFRAMEBUFFERRENDERBUFFERPROC gl_FramebufferRenderbuffer;
+PFNGLDELETERENDERBUFFERSPROC gl_DeleteRenderbuffers;
+PFNGLACTIVETEXTUREPROC gl_ActiveTexture;
+
+#define LOAD(name, type, member) \
+    member = reinterpret_cast<type>(get_proc_address(name)); \
+    if (!member) return false;
+
+bool gl_core33_load(void* (*get_proc_address)(const char*))
+{
+    LOAD("glGenVertexArrays", PFNGLGENVERTEXARRAYSPROC, gl_GenVertexArrays);
+    LOAD("glBindVertexArray", PFNGLBINDVERTEXARRAYPROC, gl_BindVertexArray);
+    LOAD("glDeleteVertexArrays", PFNGLDELETEVERTEXARRAYSPROC, gl_DeleteVertexArrays);
+    LOAD("glGenBuffers", PFNGLGENBUFFERSPROC, gl_GenBuffers);
+    LOAD("glBindBuffer", PFNGLBINDBUFFERPROC, gl_BindBuffer);
+    LOAD("glBufferData", PFNGLBUFFERDATAPROC, gl_BufferData);
+    LOAD("glDeleteBuffers", PFNGLDELETEBUFFERSPROC, gl_DeleteBuffers);
+    LOAD("glVertexAttribPointer", PFNGLVERTEXATTRIBPOINTERPROC, gl_VertexAttribPointer);
+    LOAD("glEnableVertexAttribArray", PFNGLENABLEVERTEXATTRIBARRAYPROC, gl_EnableVertexAttribArray);
+    LOAD("glCreateShader", PFNGLCREATESHADERPROC, gl_CreateShader);
+    LOAD("glShaderSource", PFNGLSHADERSOURCEPROC, gl_ShaderSource);
+    LOAD("glCompileShader", PFNGLCOMPILESHADERPROC, gl_CompileShader);
+    LOAD("glGetShaderiv", PFNGLGETSHADERIVPROC, gl_GetShaderiv);
+    LOAD("glGetShaderInfoLog", PFNGLGETSHADERINFOLOGPROC, gl_GetShaderInfoLog);
+    LOAD("glDeleteShader", PFNGLDELETESHADERPROC, gl_DeleteShader);
+    LOAD("glCreateProgram", PFNGLCREATEPROGRAMPROC, gl_CreateProgram);
+    LOAD("glAttachShader", PFNGLATTACHSHADERPROC, gl_AttachShader);
+    LOAD("glLinkProgram", PFNGLLINKPROGRAMPROC, gl_LinkProgram);
+    LOAD("glGetProgramiv", PFNGLGETPROGRAMIVPROC, gl_GetProgramiv);
+    LOAD("glGetProgramInfoLog", PFNGLGETPROGRAMINFOLOGPROC, gl_GetProgramInfoLog);
+    LOAD("glUseProgram", PFNGLUSEPROGRAMPROC, gl_UseProgram);
+    LOAD("glDeleteProgram", PFNGLDELETEPROGRAMPROC, gl_DeleteProgram);
+    LOAD("glGetUniformLocation", PFNGLGETUNIFORMLOCATIONPROC, gl_GetUniformLocation);
+    LOAD("glUniform1i", PFNGLUNIFORM1IPROC, gl_Uniform1i);
+    LOAD("glUniform1f", PFNGLUNIFORM1FPROC, gl_Uniform1f);
+    LOAD("glUniform4f", PFNGLUNIFORM4FPROC, gl_Uniform4f);
+    LOAD("glUniformMatrix4fv", PFNGLUNIFORMMATRIX4FVPROC, gl_UniformMatrix4fv);
+    LOAD("glGenFramebuffers", PFNGLGENFRAMEBUFFERSPROC, gl_GenFramebuffers);
+    LOAD("glBindFramebuffer", PFNGLBINDFRAMEBUFFERPROC, gl_BindFramebuffer);
+    LOAD("glFramebufferTexture2D", PFNGLFRAMEBUFFERTEXTURE2DPROC, gl_FramebufferTexture2D);
+    LOAD("glCheckFramebufferStatus", PFNGLCHECKFRAMEBUFFERSTATUSPROC, gl_CheckFramebufferStatus);
+    LOAD("glDeleteFramebuffers", PFNGLDELETEFRAMEBUFFERSPROC, gl_DeleteFramebuffers);
+    LOAD("glGenRenderbuffers", PFNGLGENRENDERBUFFERSPROC, gl_GenRenderbuffers);
+    LOAD("glBindRenderbuffer", PFNGLBINDRENDERBUFFERPROC, gl_BindRenderbuffer);
+    LOAD("glRenderbufferStorage", PFNGLRENDERBUFFERSTORAGEPROC, gl_RenderbufferStorage);
+    LOAD("glFramebufferRenderbuffer", PFNGLFRAMEBUFFERRENDERBUFFERPROC, gl_FramebufferRenderbuffer);
+    LOAD("glDeleteRenderbuffers", PFNGLDELETERENDERBUFFERSPROC, gl_DeleteRenderbuffers);
+    LOAD("glActiveTexture", PFNGLACTIVETEXTUREPROC, gl_ActiveTexture);
+    return true;
+}

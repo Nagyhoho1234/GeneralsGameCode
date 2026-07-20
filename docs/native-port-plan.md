@@ -472,7 +472,13 @@ not deferred indefinitely.
 
 **Phase 3 - Decide and prototype the graphics API approach** (per the
 revised "Open decision" above), using the render2d+textured-mesh spike,
-not a bare triangle.
+not a bare triangle. **A first pass of this spike has run** -
+`native-port-spike/`, GL 3.3 core profile, standalone/not wired into the
+main build - see "Readiness assessment" below for results. Remaining
+before this phase can be called closed: texture-origin (V-flip)
+validation, and a headless Mesa/llvmpipe or real macOS run to check the
+desk-check's core-profile-strictness concern, not just the Windows
+concept run.
 
 **Phase 4 - Windowing + input**, now correctly scoped to include
 `WinMain.cpp`'s window/message-pump code and `Win32GameEngine`'s
@@ -687,30 +693,60 @@ wholesale.
 **Phase 0 is now fully complete** - every file across all 131
 `W3DDevice` files (three trees), GameNetwork's transport layer,
 GameSpy, registry, and timers/threads has been individually inventoried,
-not sampled or estimated. **Still not fully implementation-ready**, but
-the gap has narrowed to essentially one thing:
+not sampled or estimated.
 
-1. The Phase 3 graphics-API decision now has real, code-grounded
-   evidence behind it (texture-combiner scope, shader-asset scope,
-   confirmation of upstream's own direction in discussion #1575) rather
-   than being a plausibility argument - but it is still not a validated
-   spike. Nothing past Phase 4 should start until that spike (render2d
-   + one ShaderClass-driven textured mesh) has actually run and
-   confirmed the resource/semantics-matching risks the desk-check
-   identified as the real remaining unknowns (not combiner emulation,
-   which the desk-check resolved). This is still the single biggest
-   remaining unknown in the whole plan, but it's a narrower, better-
-   characterized one than it was two drafts ago.
+**The Phase 3 spike has now run** (`native-port-spike/`, standalone,
+not wired into the main game build - see that directory's CMakeLists.txt
+for how to configure/build it independently). Result: **the resource/
+semantics-matching risks the desk-check flagged as unresolved held up
+under a real GL 3.3 core-profile renderer**, not just on paper:
+
+- The D3D8-vs-GL clip-space convention (D3D8 NDC z in [0,w], GL in
+  [-w,w]) was validated numerically, not just visually: a D3D8-style
+  (RH, z-range-only) projection matrix converted via the standard row
+  remap (`z_gl = 2*z_d3d - w_d3d`) agrees with a native GL projection
+  matrix to within float precision (~2e-7) across five sample points.
+  Note the spike isolates the z-range question from D3D8's actual
+  left-handedness deliberately - handedness is a separate, independently
+  well-understood porting step (winding-order/cull-mode adjustment), and
+  an early version of this check that conflated the two produced a
+  large, meaningless delta before being caught and fixed.
+- Alpha-test-reference behavior without `glAlphaFunc` (removed in GL 3.3
+  core) works as `discard` in the fragment shader, driven directly by
+  the same `ShaderBits` vocabulary `shader.cpp` uses (`ALPHATEST_ENABLE`
+  bit decoded to a shader uniform, not a separate ad hoc flag).
+- A render2d-equivalent orthographic textured quad and a perspective-
+  projected, alpha-tested, additively-blended `ShaderClass`-driven quad
+  both rendered correctly to an offscreen FBO, confirmed by pixel
+  inspection (not just a non-crash check) - including correct
+  `GL_DEPTH_TEST` occlusion against a third nearer opaque quad.
+- **Not yet validated**: texture-origin convention (D3D8 top-left vs
+  GL bottom-left) needs a V-flip at texture upload or UV-generation time
+  - noted in the spike's code but not exercised, since checking it
+  properly needs a real D3D8 reference render to diff against, which
+  this spike doesn't have. Also not yet run headless under Mesa/
+  llvmpipe (Linux) or on an actual macOS GL 4.1 core context, both flagged
+  as necessary before treating the desk-check's macOS-strictness concern
+  as closed - this Windows run only confirms the *concept*, not that
+  every driver accepts it.
+
+This resolves the plan's single biggest previously-open unknown: option
+(a) is no longer just evidence-backed by desk-check, it has a working,
+numerically-checked prototype behind it.
 
 Everything else is now either ready to implement directly (Phase 1's
 build-system slice; Phase 7's networking/registry/timer work, which has
 enough file-level detail to start without further research) or ready to
-scope precisely once Phase 3's spike resolves (Phase 5's rendering
-sub-phases, now informed by exactly which W3DDevice files are D3D8-heavy
-vs. clean, sim-reachable vs. not, and genuinely divergent vs. cosmetic
-per-tree). The unify-before-porting candidates list is also now
-complete enough to sequence real #555 work alongside the relevant
-native-port phases rather than needing further discovery.
+scope precisely (Phase 5's rendering sub-phases, now informed by exactly
+which W3DDevice files are D3D8-heavy vs. clean, sim-reachable vs. not,
+and genuinely divergent vs. cosmetic per-tree, plus a validated spike
+behind the graphics-API choice). The unify-before-porting candidates
+list is also now complete enough to sequence real #555 work alongside
+the relevant native-port phases rather than needing further discovery;
+`registry.cpp` is the first Phase-7-adjacent candidate actually merged
+(see git history for #555), with `shader.cpp`/`mapper.cpp`/
+`vertmaterial.cpp` - flagged above as close to a hard prerequisite for
+Phase 3 work - in progress.
 
 ## Review history
 
@@ -771,3 +807,17 @@ native-port phases rather than needing further discovery.
   the unify-before-porting rule, the thread/mutex-stub or CRC-exclusion
   findings) needed to change - this pass was arithmetic and
   cross-reference hygiene, not a substantive correction.
+- Draft 6 (this version): moved from planning to first execution. A
+  fable review of the "proceed with unify + spike" plan (independent of
+  the holistic Draft 5 review) caught two real issues before work
+  started: `shader.cpp`/`mapper.cpp` unification is not a `#555`-style
+  mechanical dedup (328/1580+ genuine diff lines - a real feature-
+  preserving merge), and the plan's own claim that this unification is a
+  hard prerequisite for the Phase 3 spike was wrong (`shader.h`'s
+  `ShaderBits` layout is byte-identical between trees, so the spike only
+  needed the vocabulary, not the .cpp merge - the two were run in
+  parallel instead of sequentially as a result). `registry.cpp` unified
+  into `Core/` (both `g_gameengine`/`z_gameengine` build-verified);
+  `shader.cpp`/`mapper.cpp`/`vertmaterial.cpp` unification in progress.
+  The Phase 3 spike ran for the first time - see "Readiness assessment"
+  for what it did and didn't validate.
