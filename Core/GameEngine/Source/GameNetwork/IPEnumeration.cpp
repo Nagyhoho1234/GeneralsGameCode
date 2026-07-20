@@ -28,6 +28,12 @@
 #include "GameNetwork/networkutil.h"
 #include "GameClient/ClientInstance.h"
 
+#ifndef _WIN32
+#include <errno.h>
+#include <netdb.h> // gethostbyname, struct hostent, h_errno
+#include <unistd.h> // gethostname
+#endif
+
 IPEnumeration::IPEnumeration()
 {
 	m_IPlist = nullptr;
@@ -38,7 +44,9 @@ IPEnumeration::~IPEnumeration()
 {
 	if (m_isWinsockInitialized)
 	{
+#ifdef _WIN32
 		WSACleanup();
+#endif
 		m_isWinsockInitialized = false;
 	}
 
@@ -58,6 +66,7 @@ EnumeratedIP * IPEnumeration::getAddresses()
 
 	if (!m_isWinsockInitialized)
 	{
+#ifdef _WIN32
 		WORD verReq = MAKEWORD(2, 2);
 		WSADATA wsadata;
 
@@ -70,6 +79,10 @@ EnumeratedIP * IPEnumeration::getAddresses()
 			WSACleanup();
 			return nullptr;
 		}
+#endif
+		// BSD sockets (Linux/macOS) need no equivalent of WSAStartup -
+		// sockets are usable immediately, so there's nothing to do here
+		// besides recording that "init" (a no-op) has happened.
 		m_isWinsockInitialized = true;
 	}
 
@@ -77,16 +90,28 @@ EnumeratedIP * IPEnumeration::getAddresses()
 	char hostname[256];
 	if (gethostname(hostname, sizeof(hostname)))
 	{
+#ifdef _WIN32
 		DEBUG_LOG(("Failed call to gethostname; WSAGetLastError returned %d", WSAGetLastError()));
+#else
+		DEBUG_LOG(("Failed call to gethostname; errno is %d", errno));
+#endif
 		return nullptr;
 	}
 	DEBUG_LOG(("Hostname is '%s'", hostname));
 
 	// get host information from the host name
+#ifdef _WIN32
 	HOSTENT* hostEnt = gethostbyname(hostname);
+#else
+	struct hostent* hostEnt = gethostbyname(hostname);
+#endif
 	if (hostEnt == nullptr)
 	{
+#ifdef _WIN32
 		DEBUG_LOG(("Failed call to gethostbyname; WSAGetLastError returned %d", WSAGetLastError()));
+#else
+		DEBUG_LOG(("Failed call to gethostbyname; h_errno is %d", h_errno));
+#endif
 		return nullptr;
 	}
 
@@ -167,6 +192,7 @@ AsciiString IPEnumeration::getMachineName()
 {
 	if (!m_isWinsockInitialized)
 	{
+#ifdef _WIN32
 		WORD verReq = MAKEWORD(2, 2);
 		WSADATA wsadata;
 
@@ -179,6 +205,7 @@ AsciiString IPEnumeration::getMachineName()
 			WSACleanup();
 			return "";
 		}
+#endif
 		m_isWinsockInitialized = true;
 	}
 
@@ -186,7 +213,11 @@ AsciiString IPEnumeration::getMachineName()
 	char hostname[256];
 	if (gethostname(hostname, sizeof(hostname)))
 	{
+#ifdef _WIN32
 		DEBUG_LOG(("Failed call to gethostname; WSAGetLastError returned %d", WSAGetLastError()));
+#else
+		DEBUG_LOG(("Failed call to gethostname; errno is %d", errno));
+#endif
 		return "";
 	}
 

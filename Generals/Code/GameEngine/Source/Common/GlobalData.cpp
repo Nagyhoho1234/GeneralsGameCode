@@ -32,6 +32,15 @@
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#ifndef _WIN32
+#include <sys/stat.h> // mkdir
+#if defined(__APPLE__)
+#include <mach-o/dyld.h> // _NSGetExecutablePath
+#else
+#include <unistd.h> // readlink
+#endif
+#endif
+
 #include "ww3d.h"
 #include "texturefilter.h"
 
@@ -1033,7 +1042,11 @@ GlobalData::GlobalData()
 	m_shouldUpdateTGAToDDS = FALSE;
 
 	// Default DoubleClickTime to System double click time.
+#ifdef _WIN32
 	m_doubleClickTimeMS = GetDoubleClickTime(); // Note: This is actual MS, not frames.
+#else
+	m_doubleClickTimeMS = 500; // no system-wide double-click time query on this platform; a common default
+#endif
 
 #ifdef DUMP_PERF_STATS
 	m_dumpPerformanceStatistics = FALSE;
@@ -1197,7 +1210,11 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 
 	TheWritableGlobalData->m_userDataDir.clear();
 	TheWritableGlobalData->m_userDataDir = BuildUserDataPathFromIni();
+#ifdef _WIN32
 	CreateDirectory(TheWritableGlobalData->m_userDataDir.str(), nullptr);
+#else
+	mkdir(TheWritableGlobalData->m_userDataDir.str(), 0755); // matches CreateDirectory's scope: one level, not recursive
+#endif
 
 	// override INI values with user preferences
 	OptionPreferences optionPref;
@@ -1282,7 +1299,16 @@ UnsignedInt GlobalData::generateExeCRC()
 #else
 	{
 		Char buffer[ _MAX_PATH ];
+#ifdef _WIN32
 		GetModuleFileName( nullptr, buffer, sizeof( buffer ) );
+#elif defined(__APPLE__)
+		uint32_t bufferSize = sizeof(buffer);
+		_NSGetExecutablePath(buffer, &bufferSize);
+#else
+		// Linux: /proc/self/exe is a symlink to the running executable.
+		ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+		buffer[len > 0 ? len : 0] = '\0';
+#endif
 		fp = TheFileSystem->openFile(buffer, File::READ | File::BINARY);
 		if (fp != nullptr) {
 			unsigned char crcBlock[blockSize];
@@ -1338,6 +1364,9 @@ UnsignedInt GlobalData::generateExeCRC()
 
 AsciiString GlobalData::BuildUserDataPathFromIni()
 {
+	AsciiString myDocumentsDirectory;
+
+#ifdef _WIN32
 #if defined(_MSC_VER) && (_MSC_VER < 1300)
 	// VC6 lacks FOLDERID_Documents and KF_FLAG_DEFAULT
 	const GUID FOLDERID_Documents = { 0xFDD39AD0, 0x238F, 0x46AF, 0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7 };
@@ -1346,7 +1375,6 @@ AsciiString GlobalData::BuildUserDataPathFromIni()
 
 	typedef HRESULT(WINAPI* PFN_SHGetKnownFolderPath)(const GUID& rfid, DWORD dwFlags, HANDLE hToken, PWSTR* ppszPath);
 
-	AsciiString myDocumentsDirectory;
 	HMODULE shell32module = GetModuleHandleA("shell32.dll");
 	PFN_SHGetKnownFolderPath pSHGetKnownFolderPath = nullptr;
 
@@ -1383,6 +1411,20 @@ AsciiString GlobalData::BuildUserDataPathFromIni()
 		if (!myDocumentsDirectory.endsWith("\\"))
 			myDocumentsDirectory.concat('\\');
 	}
+#else
+	// Portable equivalent of the Windows "My Documents" lookup above
+	// (native port plan Phase 1): $HOME/Documents, matching the same
+	// "user's documents folder" semantics without Windows Shell APIs.
+	// A real XDG-Base-Directory-aware implementation is a reasonable
+	// future refinement, not required for this minimum-viable path.
+	const char* home = getenv("HOME");
+	if (home && home[0] != '\0') {
+		myDocumentsDirectory = home;
+		myDocumentsDirectory.concat("/Documents/");
+		myDocumentsDirectory.concat(TheWritableGlobalData->m_userDataLeafName.str());
+		myDocumentsDirectory.concat('/');
+	}
+#endif
 
 	return myDocumentsDirectory;
 }
