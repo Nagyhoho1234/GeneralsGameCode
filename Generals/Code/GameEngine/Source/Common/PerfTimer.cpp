@@ -35,16 +35,25 @@
 #include "GameClient/Display.h"
 #include "GameClient/GraphDraw.h"
 
-#ifndef _WIN32
+#if !defined(_WIN32) && (defined(__x86_64__) || defined(__i386__))
 #include <x86intrin.h> // __rdtsc() - GCC/Clang's name for the same x86 intrinsic MSVC calls _rdtsc()
+#elif !defined(_WIN32)
+#include <chrono> // ARM64 (e.g. Apple Silicon macOS) has no rdtsc equivalent - see below
 #endif
 
 __forceinline void ProfileGetTime(Int64 &t)
 {
 #ifdef _WIN32
 	t = _rdtsc();
-#else
+#elif defined(__x86_64__) || defined(__i386__)
 	t = __rdtsc();
+#else
+	// No portable cycle-counter equivalent on ARM64 (fable review caught this
+	// file assuming x86 everywhere, which breaks on Apple Silicon macOS - a
+	// real target of this port). A nanosecond-resolution monotonic clock
+	// isn't cycle-accurate, but serves the same "monotonically increasing
+	// counter for measuring deltas" purpose this profiling code needs.
+	t = std::chrono::steady_clock::now().time_since_epoch().count();
 #endif
 }
 

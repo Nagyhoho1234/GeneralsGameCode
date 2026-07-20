@@ -20,8 +20,10 @@
 
 #ifndef _WIN32
 #include <cstdio>
+#include <cstdlib>
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -42,27 +44,62 @@ Bool ClientInstance::s_isMultiInstance = true;
 Bool ClientInstance::s_isMultiInstance = false;
 #endif
 
+#ifndef _WIN32
+// tryLockInstance()'s three possible outcomes.
+enum class LockResult { Acquired, HeldByOther, OpenFailed };
+#endif
+
 namespace
 {
 #ifndef _WIN32
+// Per-user, non-world-writable directory for the lock file, in place of a
+// shared, predictable path directly under /tmp (fable review: a fixed
+// world-writable path is a symlink-squat surface, and 0666 masked by umask
+// in a *shared* /tmp means a second user on the same machine could collide
+// with the first user's lock - Windows' unnamed-prefix mutexes are
+// per-session, not machine-wide, so this restores the same isolation).
+// Prefers $XDG_RUNTIME_DIR (already per-user, 0700, tmpfs on most distros);
+// falls back to a per-uid subdirectory of /tmp otherwise.
+std::string getLockDir()
+{
+	if (const char* runtimeDir = getenv("XDG_RUNTIME_DIR"))
+	{
+		if (runtimeDir[0] != '\0')
+			return runtimeDir;
+	}
+
+	char dir[64];
+	snprintf(dir, sizeof(dir), "/tmp/genzh-%d", (int)getuid());
+	mkdir(dir, 0700); // ignore EEXIST; ownership is checked implicitly by open() failing for other users
+	return dir;
+}
+
 // POSIX equivalent of the named-Windows-mutex "is another instance already
 // running" check (native port plan Phase 1): a non-blocking flock() on a
-// well-known lock file. Returns an open fd holding the lock on success, or
-// -1 if another instance already holds it (matching CreateMutex + a
-// GetLastError()==ERROR_ALREADY_EXISTS check).
-int tryLockInstance(const char* name)
+// well-known lock file. O_NOFOLLOW refuses to open a symlink planted at the
+// expected path. Returns the open fd via *outFd on Acquired; the caller
+// must distinguish HeldByOther (retry with a new instance index, matching
+// GetLastError()==ERROR_ALREADY_EXISTS) from OpenFailed (a real error -
+// e.g. an unwritable directory - which should abort like CreateMutex
+// returning nullptr for a reason other than ERROR_ALREADY_EXISTS, not loop
+// forever incrementing the instance index).
+LockResult tryLockInstance(const char* name, int* outFd)
 {
-	char path[256];
-	snprintf(path, sizeof(path), "/tmp/%s.lock", name);
-	int fd = open(path, O_CREAT | O_RDWR, 0666);
+	std::string path = getLockDir();
+	path += '/';
+	path += name;
+	path += ".lock";
+
+	int fd = open(path.c_str(), O_CREAT | O_RDWR | O_NOFOLLOW, 0600);
 	if (fd < 0)
-		return -1;
+		return LockResult::OpenFailed;
 	if (flock(fd, LOCK_EX | LOCK_NB) != 0)
 	{
 		close(fd);
-		return -1;
+		return LockResult::HeldByOther;
 	}
-	return fd;
+	*outFd = fd;
+	return LockResult::Acquired;
 }
 #endif
 }
@@ -106,13 +143,21 @@ bool ClientInstance::initialize()
 				continue;
 			}
 #else
-			s_mutexHandle = tryLockInstance(guidStr.c_str());
-			if (s_mutexHandle < 0)
+			int fd = -1;
+			LockResult result = tryLockInstance(guidStr.c_str(), &fd);
+			if (result == LockResult::HeldByOther)
 			{
 				// Try again with a new instance.
 				++s_instanceIndex;
 				continue;
 			}
+			if (result == LockResult::OpenFailed)
+			{
+				// A real error (unwritable lock directory, etc.) - not
+				// "already running", so don't loop forever retrying.
+				return false;
+			}
+			s_mutexHandle = fd;
 #endif
 		}
 		else
@@ -129,11 +174,12 @@ bool ClientInstance::initialize()
 				return false;
 			}
 #else
-			s_mutexHandle = tryLockInstance(getFirstInstanceName());
-			if (s_mutexHandle < 0)
+			int fd = -1;
+			if (tryLockInstance(getFirstInstanceName(), &fd) != LockResult::Acquired)
 			{
 				return false;
 			}
+			s_mutexHandle = fd;
 #endif
 		}
 		break;

@@ -1302,10 +1302,12 @@ UnsignedInt GlobalData::generateExeCRC()
 #ifdef _WIN32
 		GetModuleFileName( nullptr, buffer, sizeof( buffer ) );
 #elif defined(__APPLE__)
+		buffer[0] = '\0'; // fable review: uninitialized on failure otherwise
 		uint32_t bufferSize = sizeof(buffer);
 		_NSGetExecutablePath(buffer, &bufferSize);
 #else
 		// Linux: /proc/self/exe is a symlink to the running executable.
+		buffer[0] = '\0'; // fable review: uninitialized on failure otherwise
 		ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
 		buffer[len > 0 ? len : 0] = '\0';
 #endif

@@ -128,10 +128,12 @@ void userMemoryManagerInitPools()
 	strlcat(buf, "\\Data\\INI\\MemoryPools.ini", ARRAY_SIZE(buf));
 #else
 #if defined(__APPLE__)
+	buf[0] = '\0'; // fable review: uninitialized on failure otherwise
 	uint32_t bufSize = sizeof(buf);
 	_NSGetExecutablePath(buf, &bufSize);
 #else
 	// Linux: /proc/self/exe is a symlink to the running executable.
+	buf[0] = '\0'; // fable review: uninitialized on failure otherwise
 	ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
 	buf[len > 0 ? len : 0] = '\0';
 #endif
