@@ -505,22 +505,47 @@ switched `g_wwdownload`/`z_wwdownload`/`g_ww3d2`/`z_ww3d2` to `INTERFACE`
 libraries on non-Windows, since a `STATIC` library needs at least one
 source file even when everything it links contributes zero.
 
-**Still remaining, and now understood to be much larger than this
-phase's "minimum viable slice" framing anticipated**: pushing
-`g_gameenginedevice`'s build frontier past its own device layer reaches
-deep into `GameEngine`'s own *core* code, not just the device/rendering
-layer - raw `HANDLE`/`LARGE_INTEGER` usage, `QueryPerformanceFrequency`,
-`_fpreset`, `atlbase.h` in `WebBrowser.h`, and a struct-size
-`static_assert` failure (`LANAPI.h`) that looks like a genuine 64-bit
-alignment issue rather than a simple gating fix. **258 unique error
-lines remain** as of this writing, most likely representing on the order
-of 50-100+ individual files, not a short tail. This blends into Phase 2
-(64-bit) and Phase 7 (COM/ATL, timers/threads) territory rather than
-being containable within Phase 1 alone - the phase boundaries in this
-plan describe the *target* end-state division of work, not a strict
-temporal ordering that guarantees each phase's problems stay within its
-own files. Real (not 32-bit-only) Linux/macOS CMake presets also still
-haven't been added.
+**Third through eighth passes** (commits `ffd7fd552` through `2f63f1e53`)
+worked through most of that GameEngine-core tail file by file, verifying
+via WSL2 rebuilds after each fix and re-verifying both `g_gameenginedevice`/
+`z_gameenginedevice` on Windows (0 errors) after each batch:
+`registry.cpp` (portable stub - real callers keep working, callers fall
+back to hardcoded defaults), `FrameRateLimit.cpp` (real
+`std::chrono`-based reimplementation, not a stub, since this affects
+actual gameplay frame pacing), `WorkerProcess`/`ReplaySimulation`
+(Windows Job-Object process spawning gated out, falls back to
+single-process replay-sim mode), `GlobalData.cpp`'s user-data-path and
+exe-CRC lookups (real `$HOME/Documents` + `/proc/self/exe`/
+`_NSGetExecutablePath` reimplementations, both trees separately since
+they'd genuinely diverged), `IPEnumeration.cpp`/`Transport.cpp`/`udp.cpp`
+(Winsock-to-BSD-sockets, mostly mechanical as this plan always expected -
+`udp.cpp` turned out to already be mostly prepared for this by prior
+authors), `CriticalSection.h` (`std::recursive_mutex`, both trees),
+`GameStateMap.cpp`'s scratch-pad-map cleanup (`opendir`/`readdir`
+in place of `FindFirstFile`), `ClientInstance.cpp` (`flock()`-based
+instance-lock, real reimplementation), `CommandLine.cpp` (`stat()`;
+`GetCommandLineA()` left as an explicit gap pending Phase 4's portable
+entry point, not guessed at), `AIPathfind.cpp`'s stray `__fastcall`,
+and a batch of CRT-name mismatches (`_isnan` fixed **centrally** in
+`compat.h` once - 12+ call sites across the codebase used it directly -
+rather than per-file; `GlobalAlloc`/`GetModuleFileName`/`__int64`+
+`_rdtsc`/`_fpreset`).
+
+**Net movement across this whole tail: 258 -> 48 unique remaining error
+lines** (an ~81% reduction), all independently re-verified not to have
+regressed the Windows build at each step. **Still remaining**: a
+scattered set of smaller files (`Image.cpp`, `PartitionManager.cpp`,
+`OpenContain.cpp`, `GameSpy`'s `PeerThread`/`PingThread`/
+`GameResultsThread`/`BuddyThread.cpp`, `ThingTemplate.cpp`, `Player.cpp`,
+`GameState.h`, `FirewallHelper.cpp`, `GlobalLanguage.cpp`, and about a
+dozen single-error files), plus a few qualitatively different items not
+attempted in this pass: a struct-size `static_assert` failure in
+`LANAPI.h` that looks like a genuine 64-bit alignment issue (Phase 2
+territory, not a simple gating fix), `atlbase.h` in `WebBrowser.h` (real
+COM/ATL work, Phase 7), and a build error inside the vendored
+`gamespy-src` third-party dependency itself (not this codebase's code).
+Real (not 32-bit-only) Linux/macOS CMake presets also still haven't been
+added.
 
 **Phase 2 - 64-bit, promoted from "non-goal" to prerequisite (macOS
 only, strongly recommended for Linux too).** Every game-capable preset
@@ -980,3 +1005,23 @@ Draft 6 history) are both merged (see git history for #555).
   this phase's stated framing - Phase 1 is not close to done, and what's
   left overlaps Phase 2/7 rather than staying contained to "build
   system" work.
+- Draft 9: worked through most of the Draft 8 tail across six more
+  commits (`ffd7fd552`..`2f63f1e53`), file by file, verifying via WSL2
+  rebuild after each fix and re-verifying the Windows build after each
+  batch. 258 -> 48 unique remaining error lines (~81% reduction). Notable
+  pattern: several fixes were real portable reimplementations (
+  `std::chrono`-based `FrameRateLimit`, `flock()`-based `ClientInstance`,
+  `opendir`-based scratch-pad cleanup, `$HOME`-based user-data paths),
+  not stubs, since these affect actual gameplay/UX, not just build
+  success - stubbing was reserved for genuinely out-of-scope things
+  (`registry.cpp`'s Windows-Registry backend, `GetCommandLineA()` pending
+  a portable entry point). Also found that fixing one widely-duplicated
+  MSVC-name mismatch (`_isnan`, used directly at 12+ call sites) in the
+  existing central compat-macro header was far more leveraged than
+  per-file fixes - worth checking for before assuming every remaining
+  error needs its own bespoke fix. Remaining tail is now a scattered set
+  of smaller files plus a few qualitatively harder items intentionally
+  not attempted: a likely-genuine 64-bit alignment `static_assert`
+  failure (Phase 2 territory), real COM/ATL work (`WebBrowser.h`, Phase
+  7), and an error inside a vendored third-party dependency's own header
+  (not this codebase's code to fix).
