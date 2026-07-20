@@ -330,6 +330,19 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE); // offscreen: FBO + glReadPixels only
+    // The window's own default framebuffer is never rendered into or read
+    // from - all real rendering happens in the separate FBO created below.
+    // Requesting a minimal default framebuffer (no depth/stencil/samples)
+    // reduces the pixel-format attribute combination NSGL/GLX/WGL has to
+    // satisfy to the bare minimum, which matters in practice: a GitHub
+    // Actions macOS runner failed with "NSGL: Failed to find a suitable
+    // pixel format" (GLFW error 0x10009) when this wasn't set, even though
+    // both the Windows/NVIDIA and Linux/Mesa-llvmpipe runs never hit this
+    // (they were less strict about the default-framebuffer request GLFW's
+    // built-in defaults ask for).
+    glfwWindowHint(GLFW_DEPTH_BITS, 0);
+    glfwWindowHint(GLFW_STENCIL_BITS, 0);
+    glfwWindowHint(GLFW_SAMPLES, 0);
 
     GLFWwindow* window = glfwCreateWindow(64, 64, "native-port-spike", nullptr, nullptr);
     if (!window) {
