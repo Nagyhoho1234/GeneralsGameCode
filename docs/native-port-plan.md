@@ -185,12 +185,47 @@ distilled result, including several corrections to the estimates above.
   - Practical consequence: any determinism fix here has to be applied
     and re-verified **twice** (once per tree) unless this directory is
     unified into `Core/` first - a natural, small #555 side-quest.
-- `Common/` subdirectory of `W3DDevice/` was not covered by this pass -
-  the 131-file total doesn't fully reconcile from the pieces above
-  (53 + 6 = 59), so there's a remaining ~70 files (`Common/`, plus
-  likely `Drawable/`'s own per-tree pieces if any exist) still
-  uninventoried. Flagging honestly rather than presenting the picture
-  as complete.
+- `Common/` + `GameClient/` root remainder (the last 67 of 131 files,
+  now fully inventoried in two follow-up passes) - **entirely
+  duplicated per-tree, not unified into `Core/`**, except one file
+  (`W3DRadar.cpp`). 11 "infrastructure" classes (factories, GUI window
+  plumbing, the Shadow subsystem) plus 22 `GameClient/` root classes
+  (asset manager, display, scene, road/bridge buffers, shroud, etc.).
+  Findings that change the plan's earlier assumptions:
+  - **11 of 33 files here are genuinely divergent between trees**, not
+    just cosmetic - and several carry real Zero-Hour-only gameplay
+    features, not just engine drift: stealth-detection material passes
+    and infantry-light scaling (`W3DScene.cpp`), a listening-outpost
+    "reveals enemy paths" feature (`W3dWaypointBuffer.cpp`), heat-
+    distortion/snow particle hooks (`W3DParticleSys.cpp`), localized-
+    language asset paths (`W3DFileSystem.cpp`). **Unifying these is not
+    a blind dedup** - it needs careful feature-preserving merges, unlike
+    most of the cosmetic-only pairs found elsewhere in this inventory.
+  - **Correction to an earlier assumption**: `W3DDisplay.cpp` does
+    *not* do device creation/reset (`IDirect3D8::CreateDevice` and
+    `D3DPRESENT_PARAMETERS` handling both live one layer down, in
+    `dx8wrapper.cpp:551,574`, confirmed by direct read). `W3DDisplay.cpp`
+    owns resolution/bit-depth fallback policy and debug-stat plumbing
+    instead - real work, but a different kind than "the device-init
+    file" implied.
+  - **The COM/ATL dependency is deeper than one file**: `W3DWebBrowser.cpp`
+    itself uses ATL types, but its base class `WebBrowser` (in `Core/`)
+    is where `<atlbase.h>`, the `FEBDispatch` ATL template, and the
+    global `CComObject<WebBrowser>` instance actually live - the
+    stub-or-remove decision has to handle that whole hierarchy, not
+    just the 78-line subclass.
+  - **Sim-reachability corrections, both directions**: `W3DShroud.cpp`
+    is confirmed sim-reachable (fog-of-war - `PartitionManager.cpp`
+    calls `TheDisplay->setShroudLevel()` on every per-player cell
+    shroud change, one-way). `W3DScene.cpp` turned out *not*
+    sim-reachable despite being a plausible-looking candidate (zero
+    hits anywhere in GameLogic). New finding: `W3DInGameUI.cpp` is
+    called 59+ times from GameLogic (mostly one-way UI feedback; one
+    read-back for veterancy-promotion UI refresh, confirmed not
+    outcome-affecting, so not a determinism risk, but worth knowing
+    about before a rewrite touches it).
+  - This closes the `W3DDevice` inventory completely - all 131 files
+    across all three trees are now accounted for.
 
 **GameNetwork transport layer (non-GameSpy) - smaller and more
 contained than the original estimate:**
@@ -294,46 +329,98 @@ effort estimation:**
   other branch - genuinely missing, not yet scaffolded, small but real
   work (`sysconf`/`/proc/meminfo`/`sysctl` equivalents).
 
-## Open decision: target graphics API
+## Open decision: target graphics API (desk-checked, no longer purely
+speculative)
 
-D3D8 is a fixed-function-plus-early-shader era API. This decision now
-has three options, and picking between them changes the effort
-estimate by an integer factor - it must be made explicitly, not left
-implicit:
+D3D8 is a fixed-function-plus-early-shader era API. The decision
+between two options still needs a real prototype to fully close, but a
+desk-check (reading `shader.cpp`/`mapper.cpp`/`W3DShaderManager.cpp`
+in full, characterizing the actual shipped shader assets, and checking
+what upstream itself is already doing) resolved several things that
+were previously just plausibility arguments:
 
 - **(a) Keep DX8Wrapper's D3D8 vocabulary as the portable interface,
-  reimplement only its backend.** Minimal call-site churn (the ~104
-  `DX8Wrapper::` callers stay as-is), but this is functionally an
-  in-tree D3D8-subset reimplementation - philosophically close to the
-  DXVK approach this plan otherwise rejects, just shipped as source
-  instead of a runtime shim. Note `cmake/dx8.cmake` already fetches a
-  header-only `min-dx8-sdk`, so the D3D8 *types* already compile
-  without a real Windows SDK - a hint this path may be what upstream
-  half-expects.
-- **(b) Replace the vocabulary itself** (direct OpenGL 3.3+, or an
-  abstraction layer like bgfx/SDL_gpu) - touches 100+ call sites across
-  WW3D2 and W3DDevice, not 15-18. Direct OpenGL has a real long-term
-  risk on macOS (deprecated, capped at 4.1). bgfx/SDL_gpu already
-  target Vulkan+Metal+GL under one API, matching the working macOS
-  Metal-shim reference in upstream discussion #2886, at the cost of a
-  third-party dependency and an extra indirection layer.
+  reimplement only its backend.** The ~104 `DX8Wrapper::` callers stay
+  as-is. `dx8wrapper.h` already internally state-caches everything into
+  tables (`RenderStates[]`, `TextureStageStates[8][32]`) - it is
+  already a state-table abstraction that happens to use D3D8 enum
+  names, not a thin pass-through in practice, which makes swapping the
+  backend more mechanical than "in-tree D3D8-subset reimplementation"
+  made it sound.
+- **(b) Replace the vocabulary itself** (OpenGL 3.3+, or bgfx/SDL_gpu).
 
-**Recommendation for review, revised**: option (a) first as a bridging
-step - it's the only option that doesn't also require re-authoring
-every shipped `.vso`/`.pso` shader binary immediately - with option (b)
-as the real end state once (a) proves the engine runs natively at all.
-Doing (b) directly is not wrong, but should be sized as the 100+
-call-site, shader-reauthoring effort it actually is, not the 15-18 file
-effort the first draft assumed.
+**The "100+ call sites" framing overstated how different these options
+actually are.** The desk-check found the whole texture-stage-combiner
+system - the thing that made (b) sound like a much bigger job - is
+small and centralized: it lives in one function,
+`ShaderClass::Apply()` (`shader.cpp:409-1044`), drives only 2 real
+texture stages, and the entire game only defines ~40 named
+configurations total (22 built-in presets + ~17 game-defined
+`SHADE_CNST` constants). Mapper classes (~20 of them) are even
+simpler - one virtual function, 4 texture-coordinate-generation modes,
+a matrix uniform. A single small GLSL "ubershader" (or a permutation
+cache keyed on the existing 32-bit `ShaderBits` word, mirroring code
+that already exists at `shader.cpp:421`) covers the whole system under
+either option. Most of the "100+ call sites" set the *same* bounded
+vocabulary repeatedly, not genuinely distinct configurations - so (b)
+is not the much-larger effort it looked like, and (a) is not
+meaningfully "safer" on this specific axis.
 
-**The prototype step needs to change too.** A single triangle or splash
-screen does not exercise the real risk. The real risks are (1) fixed-
-function texture-stage-combiner emulation (`D3DTSS_*` cascades - no
-direct equivalent in a modern shader-only API, needs a shader-
-permutation system), and (2) the shader-binary-asset problem above. A
-better spike: get `render2d`/UI quad rendering plus one
-ShaderClass-driven textured mesh through the candidate approach, not a
-bare triangle.
+**The shader-binary-asset item from the previous draft was wrong and
+is downgraded from blocker to minor task.** All 13 shipped `.vso`/`.pso`
+binaries (plus 3 tiny inline-assembled ps.1.1 shaders in `W3DWater.cpp`)
+have their assembly **source already shipping in-tree, GPL-licensed**,
+at `GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/
+Shaders/*.nvp/.nvv` (14 files, ~700 lines total, 34-72 lines each -
+terrain/water/road-noise/B&W-filter/tree-card effects). Re-authoring
+the complete set in GLSL is a days-scale task, not a project-blocking
+unknown, under either option (a) or (b). Separately, `W3DShaderManager.cpp`'s
+706 D3D8 call sites (previously flagged as the densest file found) are
+mostly per-chipset fallback lists (Voodoo3 support, 8-stage/2-stage
+NVidia-only paths, hardware-capability benchmarking) that a modern-GPU
+port deletes outright - the real surface is ~6 effect families plus 4
+screen filters, not 706 distinct things to port.
+
+**Upstream is already building option (a), which changes this from a
+theoretical recommendation to "follow the maintainers' actual
+direction."** Live upstream discussion #1575 ("Migrate to DX9") has
+maintainer bobtista actively implementing exactly this architecture on
+branch `bobtista/feat/render-backend-interface` - a render-backend
+interface with DX8 as the default passthrough, and bgfx as the first
+alternative backend, in progress. Maintainer xezon's stated constraint
+is not to break DX8 while adding backends; maintainer Mauller's stated
+position is to **unify Generals/ZH DX8 code first** - independently
+arriving at the same "unify before porting" rule this plan formalized
+above, before knowing that discussion existed. `cmake/dx8.cmake`
+already fetching TheSuperHackers' own header-only `min-dx8-sdk` is
+consistent with this being the intended direction, not a coincidence.
+A second architectural reference was also found there: fbraz3's
+"GeneralsX" fork (SDL3+DXVK+OpenAL, reported working) - subject to the
+same reference-only, don't-copy-code rule as the macOS fork already
+covered in the provenance section.
+
+**Recommendation, now evidence-backed rather than a plausibility
+argument**: option (a) first - not primarily because option (b)'s
+shader work is too large (the desk-check shows it isn't), but because
+(a) is mechanically verifiable file-by-file under an unchanged, already
+state-cached vocabulary, and because it is the path upstream is
+independently already moving toward, which maximizes the chance this
+work is mergeable rather than a permanently-divergent fork. `shader.cpp`/
+`mapper.cpp` being per-tree duplicated (confirmed, not yet in `Core/`)
+means unifying WW3D2's remaining #555 residue is a genuine prerequisite
+for doing this work once instead of twice, not just a nice-to-have.
+
+**What the desk-check could not resolve - still needs the real
+prototype**: pixel-exact combiner-math and alpha-test-reference
+semantics matching, vertex/index buffer lock/unlock and render-target
+lifecycle behavior, D3D-vs-GL clip-space/texture-matrix/half-texel
+conventions, and whether an ubershader vs. permutation-cache approach
+performs acceptably (near-certain non-issue on modern hardware, but
+unverified). **The spike design from Draft 2 is still correct and
+should not change**: `render2d`/UI quad rendering plus one
+ShaderClass-driven textured mesh, not a bare triangle - that combination
+is exactly where the desk-check says the real remaining risk (resource/
+semantics matching, not combiner emulation) actually lives.
 
 ## Phased plan (revised order and scope)
 
@@ -473,14 +560,30 @@ touches it):
   these to a new graphics API without unifying first would mean making
   the same D3D8→new-API judgment calls twice, on two already-different
   starting points, one of which has a feature the other lacks.
+- `shader.cpp`/`mapper.cpp` themselves (`Phase 3`/`Phase 5`) - confirmed
+  during the graphics-API desk-check to still be per-tree duplicated,
+  not in `Core/`. These are the files the whole Phase 3 spike and Phase
+  5(c) shader/mapper-pipeline rewrite are centered on - unifying them is
+  as close to a hard prerequisite as this rule produces anywhere in the
+  plan, not just a nice-to-have.
+- 11 of the 33 `W3DDevice/Common`+`GameClient`-root files (`Phase 5(e)`)
+  - unlike most of this plan's other unify-before-porting candidates,
+  several of these carry **real Zero-Hour-only gameplay features**
+  (stealth-detection rendering, a listening-outpost path-reveal
+  mechanic, smudge/snow particle hooks), not just engine-version drift.
+  Unifying these needs careful feature-preserving merges - closer in
+  spirit to the judgment-call adoption work already done for GUIEdit/
+  WorldBuilder than to a mechanical dedup.
 
-Not every duplicated file found in Phase 0 needs this treatment - the 8
-of 11 Shadow-subsystem-adjacent classes that turned out to be cosmetic-
-only, for instance, can just be unified in passing with near-zero
-effort whenever convenient, same as `Drawable/Draw`'s and GUI/gadget's
-already-confirmed-clean files. The rule matters most where divergence
-is genuine AND the file is D3D8/Win32-heavy - that's where doing it
-twice is expensive, not everywhere duplication exists.
+Not every duplicated file found in Phase 0 needs this treatment - the
+majority of files across every W3DDevice subtree inventoried turned out
+to be cosmetic-only once actually diffed (8 of 11 Shadow-subsystem-
+adjacent classes, 11 of 22 `GameClient`-root classes, most of GameSpy)
+and can just be unified in passing with near-zero effort whenever
+convenient. The rule matters most where divergence is genuine AND the
+file is either D3D8/Win32-heavy or carries real per-game feature work -
+that's where doing it twice is expensive, not everywhere duplication
+exists.
 
 ## Biggest risks (revised again after Phase 0)
 
@@ -559,33 +662,33 @@ wholesale.
 
 ## Readiness assessment
 
-**Phase 0 is now substantially complete** for W3DDevice (except the
-`Common/` subdirectory, ~70 files still uninventoried - see the note
-above), GameNetwork's transport layer, GameSpy, registry, and
-timers/threads. **Still not implementation-ready as a whole**, though -
-one gate remains before Phase 5 (rendering) can start with real
-confidence, and one smaller gate before Phase 0 can be called fully
-closed:
+**Phase 0 is now fully complete** - every file across all 131
+`W3DDevice` files (three trees), GameNetwork's transport layer,
+GameSpy, registry, and timers/threads has been individually inventoried,
+not sampled or estimated. **Still not fully implementation-ready**, but
+the gap has narrowed to essentially one thing:
 
-1. The Phase 3 graphics-API decision is still a recommendation on
-   paper, not a validated spike. Nothing past Phase 4 should start
-   until that spike (render2d + one ShaderClass-driven textured mesh,
-   not a bare triangle) has actually run. This is now the single
-   biggest remaining unknown in the whole plan.
-2. `W3DDevice/Common/` (~70 files, the piece of the 131-file total this
-   pass didn't reach) should get the same file-by-file treatment before
-   Phase 5(e) is scoped in detail - everything else in W3DDevice turned
-   out to have real surprises (zero-D3D8 Drawable slice, diverged
-   per-tree GameLogic, precisely-scoped-not-broadly-flagged determinism
-   risk) worth not assuming away for the remaining fifth of the
-   directory.
+1. The Phase 3 graphics-API decision now has real, code-grounded
+   evidence behind it (texture-combiner scope, shader-asset scope,
+   confirmation of upstream's own direction in discussion #1575) rather
+   than being a plausibility argument - but it is still not a validated
+   spike. Nothing past Phase 4 should start until that spike (render2d
+   + one ShaderClass-driven textured mesh) has actually run and
+   confirmed the resource/semantics-matching risks the desk-check
+   identified as the real remaining unknowns (not combiner emulation,
+   which the desk-check resolved). This is still the single biggest
+   remaining unknown in the whole plan, but it's a narrower, better-
+   characterized one than it was two drafts ago.
 
-Phase 1 (build-system slice) remains concrete and ready to start now -
-CMake-gating work with no open design questions blocking it. The
-networking, GameSpy, registry, and timer/thread findings above are
-detailed enough to start Phase 7's implementation work directly,
-ahead of the rendering phases, since none of it blocks or is blocked
-by the Phase 3 API decision.
+Everything else is now either ready to implement directly (Phase 1's
+build-system slice; Phase 7's networking/registry/timer work, which has
+enough file-level detail to start without further research) or ready to
+scope precisely once Phase 3's spike resolves (Phase 5's rendering
+sub-phases, now informed by exactly which W3DDevice files are D3D8-heavy
+vs. clean, sim-reachable vs. not, and genuinely divergent vs. cosmetic
+per-tree). The unify-before-porting candidates list is also now
+complete enough to sequence real #555 work alongside the relevant
+native-port phases rather than needing further discovery.
 
 ## Review history
 
@@ -599,15 +702,34 @@ by the Phase 3 API decision.
   several whole subsystems (networking, registry, timers, COM/ATL)
   were missing outright. Added explicit provenance/licensing review of
   the two external forks referenced as evidence.
-- Draft 3 (this version): folded in completed Phase 0 file-by-file
-  inventories (5 parallel research passes) for W3DDevice, GameNetwork,
-  GameSpy, registry, and timers/threads. Notable corrections: the
-  `W3DDevice/GameLogic` path doesn't exist under `Core/` (duplicated
-  and diverged per-tree instead); `Drawable/Draw`'s 18 files need zero
-  rewrite (all D3D8 work is one layer down in WW3D2); networking is a
-  small, mostly-already-half-ported job, not the genuine missing phase
-  it looked like; WWLib's thread/mutex "portability" scaffolding is
-  largely non-functional stubs despite compiling cleanly; and three
-  areas (`W3DDevice/GameLogic`, GameSpy, `registry.cpp`) turned out to
-  be their own un-unified #555 duplication gaps, found as a side effect
-  of this inventory rather than gone looking for.
+- Draft 3: folded in completed Phase 0 file-by-file inventories (5
+  parallel research passes) for W3DDevice's `Drawable`/`GameClient`/
+  `GameLogic` subtrees, GameNetwork, GameSpy, registry, and
+  timers/threads. Notable corrections: the `W3DDevice/GameLogic` path
+  doesn't exist under `Core/` (duplicated and diverged per-tree
+  instead); `Drawable/Draw`'s 18 files need zero rewrite (all D3D8 work
+  is one layer down in WW3D2); networking is a small, mostly-already-
+  half-ported job, not the genuine missing phase it looked like;
+  WWLib's thread/mutex "portability" scaffolding is largely
+  non-functional stubs despite compiling cleanly; and three areas
+  (`W3DDevice/GameLogic`, GameSpy, `registry.cpp`) turned out to be
+  their own un-unified #555 duplication gaps, found as a side effect of
+  this inventory rather than gone looking for. Formalized
+  "unify-before-porting" as an explicit sequencing rule rather than a
+  passive observation.
+- Draft 4 (this version): closed the last Phase 0 gap
+  (`W3DDevice/Common`+`GameClient`-root, 67 files, 2 more parallel
+  passes - confirming this entire slice is per-tree-duplicated too, and
+  that 11 of 33 files carry real Zero-Hour-only gameplay features, not
+  just engine drift) and desk-checked the graphics-API decision with a
+  focused pass reading `shader.cpp`/`mapper.cpp`/`W3DShaderManager.cpp`
+  in full. Major findings: the texture-combiner system is small and
+  centralized (~40 named configs, one function), not the open-ended
+  risk it looked like; the shader-binary-asset "blocker" was wrong -
+  the GPL-licensed assembly source ships in-tree, re-authoring is
+  days-scale; and upstream is already building exactly the recommended
+  option (a) architecture in live discussion #1575, with a maintainer
+  independently stating the same "unify Generals/ZH first" rule this
+  plan had already formalized. Phase 0 is now fully complete; the
+  graphics-API spike is the one remaining gate before real
+  implementation work.
