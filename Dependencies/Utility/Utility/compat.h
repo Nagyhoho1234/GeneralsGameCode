@@ -24,6 +24,14 @@
 #include <cstddef>
 // For isdigit
 #include <cctype>
+// For std::isnan, aliased as _isnan below
+#include <cmath>
+
+// _isnan is MSVC's pre-C++11 name for isnan(); many call sites across this
+// codebase still use it directly (native port plan Phase 1).
+#ifndef _isnan
+#define _isnan(x) std::isnan(x)
+#endif
 
 // __forceinline
 #ifndef __forceinline

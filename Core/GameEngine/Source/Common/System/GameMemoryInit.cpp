@@ -44,6 +44,13 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
 // SYSTEM INCLUDES
+#ifndef _WIN32
+#if defined(__APPLE__)
+#include <mach-o/dyld.h> // _NSGetExecutablePath
+#else
+#include <unistd.h> // readlink
+#endif
+#endif
 
 // USER INCLUDES
 #include "Lib/BaseType.h"
@@ -112,12 +119,28 @@ void userMemoryManagerInitPools()
 	// since we're called prior to main, the cur dir might not be what
 	// we expect. so do it the hard way.
 	char buf[_MAX_PATH];
+#ifdef _WIN32
 	::GetModuleFileName(nullptr, buf, sizeof(buf));
 	if (char* pEnd = strrchr(buf, '\\'))
 	{
 		*pEnd = 0;
 	}
 	strlcat(buf, "\\Data\\INI\\MemoryPools.ini", ARRAY_SIZE(buf));
+#else
+#if defined(__APPLE__)
+	uint32_t bufSize = sizeof(buf);
+	_NSGetExecutablePath(buf, &bufSize);
+#else
+	// Linux: /proc/self/exe is a symlink to the running executable.
+	ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+	buf[len > 0 ? len : 0] = '\0';
+#endif
+	if (char* pEnd = strrchr(buf, '/'))
+	{
+		*pEnd = 0;
+	}
+	strlcat(buf, "/Data/INI/MemoryPools.ini", ARRAY_SIZE(buf));
+#endif
 
 	FILE* fp = fopen(buf, "r");
 	if (fp)

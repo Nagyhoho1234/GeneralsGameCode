@@ -35,9 +35,17 @@
 #include "GameClient/Display.h"
 #include "GameClient/GraphDraw.h"
 
-__forceinline void ProfileGetTime(__int64 &t)
+#ifndef _WIN32
+#include <x86intrin.h> // __rdtsc() - GCC/Clang's name for the same x86 intrinsic MSVC calls _rdtsc()
+#endif
+
+__forceinline void ProfileGetTime(Int64 &t)
 {
+#ifdef _WIN32
 	t = _rdtsc();
+#else
+	t = __rdtsc();
+#endif
 }
 
 

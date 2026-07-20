@@ -233,10 +233,15 @@ static Int roundUpMemBound(Int i)
 */
 static void* sysAllocateDoNotZero(Int numBytes)
 {
+#ifdef _WIN32
 	void* p = ::GlobalAlloc(GMEM_FIXED, numBytes);
+#else
+	void* p = malloc(numBytes);
+#endif
 	if (!p)
 		throw ERROR_OUT_OF_MEMORY;
 #ifdef MEMORYPOOL_DEBUG
+#ifdef _WIN32
 	{
 		USE_PERF_TIMER(MemoryPoolDebugging)
 		#ifdef USE_FILLER_VALUE
@@ -249,7 +254,9 @@ static void* sysAllocateDoNotZero(Int numBytes)
 		if (thePeakSystemAllocationInBytes < theTotalSystemAllocationInBytes)
 			thePeakSystemAllocationInBytes = theTotalSystemAllocationInBytes;
 	}
-#endif
+#endif // _WIN32 - GlobalSize()-based debug accounting has no portable
+       // equivalent used here yet; skipped on other platforms for now.
+#endif // MEMORYPOOL_DEBUG
 	return p;
 }
 
@@ -262,14 +269,18 @@ static void sysFree(void* p)
 {
 	if (p)
 	{
-#ifdef MEMORYPOOL_DEBUG
+#if defined(MEMORYPOOL_DEBUG) && defined(_WIN32)
 		{
 			USE_PERF_TIMER(MemoryPoolDebugging)
 			::memset32(p, GARBAGE_FILL_VALUE, ::GlobalSize(p));
 			theTotalSystemAllocationInBytes -= ::GlobalSize(p);
 		}
 #endif
+#ifdef _WIN32
 		::GlobalFree(p);
+#else
+		free(p);
+#endif
 	}
 }
 

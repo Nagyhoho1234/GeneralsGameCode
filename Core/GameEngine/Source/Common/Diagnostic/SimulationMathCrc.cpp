@@ -18,6 +18,10 @@
 
 #include "PreRTS.h"
 
+#ifndef _WIN32
+#include <cfenv>
+#endif
+
 #include "Common/Diagnostic/SimulationMathCrc.h"
 #include "Common/XferCRC.h"
 #include "WWMath/matrix3d.h"
@@ -65,7 +69,11 @@ UnsignedInt SimulationMathCrc::calculate()
 
     appendSimulationMathCrc(xfer);
 
+#ifdef _WIN32
     _fpreset();
+#else
+    fesetenv(FE_DFL_ENV); // portable equivalent: reset the FP environment to default
+#endif
 
     xfer.close();
 
