@@ -1493,3 +1493,43 @@ category.
   same already-deferred items as the Generals tree. Not yet fixed -
   next session's starting point is applying the established Batch-1
   sibling-cast idiom to this newly-checked target.
+- Draft 14 (this version): applied the Batch-1 sibling-cast idiom to
+  GeneralsMD's ~13 not-yet-fixed menu files plus one Zero-Hour-only
+  file (`SabotageInternetCenterCrateCollide.cpp`) (commit `2aa67f8bb`).
+  Also caught a second instance of the `FALSE`-compared-to-pointer bug
+  class (`TransportContain.cpp`, both trees) that this session's own
+  earlier error triage had mischaracterized as "pointer-truncation,
+  Phase 2" without actually reading the line - a reminder to verify a
+  bucket assignment against the actual code, not just the compiler's
+  one-line error summary. **`z_gameenginedevice` (GeneralsMD) now
+  matches `g_gameenginedevice`: both are down to error lines that are
+  entirely shared `Core/` files already deferred for the other tree
+  too** - no tree-specific errors remain in either target.
+
+  A fable review of all 7 commits since Draft 12 (`5106888e2` through
+  `2aa67f8bb`) - the `WindowMsgData` widening, the ~45+13 double-cast
+  sites across both trees, the compat.h/time_compat.h shims, the
+  `setFPMode`/SNMP/keyboard/Desktop-path real reimplementations, the
+  `LANAPI.h` relaxation, and the three `FALSE`-vs-pointer bug fixes -
+  independently re-verified every claim against the actual code (not
+  the commit messages) and found **no defects**: `WindowMsgData` is
+  confirmed never stored/serialized anywhere in the repo; the
+  `GLM_GET_SELECTION` `Int**` fix matches its callers' actual
+  `(Int*)&selections`-with-`Int* selections` contract exactly; no
+  double-cast site wraps the wrong sub-expression; `LARGE_INTEGER`'s
+  `.QuadPart` member is never accessed by any of this typedef's
+  non-Windows-reachable call sites; `DeleteFile`/`CopyFile`'s Win32
+  return-value semantics match every caller; the SNMP rewrite's
+  network-byte-order contract is preserved exactly; all three
+  `FALSE`-vs-pointer fixes are behaviorally equivalent replacements in
+  both trees where duplicated; and `#ifdef`/`#endif` nesting balances
+  across all 62 touched files. Two non-defect residue items worth
+  remembering for later, not part of this pass's scope: `W3DDevice`'s
+  `W3DProgressBar.cpp:79,189,232` has the same unguarded
+  `(Int)window->winGetUserData()` pattern, currently invisible only
+  because all of `W3DDevice` sits behind `if(WIN32)` in
+  `Core/GameEngineDevice/CMakeLists.txt` and will need the same
+  treatment once Phase 5 brings that target online; and Generals' own
+  un-unified `GameSpyGameInfo.cpp:97` SNMP duplicate (already flagged
+  in the Batch 3 commit message) still needs the same rewrite whenever
+  that older GameSpy code path is built/touched.
