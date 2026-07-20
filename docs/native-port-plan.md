@@ -473,11 +473,17 @@ not deferred indefinitely.
 **Phase 3 - Decide and prototype the graphics API approach** (per the
 revised "Open decision" above), using the render2d+textured-mesh spike,
 not a bare triangle. **This spike has now run on two independent GL
-implementations** - `native-port-spike/`, GL 3.3 core profile, standalone/
-not wired into the main build - see "Readiness assessment" below for
-results. Remaining before this phase can be called closed: texture-origin
-(V-flip) validation, and a real macOS GL 4.1 core-profile run (Mesa/
-llvmpipe is now done, see below).
+implementations, and the texture-origin V-flip is validated** -
+`native-port-spike/`, GL 3.3 core profile, standalone/not wired into the
+main build - see "Readiness assessment" below for results. Remaining
+before this phase can be called closed: a real macOS GL 4.1 core-profile
+run. Attempted via GitHub-hosted CI and initially concluded to be a
+platform dead end - a follow-up investigation found that conclusion was
+wrong (GLFW's NSGL backend unconditionally requires *hardware-accelerated*
+pixel formats, which these VMs genuinely lack, but a one-line patch
+exists to request the software renderer instead, which still exercises
+real Apple GL 4.1 core-profile semantics); see "Readiness assessment"
+below for the fix and current status.
 
 **Phase 4 - Windowing + input**, now correctly scoped to include
 `WinMain.cpp`'s window/message-pump code and `Win32GameEngine`'s
@@ -735,31 +741,47 @@ under a real GL 3.3 core-profile renderer**, not just on paper:
   is written independently of NVIDIA's, so agreement between the two is
   the actual signal the desk-check's core-profile-strictness concern was
   asking for.
-- **Still not yet validated**: texture-origin convention (D3D8 top-left
-  vs GL bottom-left) needs a V-flip at texture upload or UV-generation
-  time - noted in the spike's code but not exercised, since checking it
-  properly needs a real D3D8 reference render to diff against, which this
-  spike doesn't have.
-- **macOS GL 4.1 core validation: attempted via GitHub-hosted CI, found
-  to be a platform dead end, not a code problem.**
+- **Texture-origin (D3D8 top-left vs GL bottom-left) V-flip: now
+  validated**, without needing a real D3D8 reference render. The spike
+  renders a four-quadrant orientation marker (red/green/blue/yellow, no
+  rotation or flip maps it onto itself) authored in top-left-origin row
+  order, twice: once uploaded as-is (row 0 first) - reproducing the exact
+  bug a naive D3D8-to-GL texture-loader port would have, since GL treats
+  row 0 as v=0/screen-bottom - and once with rows reversed at upload time
+  (the fix; flipping V at UV-generation time instead is equivalent).
+  Checked both visually (`vflip_check.png`: left quad shows blue/yellow
+  at top - wrong; right quad shows red/green at top - correct, matching
+  the intended authoring) and numerically (sampling known pixel positions
+  and checking which quadrant color landed where), confirmed on both
+  Windows/NVIDIA and Linux/Mesa-llvmpipe.
+- **macOS GL 4.1 core validation: initial "platform dead end" conclusion
+  was wrong - root cause is GLFW, not the platform, and a fix exists.**
   `.github/workflows/macos-spike.yml` was built and run 4 times on
-  `macos-latest`. The spike (after fixing a real portability bug each
-  attempt caught: no `<GL/gl.h>` on macOS at all, needs `<OpenGL/gl3.h>`;
-  then a GLFW error callback added for diagnostics; then minimizing
-  depth/stencil/sample window hints) builds clean every time, but
-  `glfwCreateWindow` always fails with `NSGL: Failed to find a suitable
-  pixel format` (GLFW error 0x10009). Web research found multiple
-  unrelated projects hitting this exact wall on GitHub's hosted macOS
-  runners (go-gl/glfw#335, Razakhel/RaZ#21, go-flutter-desktop/
-  go-flutter#504) - the consistent, independently-reached conclusion is
-  that these runners are VMs without real hardware-accelerated OpenGL/GPU
-  support, and that Xvfb-style workarounds don't help since it isn't a
-  display-server issue. **Conclusion: this specific validation needs a
-  real Mac or a self-hosted runner with actual GPU access - it cannot be
-  done via GitHub-hosted CI, and further attempts there would just be
-  re-discovering the same platform limitation.** The workflow is left in
-  place (with this finding documented in its own header comment) for
-  whenever real macOS hardware is available, rather than deleted.
+  `macos-latest`; every run built clean (after fixing a real portability
+  bug: no `<GL/gl.h>` on macOS, needs `<OpenGL/gl3.h>`) but
+  `glfwCreateWindow` always failed with `NSGL: Failed to find a suitable
+  pixel format` (GLFW error 0x10009), even after minimizing depth/
+  stencil/sample window hints. First-pass web research (go-gl/glfw#335,
+  Razakhel/RaZ#21, go-flutter-desktop/go-flutter#504) concluded this was
+  a fundamental GitHub-hosted-runner limitation with no fix. A follow-up
+  fable investigation found that conclusion doesn't hold up: GitHub's
+  macOS VMs do lack a working *accelerated* GPU device (tracked upstream
+  at actions/runner-images#7085), but the actual proximate cause is that
+  GLFW's `src/nsgl_context.m` unconditionally requests
+  `NSOpenGLPFAAccelerated` with no way to opt out, which is what turns
+  "no accelerated GPU" into "no context at all" - Apple's software GL
+  renderer is present on these VMs and does serve real GL 3.2+/4.1 core
+  contexts (confirmed independently: libsdl-org/SDL#1180), it's just
+  being excluded by GLFW's hardcoded request. A one-line patch
+  (glfw/glfw#2080: swap `NSOpenGLPFAAccelerated` for
+  `NSOpenGLPFARendererID`/`kCGLRendererGenericFloatID`) was proposed
+  upstream, tested by third parties as working on exactly this kind of
+  VM (glfw/glfw#2571 comments), but never merged - needs to be vendored
+  (e.g. building GLFW from source in the workflow with this patch
+  applied via `sed`) rather than obtained from upstream GLFW as-is.
+  **Not yet applied or re-verified as of this writing** - the next step
+  is patching `macos-spike.yml` to build GLFW with this fix and
+  re-running it, not treating this as closed.
 
 This resolves the plan's single biggest previously-open unknown: option
 (a) is no longer just evidence-backed by desk-check, it has a working,

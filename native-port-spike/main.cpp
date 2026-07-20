@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstring>
 #include <vector>
+#include <array>
 
 namespace {
 
@@ -303,6 +304,49 @@ std::vector<unsigned char> make_checker_circle_texture(int size)
     return pixels;
 }
 
+// Four-quadrant orientation marker, authored in top-left-origin row order
+// (row 0 = top row, matching how an artist/tool authoring a D3D8 texture -
+// or any ordinary image file - would think of "row 0"): top-left=red,
+// top-right=green, bottom-left=blue, bottom-right=yellow. No rotation or
+// flip of this pattern maps onto itself, so sampling it makes any origin
+// mismatch immediately visible rather than needing a subtler test.
+std::vector<unsigned char> make_orientation_quadrant_texture(int size)
+{
+    std::vector<unsigned char> pixels(size * size * 4);
+    int half = size / 2;
+    for (int y = 0; y < size; ++y) {
+        bool top_half = y < half;
+        for (int x = 0; x < size; ++x) {
+            int idx = (y * size + x) * 4;
+            bool left_half = x < half;
+            unsigned char r = 0, g = 0, b = 0;
+            if (top_half && left_half)       { r = 220; g = 30;  b = 30;  } // red
+            else if (top_half && !left_half) { r = 30;  g = 200; b = 30;  } // green
+            else if (!top_half && left_half) { r = 30;  g = 60;  b = 220; } // blue
+            else                              { r = 230; g = 210; b = 20;  } // yellow
+            pixels[idx + 0] = r;
+            pixels[idx + 1] = g;
+            pixels[idx + 2] = b;
+            pixels[idx + 3] = 255;
+        }
+    }
+    return pixels;
+}
+
+// Reverses row order in an RGBA8 image buffer - the actual fix for the
+// D3D8(top-left-origin)-vs-GL(bottom-left-origin) texture convention
+// mismatch: apply this once at upload time (equivalently, flip V in
+// UV-generation instead - the two are interchangeable) so GL's row-0-is-V-0
+// convention lines up with source data authored assuming row-0-is-the-top.
+std::vector<unsigned char> flip_rows_rgba(const std::vector<unsigned char>& src, int size)
+{
+    std::vector<unsigned char> out(src.size());
+    for (int y = 0; y < size; ++y) {
+        memcpy(&out[y * size * 4], &src[(size - 1 - y) * size * 4], size * 4);
+    }
+    return out;
+}
+
 } // namespace
 
 int main()
@@ -549,6 +593,118 @@ int main()
     }
 
     printf("SPIKE_OK: wrote %s\n", out_path);
+
+    // --- Texture-origin (D3D8 top-left vs GL bottom-left) validation ---
+    // Re-clears the same offscreen FBO and renders two screen-space quads:
+    // left uses an orientation-marker texture uploaded as-is (row 0 first),
+    // reproducing the bug a naive D3D8-to-GL texture-loader port would have
+    // (GL treats row 0 as v=0/screen-bottom, so top-authored image data
+    // ends up rendered at the bottom); right uses the same source pixels
+    // with flip_rows_rgba applied at upload time (the actual fix - flipping
+    // at UV-generation time instead is equivalent). Checked both visually
+    // (vflip_check.png) and by sampling known pixel positions and checking
+    // which quadrant color landed where, since "looks about right" alone
+    // doesn't distinguish the fix actually working from coincidence.
+    {
+        auto quadrant_pixels = make_orientation_quadrant_texture(128);
+        auto quadrant_pixels_flipped = flip_rows_rgba(quadrant_pixels, 128);
+
+        GLuint tex_naive, tex_fixed;
+        glGenTextures(1, &tex_naive);
+        glBindTexture(GL_TEXTURE_2D, tex_naive);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 128, 128, 0, GL_RGBA, GL_UNSIGNED_BYTE, quadrant_pixels.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glGenTextures(1, &tex_fixed);
+        glBindTexture(GL_TEXTURE_2D, tex_fixed);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 128, 128, 0, GL_RGBA, GL_UNSIGNED_BYTE, quadrant_pixels_flipped.data());
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        Mat4 proj = mat4_ortho_gl(0.0f, (float)W, 0.0f, (float)H, -1.0f, 1.0f);
+        Mat4 scale180 = mat4_identity();
+        scale180.m[0] = scale180.m[5] = 180.0f;
+
+        gl_ActiveTexture(GL_TEXTURE0);
+
+        // Left quad: naive upload (bug reproduction).
+        glBindTexture(GL_TEXTURE_2D, tex_naive);
+        {
+            Mat4 model = mat4_multiply(mat4_translate(128.0f, H / 2.0f, 0.0f), scale180);
+            Mat4 mvp = mat4_multiply(proj, model);
+            gl_UniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp.m);
+            apply_shader_bits(ShaderBitsSpike::OPAQUE_MODULATE, loc_alpha_test, loc_alpha_ref);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+
+        // Right quad: flipped-at-upload (the fix).
+        glBindTexture(GL_TEXTURE_2D, tex_fixed);
+        {
+            Mat4 model = mat4_multiply(mat4_translate(W - 128.0f, H / 2.0f, 0.0f), scale180);
+            Mat4 mvp = mat4_multiply(proj, model);
+            gl_UniformMatrix4fv(loc_mvp, 1, GL_FALSE, mvp.m);
+            apply_shader_bits(ShaderBitsSpike::OPAQUE_MODULATE, loc_alpha_test, loc_alpha_ref);
+            glDrawArrays(GL_TRIANGLES, 0, 6);
+        }
+
+        std::vector<unsigned char> vflip_fb(W * H * 4);
+        glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, vflip_fb.data());
+        std::vector<unsigned char> vflip_topdown(W * H * 4);
+        for (int y = 0; y < H; ++y) {
+            memcpy(&vflip_topdown[y * W * 4], &vflip_fb[(H - 1 - y) * W * 4], W * 4);
+        }
+
+        auto sample = [&](int px, int py) -> std::array<unsigned char, 3> {
+            int idx = (py * W + px) * 4;
+            return {vflip_topdown[idx], vflip_topdown[idx + 1], vflip_topdown[idx + 2]};
+        };
+        auto is_top_color = [](std::array<unsigned char, 3> c) { // red or green
+            return (c[0] > 150 && c[1] < 100 && c[2] < 100) || (c[1] > 150 && c[0] < 100 && c[2] < 100);
+        };
+        auto is_bottom_color = [](std::array<unsigned char, 3> c) { // blue or yellow
+            return (c[2] > 150 && c[0] < 100) || (c[0] > 150 && c[1] > 150 && c[2] < 100);
+        };
+
+        int naive_cx = 128, fixed_cx = W - 128;
+        int top_y = H / 2 - 60;
+
+        auto naive_top = sample(naive_cx, top_y);
+        auto fixed_top = sample(fixed_cx, top_y);
+
+        bool naive_reproduces_bug = is_bottom_color(naive_top); // expect wrong (bottom-authored) colors at screen-top
+        bool fixed_is_correct = is_top_color(fixed_top);        // expect correct (top-authored) colors at screen-top
+
+        printf("[texture-origin check] naive upload: %s at screen-top (bug %s) | fixed upload: %s at screen-top (fix %s)\n",
+            naive_reproduces_bug ? "bottom-authored color" : "top-authored color",
+            naive_reproduces_bug ? "reproduced as expected" : "NOT reproduced - unexpected",
+            fixed_is_correct ? "top-authored color" : "bottom-authored color",
+            fixed_is_correct ? "confirmed working" : "NOT working - unexpected");
+
+        std::vector<unsigned char> vflip_rgb(W * H * 3);
+        for (int i = 0; i < W * H; ++i) {
+            vflip_rgb[i * 3 + 0] = vflip_topdown[i * 4 + 0];
+            vflip_rgb[i * 3 + 1] = vflip_topdown[i * 4 + 1];
+            vflip_rgb[i * 3 + 2] = vflip_topdown[i * 4 + 2];
+        }
+        stbi_write_png("vflip_check.png", W, H, 3, vflip_rgb.data(), W * 3);
+
+        glDeleteTextures(1, &tex_naive);
+        glDeleteTextures(1, &tex_fixed);
+
+        if (!naive_reproduces_bug || !fixed_is_correct) {
+            fprintf(stderr, "SPIKE_FAIL: texture-origin validation did not behave as expected\n");
+            return 1;
+        }
+        printf("SPIKE_OK: wrote vflip_check.png (texture-origin V-flip validated)\n");
+    }
 
     glfwDestroyWindow(window);
     glfwTerminate();
