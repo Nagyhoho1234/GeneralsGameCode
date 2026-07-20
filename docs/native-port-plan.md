@@ -1425,3 +1425,71 @@ category.
   `pause()` name collision with POSIX `unistd.h`, one more
   `OSVERSIONINFO`/`GetVersionEx` Win9x-detection site) the 194-line
   rebuild exposed.
+- Draft 13 (this version): implemented Draft 11's Batches 2-4
+  (commits `38e7ae34a`, `223539908`, `d28d8284b`), taking
+  `g_gameenginedevice` (Generals) from 194 down to **21 unique WSL2
+  error lines - every single one an already-catalogued, deliberately
+  deferred item** (real COM/ATL work in `WebBrowser.h`/`ftp.h`, Phase
+  7; `DbgHelpLoader.h`'s `imagehlp.h`, dead weight when crash-dumps are
+  off; `BezierSegment.h`'s `d3dx8math.h`; pointer-truncation in
+  `LocalFile.cpp`/`TransportContain.cpp`/`FirewallHelper.cpp`, Phase 2;
+  `IMEManager.cpp`'s `mbstring.h`, Phase 4 IME). Windows build stayed
+  at 0 errors throughout every commit.
+
+  Batch 2's compat shims caught one real self-inflicted regression
+  mid-batch, same pattern as the earlier `winsock.h` mistake: defining
+  `__int64` as a preprocessor macro (`#define __int64 long long`)
+  seemed reasonable since `unsigned __int64` still composes through
+  substitution, but `WWDebug/wwprofile.h` already has its own
+  pre-existing `#ifdef _UNIX typedef signed long long __int64;` - the
+  macro rewrote that line's own name, producing `typedef ... long long
+  long long;` and cascading into 1022 bogus errors across every file
+  that transitively includes `compat.h`. Fixed by using a plain
+  typedef instead (legal to redeclare identically in C++, unlike a
+  macro) - a reminder that this codebase's existing portability
+  scaffolding should be checked for before assuming a symbol needs a
+  fresh compat shim.
+
+  Batch 3's real reimplementations: `StagingRoomGameInfo.cpp`'s SNMP
+  MIB-II walk replaced with the standard connected-UDP
+  `connect()`+`getsockname()` trick (contract verified against every
+  caller - the function returns network-byte-order, callers `ntohl()`
+  it themselves); French-keyboard detection in `Keyboard.cpp` ported
+  to locale-env sniffing; the "copy replay to Desktop" button in
+  `ReplayMenu.cpp` (both trees) ported to `$HOME/Desktop`, matching the
+  `$HOME/Documents` precedent.
+
+  Batch 4 also resolved two items that turned out not to be what the
+  plan assumed: `gsplatform.h`'s 30 errors were not a missing
+  `_LINUX` platform macro (that macro turned out to be pure
+  documentation in this vendored header, unused in its actual `#if`
+  logic, which already correctly branches on the already-defined
+  `_UNIX`) - the real cause was our own `string_compat.h`'s `_strlwr`
+  having C++ linkage where the vendored SDK's own declaration expects
+  `extern "C"`. And two genuine pre-existing bugs surfaced that GCC
+  caught and MSVC's permissive mode didn't: `GameWindowManagerScript.cpp`
+  (both trees) returning `FALSE` (`false`, not a null-pointer constant)
+  from a function returning `GameWindow*`, and `QuitMenu.cpp` (both
+  trees) comparing a pointer against `FALSE` with `!=` instead of
+  `nullptr`.
+
+  **New scope discovered while checking the other build target**:
+  `z_gameenginedevice` (GeneralsMD/Zero Hour) had not been WSL-built at
+  all this session - only `g_gameenginedevice` (Generals) had. A first
+  build shows 71 unique error lines, and the majority are NOT new
+  categories - they're the identical `WindowMsgData`-sibling
+  `(Type)(uintptr_t)expr` pattern from Batch 1, in GeneralsMD's own
+  separate copies of ~13 menu files (`WOLQuickMatchMenu.cpp`,
+  `SkirmishGameOptionsMenu.cpp`, `WOLGameSetupMenu.cpp`,
+  `WOLBuddyOverlay.cpp`, `LanGameOptionsMenu.cpp`, `WOLLobbyMenu.cpp`,
+  `PopupLadderSelect.cpp`, `PopupPlayerInfo.cpp`, `PopupHostGame.cpp`,
+  `OptionsMenu.cpp`, `LanLobbyMenu.cpp`, `SkirmishMapSelectMenu.cpp`,
+  `ScoreScreen.cpp`) that Batch 1 only fixed in the Generals tree.
+  Genuinely new: `SabotageInternetCenterCrateCollide.cpp` (2 errors,
+  same sibling-cast pattern) - a Zero-Hour-only file with no Generals
+  counterpart. The remaining errors (`WebBrowser.h`/`ftp.h`/
+  `DbgHelpLoader.h`/`BezierSegment.h`/`LocalFile.cpp`/
+  `TransportContain.cpp`/`FirewallHelper.cpp`/`IMEManager.cpp`) are the
+  same already-deferred items as the Generals tree. Not yet fixed -
+  next session's starting point is applying the established Batch-1
+  sibling-cast idiom to this newly-checked target.
