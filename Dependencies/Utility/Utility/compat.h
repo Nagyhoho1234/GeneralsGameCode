@@ -229,6 +229,19 @@ inline void GlobalMemoryStatus(MEMORYSTATUS* out)
 }
 #endif
 
+// AddFontResource / RemoveFontResource - honest no-op stubs (native
+// port plan Phase 1 Draft 11): GlobalLanguage.cpp loads custom
+// per-process font files this way; real fonts on non-Windows come from
+// Fontconfig (Phase 7), not implemented yet. AddFontResource returns
+// success (nonzero) rather than 0/failure so GlobalLanguage::init()'s
+// DEBUG_CRASH-on-failure check doesn't fire spuriously every run.
+#ifndef AddFontResource
+inline int AddFontResource(const char*) { return 1; }
+#endif
+#ifndef RemoveFontResource
+inline void RemoveFontResource(const char*) {}
+#endif
+
 // _MAX_DRIVE, _MAX_DIR, _MAX_FNAME, _MAX_EXT, _MAX_PATH
 #ifndef _MAX_DRIVE
 #define _MAX_DRIVE 3

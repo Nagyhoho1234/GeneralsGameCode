@@ -32,6 +32,17 @@ typedef WCHAR* LPWSTR;
 #define _wcsicmp wcscasecmp
 #define wcsicmp wcscasecmp
 
+// _wtoi: MSVC's wide-string-to-int (native port plan Phase 1 Draft 11).
+#ifndef _wtoi
+inline int _wtoi(const wchar_t* str) { return (int)wcstol(str, nullptr, 10); }
+#endif
+
+// iswascii: MSVC CRT extension, no direct POSIX equivalent needed - a
+// wide char is ASCII iff its value fits in 7 bits.
+#ifndef iswascii
+#define iswascii(c) ((unsigned int)(c) <= 0x7F)
+#endif
+
 // MultiByteToWideChar
 #define CP_ACP 0
 #define MultiByteToWideChar(cp, flags, mbstr, cb, wcstr, cch) mbstowcs(wcstr, mbstr, cch)

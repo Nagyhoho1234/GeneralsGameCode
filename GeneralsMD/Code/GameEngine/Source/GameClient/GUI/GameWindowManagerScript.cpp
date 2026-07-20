@@ -2751,7 +2751,12 @@ GameWindow *GameWindowManager::winCreateFromScript( AsciiString filenameString,
 		{
 
 			DEBUG_LOG(( "WinCreateFromScript: Error parsing layout block" ));
-			return FALSE;
+			// Genuine pre-existing bug, not platform-specific: this function
+			// returns GameWindow*, and FALSE is `false` (Lib/BaseTypeCore.h),
+			// which isn't a standard null pointer constant - MSVC tolerated
+			// this in permissive mode, GCC correctly rejects it (native port
+			// plan Phase 1 Draft 11).
+			return nullptr;
 
 		}
 

@@ -24,7 +24,14 @@ typedef const char* LPCSTR;
 typedef char* LPSTR;
 
 // String functions
-inline char *_strlwr(char *str) {
+// extern "C" linkage (native port plan Phase 1 Draft 11): the vendored
+// GameSpy SDK (_deps/gamespy-src/include/gamespy/gsplatform.h) declares
+// its own `char* _strlwr(char*)` inside an `extern "C" {}` block on
+// non-Windows, expecting this codebase to provide the definition (no
+// libc equivalent exists off Windows). A plain C++-linkage inline
+// definition here conflicted with that declaration wherever both
+// headers reach the same translation unit.
+extern "C" inline char *_strlwr(char *str) {
   for (int i = 0; str[i] != '\0'; i++) {
     str[i] = tolower(str[i]);
   }
