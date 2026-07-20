@@ -104,8 +104,8 @@ set(WW3D2_SRC
     line3d.h
     #linegrp.cpp
     #linegrp.h
-    #mapper.cpp
-    #mapper.h
+    mapper.cpp
+    mapper.h
     matinfo.cpp
     matinfo.h
     matpass.cpp
@@ -174,8 +174,8 @@ set(WW3D2_SRC
     segline.h
     seglinerenderer.cpp
     seglinerenderer.h
-    #shader.cpp
-    #shader.h
+    shader.cpp
+    shader.h
     shattersystem.cpp
     shattersystem.h
     shdlib.h
@@ -212,8 +212,8 @@ set(WW3D2_SRC
     textureloader.h
     texturethumbnail.cpp
     texturethumbnail.h
-    #vertmaterial.cpp
-    #vertmaterial.h
+    vertmaterial.cpp
+    vertmaterial.h
     visrasterizer.cpp
     visrasterizer.h
     w3d_dep.cpp

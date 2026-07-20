@@ -97,6 +97,7 @@ public:
 	virtual TextureMapperClass*	Clone() const override { 	WWASSERT(0);	return nullptr; }
 
 	virtual void			Apply(int uv_array_index) override;
+	virtual void			Calculate_Texture_Matrix(Matrix4x4 &tex_matrix) override;
 
 protected:
 

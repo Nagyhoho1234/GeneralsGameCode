@@ -258,3 +258,25 @@ void MatrixMapperClass::Apply(int uv_array_index)
 
 
 }
+
+/***********************************************************************************************
+ * MatrixMapperClass::Calculate_Texture_Matrix -- Calculate texture matrix                     *
+ *                                                                                             *
+ * INPUT:                                                                                      *
+ *                                                                                             *
+ * OUTPUT:                                                                                     *
+ *                                                                                             *
+ * WARNINGS:                                                                                   *
+ *                                                                                             *
+ * HISTORY:                                                                                    *
+ *   unify #555 : Added to satisfy the TextureMapperClass::Calculate_Texture_Matrix pure       *
+ *                virtual introduced when mapper.cpp/.h were unified into Core/ (matches the   *
+ *                GeneralsMD/Zero Hour implementation of this same method).                    *
+ *=============================================================================================*/
+void MatrixMapperClass::Calculate_Texture_Matrix(Matrix4x4 &tex_matrix)
+{
+	// We return ViewToPixel. This is not, strictly speaking, always correct, but it is close
+	// and it is OK not to be 100% correct since this function is not called by the Apply()
+	// function.
+	tex_matrix = ViewToPixel;
+}
