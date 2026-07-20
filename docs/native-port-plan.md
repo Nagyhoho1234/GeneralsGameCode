@@ -430,18 +430,57 @@ existing Windows build, not just the three originally-named files.
 - Solving Wine/Proton compatibility for players who prefer that route -
   this plan is about removing the *need* for it, not breaking it.
 
-## Related #555 unification gaps found during Phase 0
+## Unify-before-porting: an explicit strategy, not just a side-note
 
-Three areas turned up during this inventory that are duplicated
-per-tree rather than unified into `Core/`, meaning porting work there
-would otherwise need doing twice: `W3DDevice/GameLogic/` (3 files,
-diverged between trees), GameSpy (8 of 20 files are per-tree-only,
-5 Generals-only + 3 GeneralsMD-only), and `GameEngine/Source/Common/
-System/registry.cpp`. None of these were touched or unified as part of
-this planning pass - flagging them as natural, small, low-risk
-follow-on candidates for issue #555 before or alongside the relevant
-native-port phase, the same way finishing WW3D2's residue was already
-noted as paying off Phase 5 twice-over.
+Phase 0 kept surfacing the same pattern: files that need native-port
+rewriting AND are still duplicated per-tree rather than unified into
+`Core/`. This is now treated as a formal sequencing rule for this plan,
+not just an incidental observation:
+
+**Rule: for any file a native-port phase is about to touch, check
+whether it's still duplicated per-tree first, and unify it (via #555's
+established process - diff, classify cosmetic-vs-genuine divergence,
+move the reconciled version into `Core/`) *before* doing the portable
+rewrite, not after.** Reconciling the OLD (D3D8/Win32) code is usually
+cheap - Phase 0 found most per-tree pairs are cosmetic-only once
+actually diffed. Doing the portable rewrite twice, on two copies that
+would then independently diverge based on whichever choices each
+rewrite pass happened to make, is strictly worse and harder to
+reconcile later. This mirrors what was already true for WW3D2 (finishing
+its remaining #555 residue pays off the Phase 5 rewrite twice-over) -
+it just turned out to apply much more broadly than that one module.
+
+**Confirmed overlapping candidates found so far** (each should be
+unified as part of, or immediately before, the native-port phase that
+touches it):
+
+- `W3DDevice/GameLogic/` (3 files/tree, `Phase 5(e)`/`Phase 8`) -
+  small, diverged; `W3DTerrainLogic.cpp` is also the confirmed
+  lockstep-determinism-critical file, so this one is worth doing
+  *especially* carefully and early.
+- GameSpy (8 of 20 files per-tree-only, `Phase 6`/networking work) -
+  small-to-moderate.
+- `registry.cpp` (`Phase 7`) - trivial, 202 lines, near-identical
+  already.
+- The W3DDevice Shadow subsystem (`Phase 5(e)`) - the clearest case of
+  this rule actually mattering: `W3DProjectedShadow.cpp` (moderate
+  divergence, ~35 lines - a buffer-safety rewrite, not just cosmetic)
+  and `W3DVolumetricShadow.cpp` (large divergence, 358 lines - an added
+  CNC3/WWShade shader-mesh shadow-caster path GeneralsMD has that
+  Generals doesn't, plus API signature changes) are BOTH genuinely
+  divergent AND among the most D3D8-heavy files found in all of
+  `W3DDevice` (98 and 105 D3D8-vocabulary hits respectively). Porting
+  these to a new graphics API without unifying first would mean making
+  the same D3D8→new-API judgment calls twice, on two already-different
+  starting points, one of which has a feature the other lacks.
+
+Not every duplicated file found in Phase 0 needs this treatment - the 8
+of 11 Shadow-subsystem-adjacent classes that turned out to be cosmetic-
+only, for instance, can just be unified in passing with near-zero
+effort whenever convenient, same as `Drawable/Draw`'s and GUI/gadget's
+already-confirmed-clean files. The rule matters most where divergence
+is genuine AND the file is D3D8/Win32-heavy - that's where doing it
+twice is expensive, not everywhere duplication exists.
 
 ## Biggest risks (revised again after Phase 0)
 
