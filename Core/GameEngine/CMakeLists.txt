@@ -100,7 +100,7 @@ set(GAMEENGINE_SRC
     Include/Common/RAMFile.h
     Include/Common/RandomValue.h
 #    Include/Common/Recorder.h
-#    Include/Common/Registry.h
+    Include/Common/Registry.h
     Include/Common/ReplaySimulation.h
 #    Include/Common/ResourceGatheringManager.h
 #    Include/Common/Science.h
@@ -668,7 +668,7 @@ set(GAMEENGINE_SRC
 #    Source/Common/System/QuotedPrintable.cpp
     Source/Common/System/Radar.cpp
     Source/Common/System/RAMFile.cpp
-#    Source/Common/System/registry.cpp
+    Source/Common/System/registry.cpp
 #    Source/Common/System/SaveGame/GameState.cpp
 #    Source/Common/System/SaveGame/GameStateMap.cpp
     Source/Common/System/Snapshot.cpp

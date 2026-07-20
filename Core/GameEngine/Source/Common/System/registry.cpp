@@ -129,6 +129,10 @@ Bool GetStringFromGeneralsRegistry(AsciiString path, AsciiString key, AsciiStrin
 	return getStringFromRegistry(HKEY_LOCAL_MACHINE, fullPath.str(), key.str(), val);
 }
 
+// HKCU checked before HKLM, matching GetStringFromGeneralsRegistry() above -
+// per-user values should take precedence over machine-wide ones. Generals'
+// pre-unify copy of this function checked HKLM first instead; adopted
+// GeneralsMD's order as the reconciled behavior.
 Bool GetStringFromRegistry(AsciiString path, AsciiString key, AsciiString& val)
 {
 #if RTS_GENERALS
