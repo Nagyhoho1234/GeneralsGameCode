@@ -21,6 +21,12 @@ FetchContent_Declare(
     glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
     GIT_TAG        3.4
+    # Vendors glfw/glfw#2080 (never merged upstream) - see
+    # patch_glfw_nsgl.cmake for why: GitHub's hosted macOS CI runners lack a
+    # working accelerated GPU, and GLFW's NSGL backend unconditionally
+    # requires one with no opt-out, which is what turns "no accelerated GPU"
+    # into "no GL context at all" there. No-op on non-Apple platforms.
+    PATCH_COMMAND ${CMAKE_COMMAND} -DGLFW_SRC_DIR=<SOURCE_DIR> -P ${CMAKE_CURRENT_SOURCE_DIR}/patch_glfw_nsgl.cmake
 )
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
