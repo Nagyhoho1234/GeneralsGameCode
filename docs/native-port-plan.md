@@ -743,10 +743,10 @@ and genuinely divergent vs. cosmetic per-tree, plus a validated spike
 behind the graphics-API choice). The unify-before-porting candidates
 list is also now complete enough to sequence real #555 work alongside
 the relevant native-port phases rather than needing further discovery;
-`registry.cpp` is the first Phase-7-adjacent candidate actually merged
-(see git history for #555), with `shader.cpp`/`mapper.cpp`/
-`vertmaterial.cpp` - flagged above as close to a hard prerequisite for
-Phase 3 work - in progress.
+`registry.cpp` and `shader.cpp`/`mapper.cpp`/`vertmaterial.cpp` (the
+latter flagged above as close to a hard prerequisite for Phase 5(c)'s
+shader/mapper rewrite, though not for the Phase 3 spike itself - see
+Draft 6 history) are both merged (see git history for #555).
 
 ## Review history
 
