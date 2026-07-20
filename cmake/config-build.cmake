@@ -69,6 +69,30 @@ if(UNIX)
     target_compile_definitions(core_config INTERFACE _UNIX)
 endif()
 
+# WWLib/stringex.h has its own strlcpy/strlcat fallbacks, guarded by
+# #ifndef HAVE_STRLCPY/HAVE_STRLCAT specifically so a libc that already
+# provides them (glibc 2.38+, BSD libc, macOS) doesn't get a conflicting
+# second declaration - detect that here rather than hardcoding a libc
+# version, since the guard was clearly designed for exactly this check but
+# never had one wired in.
+include(CheckSymbolExists)
+check_symbol_exists(strlcpy "string.h" RTS_HAVE_STRLCPY)
+check_symbol_exists(strlcat "string.h" RTS_HAVE_STRLCAT)
+if(RTS_HAVE_STRLCPY)
+    target_compile_definitions(core_config INTERFACE HAVE_STRLCPY)
+endif()
+if(RTS_HAVE_STRLCAT)
+    target_compile_definitions(core_config INTERFACE HAVE_STRLCAT)
+endif()
+check_symbol_exists(wcslcpy "wchar.h" RTS_HAVE_WCSLCPY)
+check_symbol_exists(wcslcat "wchar.h" RTS_HAVE_WCSLCAT)
+if(RTS_HAVE_WCSLCPY)
+    target_compile_definitions(core_config INTERFACE HAVE_WCSLCPY)
+endif()
+if(RTS_HAVE_WCSLCAT)
+    target_compile_definitions(core_config INTERFACE HAVE_WCSLCAT)
+endif()
+
 if(RTS_BUILD_OPTION_DEBUG)
     target_compile_definitions(core_config INTERFACE RTS_DEBUG WWDEBUG DEBUG)
 else()
