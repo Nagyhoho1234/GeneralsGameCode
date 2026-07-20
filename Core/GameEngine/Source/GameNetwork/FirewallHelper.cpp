@@ -691,7 +691,13 @@ Bool FirewallHelperClass::detectionBeginUpdate() {
 		if (!found) {
 			Int m = m_numManglers++;
 			memcpy(&mangler_addresses[m][0], &host_info->h_addr_list[0][0], 4);
-			ntohl((UnsignedInt)mangler_addresses[m]);
+			// Genuine pre-existing dead code, not platform-specific: this
+			// ntohl() call's return value was discarded (ntohl doesn't
+			// mutate its argument), so it had zero effect - the actual
+			// byte-order handling happens manually a few lines below
+			// (mangler_addresses[i][3..0] reconstruction into m_manglers[i]),
+			// independent of this call. Removed rather than papered over
+			// with a truncating cast (native port plan Phase 2).
 			DEBUG_LOG(("Found mangler address at %d.%d.%d.%d", mangler_addresses[m][0], mangler_addresses[m][1], mangler_addresses[m][2], mangler_addresses[m][3]));
 		}
 
