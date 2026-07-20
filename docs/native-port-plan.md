@@ -1211,6 +1211,32 @@ pre-investigate each one, just diff the error inventory after each
 batch, the same workflow already used successfully for 14 passes
 running.
 
+**Batch 1 result (commit `5106888e2`): confirmed, 446 -> 194 unique
+error lines.** `GameWindow.h:76`'s `typedef uintptr_t WindowMsgData`
+alone dropped 446 to 256 (190 errors, right in the estimated
+~180-250 range). The sibling `(Type)(uintptr_t)expr` double-cast fix
+across ~45 call sites (`GadgetListBoxGetItemData`/
+`GadgetComboBoxGetItemData`/`GadgetButtonGetData`/`winGetUserData`
+call sites, plus `userData`/`param` callback-data arguments in
+`INI.cpp`/`ControlBar.cpp`/`ThingTemplate.cpp`/`AIStates.cpp`/
+`BuddyThread.cpp`/`PartitionManager.cpp`, both trees where duplicated)
+dropped 256 to 194. One site turned out not to be the safe
+value-in-slot pattern: `GadgetListBox.cpp`'s `GLM_GET_SELECTION`
+multi-select branch stores a real `Int*` array pointer through the
+`WindowMsgData` slot (Chat.cpp's caller passes `(Int*)&somePointerVar`
+and expects the full address back) - a plain `(Int)` truncating cast
+there would have been a genuine new 64-bit bug (writing 4 of 8 bytes
+into the caller's pointer variable), not just a compile error, so this
+one site was fixed by writing through `Int**` instead of the
+mechanical idiom. Batches 2-4 (below) are not yet implemented.
+Everything not covered by Batch 1 remains exactly as catalogued above,
+plus a handful of newly-surfaced small items the 194-line residue
+exposed (`_wtoi`/`iswascii` MSVC CRT names, a `pause()` name collision
+with POSIX `unistd.h`, `OSVERSIONINFO`/`GetVersionEx` in
+`PopupPlayerInfo.cpp` - the same Win9x-detection pattern already fixed
+once in `GameState.cpp`) - small, Batch-2/3-shaped work, not a new
+category.
+
 ## Review history
 
 - Draft 1: initial scope based on a targeted but incomplete grep-level
@@ -1379,3 +1405,23 @@ running.
   rewrite instead of the previously-suggested `getifaddrs()`, and
   several smaller mechanical shims) are in the new section above. Not
   yet implemented - this draft is the plan, not the fix.
+- Draft 12 (this version): implemented Draft 11's Batch 1 (commit
+  `5106888e2`). `GameWindow.h`'s `WindowMsgData` typedef widened to
+  `uintptr_t`, confirmed safe by the Draft 11 verification -
+  eliminated 190 of 446 WSL2 build errors by itself, landing right in
+  the estimated ~180-250 range. The sibling `(Type)(uintptr_t)expr`
+  double-cast fix followed across ~45 call sites in both trees where
+  duplicated, eliminating 62 more (446 -> 194 total). One site
+  (`GadgetListBox.cpp`'s multi-select `GLM_GET_SELECTION` handler)
+  turned out to store a real pointer through the message-data slot
+  rather than an encoded int - the mechanical idiom would have quietly
+  introduced a real 64-bit correctness bug (a plain `(Int)` cast
+  writing only 4 of the caller's 8 pointer bytes) instead of just
+  fixing a compile error, so it got a `Int**`-typed fix instead,
+  actually more correct than the Windows original's implicit
+  32-bit-pointer assumption. Batches 2-4 not yet started; see the
+  updated note at the end of the Draft 11 section above for the exact
+  residue and a few newly-surfaced small items (`_wtoi`/`iswascii`, a
+  `pause()` name collision with POSIX `unistd.h`, one more
+  `OSVERSIONINFO`/`GetVersionEx` Win9x-detection site) the 194-line
+  rebuild exposed.
