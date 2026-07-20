@@ -633,9 +633,20 @@ touches it):
   small, diverged; `W3DTerrainLogic.cpp` is also the confirmed
   lockstep-determinism-critical file, so this one is worth doing
   *especially* carefully and early.
-- GameSpy (5 unique logical files per-tree-only, `Phase 7`/networking
-  work) -
-  small-to-moderate.
+- GameSpy - **re-investigated, this estimate was wrong.** Not a
+  cosmetic-divergence merge like registry.cpp/shader.cpp: `Generals/`
+  still actively builds an older per-file design (`GameSpy.cpp`,
+  `GameSpyChat.cpp`, `GameSpyGameInfo.cpp`, `GameSpyGP.cpp`,
+  `GameSpyPersistentStorage.cpp`), while `GeneralsMD/` has copies of
+  some of these files sitting unused in its source tree - genuinely
+  commented out of `GeneralsMD/Code/GameEngine/CMakeLists.txt` (verified:
+  lines 521-523, 1089-1091) - because it already migrated to Core's
+  newer, more comprehensive 19-file `GameNetwork/GameSpy/` subsystem
+  instead. Real unification here means migrating Generals off its old
+  implementation onto Core's, not diffing two per-tree copies - a
+  materially bigger and riskier change (touching Generals' active
+  networking code path) than "5 unique logical files, small-to-moderate"
+  implied. Deferred pending a dedicated look, not attempted opportunistically.
 - `registry.cpp` (`Phase 7`) - trivial, 202 lines, near-identical
   already.
 - The W3DDevice Shadow subsystem (`Phase 5(e)`) - the clearest case of
