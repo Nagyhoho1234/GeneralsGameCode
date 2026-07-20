@@ -29,6 +29,10 @@
 
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"
+#ifndef _WIN32
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
 #include "Common/file.h"
 #include "Common/FileSystem.h"
 #include "Common/FramePacer.h"
@@ -206,13 +210,36 @@ GameState::SnapshotBlock *GameState::findBlockInfoByToken( AsciiString token, Sn
 
 // TheSuperHackers @tweak Use the user's default locale instead of the system default to match Windows regional settings.
 // This allows regional formats such as Europe (English) to use 24-hour and DD/MM/YYYY formats in-game.
+#define DATE_BUFFER_SIZE 256
+
+#ifndef _WIN32
+// Portable equivalent (native port plan Phase 1): the C library's
+// locale-aware strftime, in place of Win32's GetDateFormat/GetTimeFormat.
+// This is an honest simplification, not a full replacement - it can't
+// reach the per-user Windows regional format overrides the original
+// code queried via LOCALE_USER_DEFAULT, only the process locale.
+static struct tm SystemTimeToTm(SYSTEMTIME timeVal)
+{
+	struct tm t;
+	memset(&t, 0, sizeof(t));
+	t.tm_year = timeVal.wYear - 1900;
+	t.tm_mon = timeVal.wMonth - 1;
+	t.tm_mday = timeVal.wDay;
+	t.tm_hour = timeVal.wHour;
+	t.tm_min = timeVal.wMinute;
+	t.tm_sec = timeVal.wSecond;
+	t.tm_wday = timeVal.wDayOfWeek;
+	return t;
+}
+#endif
+
 UnicodeString getUnicodeDateBuffer(SYSTEMTIME timeVal)
 {
 	// setup date buffer for local region date format
-	#define DATE_BUFFER_SIZE 256
+	UnicodeString displayDateBuffer;
+#ifdef _WIN32
 	OSVERSIONINFO	osvi;
 	osvi.dwOSVersionInfoSize=sizeof(OSVERSIONINFO);
-	UnicodeString displayDateBuffer;
 	if (GetVersionEx(&osvi))
 	{	//check if we're running Win9x variant since they may need different characters
 		if (osvi.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
@@ -236,12 +263,20 @@ UnicodeString getUnicodeDateBuffer(SYSTEMTIME timeVal)
 	displayDateBuffer.set(dateBuffer);
 	return displayDateBuffer;
 	//displayDateBuffer.format( L"%ls", dateBuffer );
+#else
+	struct tm t = SystemTimeToTm(timeVal);
+	char dateBuffer[ DATE_BUFFER_SIZE ];
+	strftime(dateBuffer, sizeof(dateBuffer), "%x", &t);
+	displayDateBuffer.translate(dateBuffer);
+	return displayDateBuffer;
+#endif
 }
 
 UnicodeString getUnicodeTimeBuffer(SYSTEMTIME timeVal)
 {
 	// setup time buffer for local region time format
 	UnicodeString displayTimeBuffer;
+#ifdef _WIN32
 	OSVERSIONINFO	osvi;
 	osvi.dwOSVersionInfoSize=sizeof(OSVERSIONINFO);
 	if (GetVersionEx(&osvi))
@@ -269,6 +304,13 @@ UnicodeString getUnicodeTimeBuffer(SYSTEMTIME timeVal)
 								 ARRAY_SIZE(timeBuffer) );
 	displayTimeBuffer.set(timeBuffer);
 	return displayTimeBuffer;
+#else
+	struct tm t = SystemTimeToTm(timeVal);
+	char timeBuffer[ DATE_BUFFER_SIZE ];
+	strftime(timeBuffer, sizeof(timeBuffer), "%H:%M", &t);
+	displayTimeBuffer.translate(timeBuffer);
+	return displayTimeBuffer;
+#endif
 }
 
 
@@ -1282,6 +1324,7 @@ void GameState::iterateSaveFiles( IterateSaveFileCallback callback, void *userDa
 	if( callback == nullptr )
 		return;
 
+#ifdef _WIN32
 	// save the current directory
 	char currentDirectory[ _MAX_PATH ];
 	GetCurrentDirectory( _MAX_PATH, currentDirectory );
@@ -1342,6 +1385,38 @@ void GameState::iterateSaveFiles( IterateSaveFileCallback callback, void *userDa
 
 	// restore the current directory
 	SetCurrentDirectory( currentDirectory );
+#else
+	// Portable equivalent (native port plan Phase 1): opendir/readdir/stat
+	// in place of the FindFirstFile/FindNextFile dance above (and its
+	// GetCurrentDirectory/SetCurrentDirectory chdir juggling, which
+	// opendir(path) makes unnecessary).
+	AsciiString saveDir = getSaveDirectory();
+	DIR *dir = opendir( saveDir.str() );
+	if( dir == nullptr )
+		return;
+
+	struct dirent *entry;
+	while( (entry = readdir(dir)) != nullptr )
+	{
+		// see if there is a ".sav" at end of this filename
+		char *c = strrchr( entry->d_name, '.' );
+		if( c && stricmp( c, ".sav" ) == 0 )
+		{
+			AsciiString fullPath = saveDir;
+			fullPath.concat( entry->d_name );
+
+			struct stat st;
+			if( stat( fullPath.str(), &st ) == 0 && S_ISREG( st.st_mode ) )
+			{
+				AsciiString filename;
+				filename.set( entry->d_name );
+
+				callback( filename, userData );
+			}
+		}
+	}
+	closedir(dir);
+#endif
 
 }
 

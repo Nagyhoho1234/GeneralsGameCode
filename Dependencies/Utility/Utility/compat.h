@@ -76,6 +76,23 @@ inline char* itoa(int value, char* str, int base)
 #define OutputDebugString(str) printf("%s\n", str)
 #endif
 
+// _access (existence/permission check) and CreateDirectory - used across
+// this codebase with the "path, unused-second-arg" call shape.
+#include <unistd.h>
+#include <sys/stat.h>
+#include <errno.h>
+#ifndef _access
+#define _access access
+#endif
+#ifndef CreateDirectory
+inline int CreateDirectory(const char* path, void*)
+{
+	if (mkdir(path, 0755) == 0)
+		return 1;
+	return errno == EEXIST ? 1 : 0;
+}
+#endif
+
 // _MAX_DRIVE, _MAX_DIR, _MAX_FNAME, _MAX_EXT, _MAX_PATH
 #ifndef _MAX_DRIVE
 #define _MAX_DRIVE 3

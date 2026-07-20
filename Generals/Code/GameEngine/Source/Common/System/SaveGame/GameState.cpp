@@ -29,6 +29,10 @@
 
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
 #include "PreRTS.h"
+#ifndef _WIN32
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
 #include "Common/file.h"
 #include "Common/FileSystem.h"
 #include "Common/FramePacer.h"
@@ -1320,6 +1324,7 @@ void GameState::iterateSaveFiles( IterateSaveFileCallback callback, void *userDa
 	if( callback == nullptr )
 		return;
 
+#ifdef _WIN32
 	// save the current directory
 	char currentDirectory[ _MAX_PATH ];
 	GetCurrentDirectory( _MAX_PATH, currentDirectory );
@@ -1380,6 +1385,38 @@ void GameState::iterateSaveFiles( IterateSaveFileCallback callback, void *userDa
 
 	// restore the current directory
 	SetCurrentDirectory( currentDirectory );
+#else
+	// Portable equivalent (native port plan Phase 1): opendir/readdir/stat
+	// in place of the FindFirstFile/FindNextFile dance above (and its
+	// GetCurrentDirectory/SetCurrentDirectory chdir juggling, which
+	// opendir(path) makes unnecessary).
+	AsciiString saveDir = getSaveDirectory();
+	DIR *dir = opendir( saveDir.str() );
+	if( dir == nullptr )
+		return;
+
+	struct dirent *entry;
+	while( (entry = readdir(dir)) != nullptr )
+	{
+		// see if there is a ".sav" at end of this filename
+		char *c = strrchr( entry->d_name, '.' );
+		if( c && stricmp( c, ".sav" ) == 0 )
+		{
+			AsciiString fullPath = saveDir;
+			fullPath.concat( entry->d_name );
+
+			struct stat st;
+			if( stat( fullPath.str(), &st ) == 0 && S_ISREG( st.st_mode ) )
+			{
+				AsciiString filename;
+				filename.set( entry->d_name );
+
+				callback( filename, userData );
+			}
+		}
+	}
+	closedir(dir);
+#endif
 
 }
 
