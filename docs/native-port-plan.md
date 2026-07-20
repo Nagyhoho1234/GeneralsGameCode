@@ -482,21 +482,45 @@ exactly this, but nothing defined the macros; wired up
 `check_symbol_exists` detection; also found a second unguarded
 declaration block the original guard didn't cover).
 
-**Remaining, catalogued but not yet fixed** (surfaced by actually
-building `g_gameenginedevice` on Linux with `ninja -k0` to collect
-every independent error rather than stopping at the first): D3D8
-(`dx8wrapper.h`, and - surprising - `WWMath`'s own `matrix3d.cpp`/
-`matrix4.cpp` directly include `d3d8types.h`), Winsock/`imagehlp.h`/
-`atlbase.h`/`process.h` (`WWDownload`'s legacy FTP/WOL-browser code,
-`WWLib`'s `DbgHelpLoader`, `PreRTS.h`), a non-standard `<new.h>` include
-in `GameMemory.h`, and a third `registry.cpp` (`WWDownload`'s - distinct
-from the one already unified into `Core/GameEngine` in this plan's
-unify-before-porting work) calling the Windows Registry API directly
-with zero gating. Gating all of this out (accepting a non-functional
-stub, not a working non-Windows renderer/network/audio layer - that's
-Phases 4-7) is a materially larger, differently-shaped task than "gate
-one CMakeLists.txt link line," and real (not 32-bit-only) Linux/macOS
-CMake presets still haven't been added either.
+**Second pass fixed** (commit `9e1b76094`), gating the actual
+"device-layer sources" this phase originally named: `Core/GameEngineDevice`
+and the Generals/GeneralsMD per-tree residue (entire W3DDevice/Win32Device/
+MilesAudioDevice/VideoDevice source lists, `binkstub`/`d3d8lib`/`milesstub`
+linking - the original specific blocker), `Core/Libraries/WW3D2` (100+
+D3D8 call sites, gated wholesale), two D3D8-conversion functions found
+mixed into otherwise-portable `WWMath` (`matrix3d`/`matrix4`'s
+`To_D3DMATRIX`/`To_D3DXMATRIX`, verified their only callers are
+themselves Windows-only before gating), the whole `WWDownload` subsystem
+(Winsock/`process.h`/`HKEY` - `Download.h` and `urlBuilder.cpp` both
+depend on `ftp.h`'s `FTPClass` directly, no clean portable subset without
+untangling it, which is Phase 7 work), `WWLib`'s `DbgHelpLoader`
+(Windows crash-symbol resolution, already dead weight when
+`RTS_ENABLE_CRASHDUMP` is off by default but still compiled
+unconditionally), and `PreRTS.h`'s huge Windows-only include block
+(`atlbase.h`, `mmsystem.h`, `objbase.h`, `shellapi.h`, ...) split from
+the portable standard-C-library includes mixed into the same file. Also
+fixed two incomplete portability shims this surfaced (a missing
+`_stricmp`->`strcasecmp` alias, a missing `<wchar.h>` include) and
+switched `g_wwdownload`/`z_wwdownload`/`g_ww3d2`/`z_ww3d2` to `INTERFACE`
+libraries on non-Windows, since a `STATIC` library needs at least one
+source file even when everything it links contributes zero.
+
+**Still remaining, and now understood to be much larger than this
+phase's "minimum viable slice" framing anticipated**: pushing
+`g_gameenginedevice`'s build frontier past its own device layer reaches
+deep into `GameEngine`'s own *core* code, not just the device/rendering
+layer - raw `HANDLE`/`LARGE_INTEGER` usage, `QueryPerformanceFrequency`,
+`_fpreset`, `atlbase.h` in `WebBrowser.h`, and a struct-size
+`static_assert` failure (`LANAPI.h`) that looks like a genuine 64-bit
+alignment issue rather than a simple gating fix. **258 unique error
+lines remain** as of this writing, most likely representing on the order
+of 50-100+ individual files, not a short tail. This blends into Phase 2
+(64-bit) and Phase 7 (COM/ATL, timers/threads) territory rather than
+being containable within Phase 1 alone - the phase boundaries in this
+plan describe the *target* end-state division of work, not a strict
+temporal ordering that guarantees each phase's problems stay within its
+own files. Real (not 32-bit-only) Linux/macOS CMake presets also still
+haven't been added.
 
 **Phase 2 - 64-bit, promoted from "non-goal" to prerequisite (macOS
 only, strongly recommended for Linux too).** Every game-capable preset
@@ -933,3 +957,15 @@ Draft 6 history) are both merged (see git history for #555).
   tail of D3D8/Winsock/ATL/registry issues found by building
   `g_gameenginedevice` on Linux with `ninja -k0` to collect every
   independent error at once.
+- Draft 8: fixed the catalogued Phase 1 tail from Draft 7 (D3D8/Winsock/
+  ATL/registry gating across GameEngineDevice, WW3D2, WWDownload, WWLib,
+  PreRTS.h - commit `9e1b76094`), then found pushing further reaches
+  much deeper than expected: raw Win32 API usage throughout GameEngine's
+  own core code (not just its device/rendering layer), plus at least one
+  apparent 64-bit alignment bug (a `static_assert` on `LANMessage`'s
+  size). 258 unique build errors remain on Linux. This is the second
+  time actually attempting the build (rather than reading source and
+  estimating) revealed the true scope to be substantially larger than
+  this phase's stated framing - Phase 1 is not close to done, and what's
+  left overlaps Phase 2/7 rather than staying contained to "build
+  system" work.
