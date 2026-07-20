@@ -25,6 +25,10 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
+
 #include "Common/ArchiveFileSystem.h"
 #include "Common/CommandLine.h"
 #include "Common/CRCDebug.h"
@@ -1072,14 +1076,23 @@ Int parseMod(char *args[], Int num)
 		}
 
 		// now check for dir-ness
+#ifdef _WIN32
 		struct _stat statBuf;
 		if (_stat(modPath.str(), &statBuf) != 0)
+#else
+		struct stat statBuf;
+		if (stat(modPath.str(), &statBuf) != 0)
+#endif
 		{
 			DEBUG_LOG(("Could not _stat() mod."));
 			return 2; // could not stat the file/dir.
 		}
 
+#ifdef _WIN32
 		if (statBuf.st_mode & _S_IFDIR)
+#else
+		if (S_ISDIR(statBuf.st_mode))
+#endif
 		{
 			if (!modPath.endsWith("\\") && !modPath.endsWith("/"))
 				modPath.concat('\\');
@@ -1381,7 +1394,17 @@ static void parseCommandLine(const CommandLineParam* params, int numParams)
 {
 	std::vector<char*> argv;
 
+#ifdef _WIN32
 	std::string cmdLine = GetCommandLineA();
+#else
+	// GetCommandLineA() has no portable equivalent as such - the real fix is
+	// threading real argc/argv from main() down to here, which needs a
+	// portable entry point (native port plan Phase 4, not yet landed; the
+	// current entry point, WinMain.cpp, is Windows-only). Left as an empty
+	// command line for now rather than guessing at plumbing that doesn't
+	// exist yet.
+	std::string cmdLine;
+#endif
 	char *token = nextParam(&cmdLine[0], "\" ");
 	while (token != nullptr)
 	{

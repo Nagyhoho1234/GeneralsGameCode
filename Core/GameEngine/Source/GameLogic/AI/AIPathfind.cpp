@@ -27,6 +27,13 @@
 // Author: Michael S. Booth, October 2001
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+// __fastcall is an MSVC-only calling-convention keyword with no meaning on
+// other compilers (or on x86_64 at all, where there's only one calling
+// convention) - defined away here (native port plan Phase 1).
+#ifndef _MSC_VER
+#define __fastcall
+#endif
+
 #include "GameLogic/AIPathfind.h"
 
 #include "Common/PerfTimer.h"
