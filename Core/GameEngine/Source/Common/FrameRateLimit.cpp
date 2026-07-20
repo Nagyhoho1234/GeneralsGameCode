@@ -19,42 +19,86 @@
 #include "PreRTS.h"
 #include "Common/FrameRateLimit.h"
 
+#ifndef _WIN32
+#include <chrono>
+#include <thread>
+#endif
+
+namespace {
+#ifndef _WIN32
+// Portable stand-in for QueryPerformanceCounter/Frequency: steady_clock's
+// own tick count/period stand in for QuadPart/Frequency respectively - the
+// elapsed-seconds math below (tick delta / frequency) is agnostic to what a
+// "tick" actually represents, same as it is with the real Win32 QPC.
+Int64 PerfCounterNow()
+{
+	return static_cast<Int64>(std::chrono::steady_clock::now().time_since_epoch().count());
+}
+Int64 PerfCounterFreq()
+{
+	return static_cast<Int64>(std::chrono::steady_clock::period::den / std::chrono::steady_clock::period::num);
+}
+#endif
+}
 
 FrameRateLimit::FrameRateLimit()
 {
+#ifdef _WIN32
 	LARGE_INTEGER freq;
 	LARGE_INTEGER start;
 	QueryPerformanceFrequency(&freq);
 	QueryPerformanceCounter(&start);
 	m_freq = freq.QuadPart;
 	m_start = start.QuadPart;
+#else
+	m_freq = PerfCounterFreq();
+	m_start = PerfCounterNow();
+#endif
 }
 
 Real FrameRateLimit::wait(UnsignedInt maxFps)
 {
 	PROFILER_SECTION;
+#ifdef _WIN32
 	LARGE_INTEGER tick;
 	QueryPerformanceCounter(&tick);
 	double elapsedSeconds = static_cast<double>(tick.QuadPart - m_start) / m_freq;
+#else
+	Int64 tick = PerfCounterNow();
+	double elapsedSeconds = static_cast<double>(tick - m_start) / m_freq;
+#endif
 	const double targetSeconds = 1.0 / maxFps;
 	const double sleepSeconds = targetSeconds - elapsedSeconds - 0.002; // leave ~2ms for spin wait
 
 	if (sleepSeconds > 0.0)
 	{
+#ifdef _WIN32
 		// Non busy wait with Munkee sleep
 		DWORD dwMilliseconds = static_cast<DWORD>(sleepSeconds * 1000);
 		Sleep(dwMilliseconds);
+#else
+		std::this_thread::sleep_for(std::chrono::duration<double>(sleepSeconds));
+#endif
 	}
 
 	// Busy wait for remaining time
 	do
 	{
+#ifdef _WIN32
 		QueryPerformanceCounter(&tick);
 		elapsedSeconds = static_cast<double>(tick.QuadPart - m_start) / m_freq;
+#else
+		tick = PerfCounterNow();
+		elapsedSeconds = static_cast<double>(tick - m_start) / m_freq;
+#endif
 	}
 	while (elapsedSeconds < targetSeconds);
 
+#ifdef _WIN32
 	m_start = tick.QuadPart;
+#else
+	m_start = tick;
+#endif
 	return (Real)elapsedSeconds;
 }
 

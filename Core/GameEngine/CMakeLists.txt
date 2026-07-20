@@ -135,7 +135,6 @@ set(GAMEENGINE_SRC
     Include/Common/UserPreferences.h
 #    Include/Common/version.h
 #    Include/Common/WellKnownKeys.h
-    Include/Common/WorkerProcess.h
     Include/Common/Xfer.h
     Include/Common/XferCRC.h
     Include/Common/XferDeepCRC.h
@@ -691,7 +690,6 @@ set(GAMEENGINE_SRC
 #    Source/Common/Thing/ThingTemplate.cpp
     Source/Common/UserPreferences.cpp
 #    Source/Common/version.cpp
-    Source/Common/WorkerProcess.cpp
     Source/GameClient/ClientInstance.cpp
     Source/GameClient/Color.cpp
     Source/GameClient/Credits.cpp
@@ -1148,6 +1146,17 @@ set(GAMEENGINE_SRC
     Source/GameNetwork/WOLBrowser/WebBrowser.cpp
 #    Source/Precompiled/PreRTS.cpp
 )
+
+if(WIN32)
+    # Windows process-spawning API (Job Objects, CreateProcess) used only by
+    # ReplaySimulation's multi-process replay-validation mode - gated
+    # wholesale (native port plan Phase 1); ReplaySimulation itself falls
+    # back to single-process mode when this isn't available.
+    list(APPEND GAMEENGINE_SRC
+        Include/Common/WorkerProcess.h
+        Source/Common/WorkerProcess.cpp
+    )
+endif()
 
 if(RTS_GAMEMEMORY_ENABLE)
     # Uses the original Game Memory implementation.

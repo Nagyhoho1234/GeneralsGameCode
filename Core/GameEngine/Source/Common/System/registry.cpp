@@ -31,6 +31,19 @@
 #include "Common/Registry.h"
 
 
+// The low-level Windows Registry API wrappers below (getStringFromRegistry,
+// getUnsignedIntFromRegistry, setStringInRegistry, setUnsignedIntInRegistry)
+// have no callers outside this file - everything external goes through
+// GetStringFromGeneralsRegistry/GetStringFromRegistry/GetUnsignedIntFromRegistry
+// below, which stay declared and callable on every platform (StdBIGFileSystem.cpp,
+// the already-portable file-I/O layer, calls GetStringFromGeneralsRegistry
+// directly). Gated wholesale behind _WIN32; on other platforms the registry
+// lookup simply always "fails" and callers fall back to their existing
+// hardcoded defaults (see GetRegistryLanguage/GetRegistryGameName/
+// GetRegistryVersion/GetRegistryMapPackVersion below, unchanged) - a real
+// config-file-backed replacement is Phase 7 (native port plan), not this
+// minimum-viable stub.
+#ifdef _WIN32
 Bool  getStringFromRegistry(HKEY root, AsciiString path, AsciiString key, AsciiString& val)
 {
 	HKEY handle;
@@ -168,6 +181,22 @@ Bool GetUnsignedIntFromRegistry(AsciiString path, AsciiString key, UnsignedInt& 
 
 	return getUnsignedIntFromRegistry(HKEY_LOCAL_MACHINE, fullPath.str(), key.str(), val);
 }
+#else // !_WIN32
+Bool GetStringFromGeneralsRegistry(AsciiString path, AsciiString key, AsciiString& val)
+{
+	return FALSE;
+}
+
+Bool GetStringFromRegistry(AsciiString path, AsciiString key, AsciiString& val)
+{
+	return FALSE;
+}
+
+Bool GetUnsignedIntFromRegistry(AsciiString path, AsciiString key, UnsignedInt& val)
+{
+	return FALSE;
+}
+#endif // _WIN32
 
 AsciiString GetRegistryLanguage()
 {

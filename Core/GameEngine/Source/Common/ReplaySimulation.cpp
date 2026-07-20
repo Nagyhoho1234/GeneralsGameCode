@@ -23,15 +23,20 @@
 #include "Common/GameEngine.h"
 #include "Common/LocalFileSystem.h"
 #include "Common/Recorder.h"
-#include "Common/WorkerProcess.h"
 #include "GameLogic/GameLogic.h"
 #include "GameClient/GameClient.h"
+#include "systimer.h" // TIMEGETTIME() - portable GetTickCount() equivalent
+
+#ifdef _WIN32
+#include "Common/WorkerProcess.h"
+#endif
 
 
 Bool ReplaySimulation::s_isRunning = false;
 UnsignedInt ReplaySimulation::s_replayIndex = 0;
 UnsignedInt ReplaySimulation::s_replayCount = 0;
 
+#ifdef _WIN32
 namespace
 {
 int countProcessesRunning(const std::vector<WorkerProcess>& processes)
@@ -46,6 +51,7 @@ int countProcessesRunning(const std::vector<WorkerProcess>& processes)
 	return numProcessesRunning;
 }
 } // namespace
+#endif
 
 int ReplaySimulation::simulateReplaysInThisProcess(const std::vector<AsciiString> &filenames)
 {
@@ -74,13 +80,13 @@ int ReplaySimulation::simulateReplaysInThisProcess(const std::vector<AsciiString
 		return numErrors != 0 ? 1 : 0;
 	}
 	// Note that we use printf here because this is run from cmd.
-	DWORD totalStartTimeMillis = GetTickCount();
+	UnsignedInt totalStartTimeMillis = TIMEGETTIME();
 	for (size_t i = 0; i < filenames.size(); i++)
 	{
 		AsciiString filename = filenames[i];
 		printf("Simulating Replay \"%s\"\n", filename.str());
 		fflush(stdout);
-		DWORD startTimeMillis = GetTickCount();
+		UnsignedInt startTimeMillis = TIMEGETTIME();
 		if (TheRecorder->simulateReplay(filename))
 		{
 			UnsignedInt totalTimeSec = TheRecorder->getPlaybackFrameCount() / LOGICFRAMES_PER_SECOND;
@@ -91,7 +97,7 @@ int ReplaySimulation::simulateReplaysInThisProcess(const std::vector<AsciiString
 				{
 					// Print progress report
 					UnsignedInt gameTimeSec = TheGameLogic->getFrame() / LOGICFRAMES_PER_SECOND;
-					UnsignedInt realTimeSec = (GetTickCount()-startTimeMillis) / 1000;
+					UnsignedInt realTimeSec = (TIMEGETTIME()-startTimeMillis) / 1000;
 					printf("Elapsed Time: %02d:%02d Game Time: %02d:%02d/%02d:%02d\n",
 							realTimeSec/60, realTimeSec%60, gameTimeSec/60, gameTimeSec%60, totalTimeSec/60, totalTimeSec%60);
 					fflush(stdout);
@@ -104,7 +110,7 @@ int ReplaySimulation::simulateReplaysInThisProcess(const std::vector<AsciiString
 				}
 			}
 			UnsignedInt gameTimeSec = TheGameLogic->getFrame() / LOGICFRAMES_PER_SECOND;
-			UnsignedInt realTimeSec = (GetTickCount()-startTimeMillis) / 1000;
+			UnsignedInt realTimeSec = (TIMEGETTIME()-startTimeMillis) / 1000;
 			printf("Elapsed Time: %02d:%02d Game Time: %02d:%02d/%02d:%02d\n",
 					realTimeSec/60, realTimeSec%60, gameTimeSec/60, gameTimeSec%60, totalTimeSec/60, totalTimeSec%60);
 			fflush(stdout);
@@ -119,7 +125,7 @@ int ReplaySimulation::simulateReplaysInThisProcess(const std::vector<AsciiString
 	{
 		printf("Simulation of all replays completed. Errors occurred: %d\n", numErrors);
 
-		UnsignedInt realTime = (GetTickCount()-totalStartTimeMillis) / 1000;
+		UnsignedInt realTime = (TIMEGETTIME()-totalStartTimeMillis) / 1000;
 		printf("Total Time: %d:%02d:%02d\n", realTime/60/60, realTime/60%60, realTime%60);
 		fflush(stdout);
 	}
@@ -127,6 +133,7 @@ int ReplaySimulation::simulateReplaysInThisProcess(const std::vector<AsciiString
 	return numErrors != 0 ? 1 : 0;
 }
 
+#ifdef _WIN32
 int ReplaySimulation::simulateReplaysInWorkerProcesses(const std::vector<AsciiString> &filenames, int maxProcesses)
 {
 	DWORD totalStartTimeMillis = GetTickCount();
@@ -200,6 +207,7 @@ int ReplaySimulation::simulateReplaysInWorkerProcesses(const std::vector<AsciiSt
 
 	return numErrors != 0 ? 1 : 0;
 }
+#endif // _WIN32
 
 std::vector<AsciiString> ReplaySimulation::resolveFilenameWildcards(const std::vector<AsciiString> &filenames)
 {
@@ -246,8 +254,14 @@ std::vector<AsciiString> ReplaySimulation::resolveFilenameWildcards(const std::v
 int ReplaySimulation::simulateReplays(const std::vector<AsciiString> &filenames, int maxProcesses)
 {
 	std::vector<AsciiString> filenamesResolved = resolveFilenameWildcards(filenames);
+#ifdef _WIN32
 	if (maxProcesses == SIMULATE_REPLAYS_SEQUENTIAL)
 		return simulateReplaysInThisProcess(filenamesResolved);
 	else
 		return simulateReplaysInWorkerProcesses(filenamesResolved, maxProcesses);
+#else
+	// Multi-process worker mode (WorkerProcess) is Windows-only (native port
+	// plan Phase 1); always run sequentially in this process elsewhere.
+	return simulateReplaysInThisProcess(filenamesResolved);
+#endif
 }
