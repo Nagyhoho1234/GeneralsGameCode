@@ -2759,3 +2759,437 @@ Watch items / nits (no action required this milestone):
    `pRect`, device-recreation staleness for the fixed-function program,
    check 2/3 sample margins in the M2 harness) remain open and
    unchanged, still correctly deferred.
+
+## Draft 22: Milestone 4 plan - the texture pipeline (textureloader +
+background thread, DDS/TGA loading, thumbnails, missing-texture,
+surfaces, GL mipmaps), planned as a fable background agent per standing
+user request, against Milestone 3's actual delivered code (commits
+`c74701eb4`..`42de6aa88`, HEAD at planning time), not just its plan.
+
+**What Milestone 3 actually delivered (verified by reading the current
+files, not the commit messages):** the full high-level draw path
+(`Set_Vertex_Buffer`/`Set_Index_Buffer`/`Apply_Render_State_Changes`/
+`Draw_Triangles` and the buffer classes) runs on GL end-to-end, with real
+`SetTransform`/MVP composition, real blend translation, honest fabricated
+caps (`dx8wrapper_gl.cpp:1136-1170`), a 1x1 white stage-0 fallback, and a
+passing `Tests/RenderEngineDrawPath/` harness wired into CI alongside the
+M1/M2 harnesses (`linux-native.yml:62-97`). `texture_common.cpp` exists
+as the planned Milestone-4 seed (only `Apply_Null`). Honest gap, stated
+by Draft 20 itself: every texture the GL backend has ever bound was
+synthetic - `CreateTexture` still hard-asserts `Levels == 1` and
+`D3DFMT_A8R8G8B8` (`dx8wrapper_gl.cpp:627-628`), and no on-disk texture
+format has ever been read. Milestone 4 is the texture pipeline: real
+TGA/DDS files, loaded by real engine code (`textureloader.cpp` and its
+closure), format-converted by real engine code, uploaded and rendered
+through the GL backend, pixel-verified.
+
+**Milestone 4 scope statement.** Port `texture.cpp`'s closure exactly as
+Draft 20's non-goals section enumerated it: `textureloader.cpp` (+ its
+background loading thread), `texturethumbnail.cpp`, `ddsfile.cpp`,
+`dx8texman.cpp`, `missingtexture.cpp`, `surfaceclass.cpp`,
+`texturefilter.cpp`, `bitmaphandler.cpp`, plus the GL device-object
+additions those files genuinely require (mipmapped textures, CPU
+surfaces, sampler states, caps completion). Goal-state: a real on-disk
+texture in the engine's actual asset formats (TGA and DXT-compressed
+DDS - the two formats the shipped pipeline produces and
+`Get_Texture_Information`, `textureloader.cpp:1330`, probes for) loads
+through the unmodified engine pipeline and renders correctly on GL.
+
+**Key findings, verified against current code (file:line):**
+
+1. **The pipeline is already 95% unified into Core/ - only `assetmgr.cpp`
+   is per-tree, and it does NOT need unifying this milestone.** All nine
+   pipeline files above live only in `Core/Libraries/Source/WWVegas/WW3D2/`
+   (WIN32-gated in its CMakeLists, lines 20-218). `assetmgr.cpp` exists in
+   both `Generals/Code/.../WW3D2/` and `GeneralsMD/Code/.../WW3D2/`; a
+   full diff shows they differ by exactly 7 lines - the title comment, a
+   changelog line, ZH's `#include "shdlib.h"` + `SHD_REG_LOADER` in the
+   constructor, and a comment typo. More importantly, the texture
+   subsystem's *link* dependency on it is tiny: `Get_Instance()` and
+   `Texture_Hash()` are inline (`assetmgr.h:203,259`), `Get_Texture` is
+   virtual (`assetmgr.h:263` - a vtable call through the instance
+   pointer, no direct symbol), so the ONLY symbol `texture.cpp`'s object
+   file needs from `assetmgr.cpp` is the static
+   `WW3DAssetManager::TheInstance` definition (`assetmgr.cpp:126` in both
+   trees). Extract that one definition into a new portable Core TU
+   (`assetmgr_common.cpp`, exact `dx8wrapper_common.cpp`/`ww3d_common.cpp`
+   precedent, removed from both per-tree files) and the entire
+   prototype-loader/mesh/hlod closure of `assetmgr.cpp` stays out of the
+   link. With `TheInstance == nullptr`, every runtime touch point is
+   already guarded (`ww3d.cpp:648` checks it; `Invalidate_Old_Unused_
+   Textures` early-returns when thumbnails are disabled,
+   `texture.cpp:141`). Core unification of `assetmgr.cpp` itself is
+   deferred to Milestone 5, which needs the prototype system anyway.
+
+2. **The background-thread architecture is GL-compatible by design, but
+   `ThreadClass` is genuinely non-functional on POSIX.** The division of
+   labor in `textureloader.cpp` is strict and WWASSERT-enforced: every
+   device call (create/lock/unlock) happens on the main thread
+   (`Is_DX8_Thread()` asserts at `textureloader.cpp:420,529,802,933,
+   1660,2036,2350`); the background thread's `task->Load()`
+   (`textureloader.cpp:993`) only reads files and writes pixels through
+   CPU pointers captured by `Lock_Surfaces()` - which on GL are Milestone
+   2's malloc'd shadow copies, so the design ports without modification.
+   The synchronization primitive it uses, `FastCriticalSectionClass`, is
+   *already portable* (C++20 `std::atomic_flag` wait/notify,
+   `mutex.h:116-202`). What is NOT portable is `ThreadClass` itself:
+   `Execute()`/`Set_Priority()`/`Stop()`/`Switch_Thread()`/
+   `_Get_Current_Thread_ID()` are all `#ifdef _UNIX` return-stubs
+   (`thread.cpp:87-159`) - threads never start, and thread IDs are all 0,
+   which makes `Is_DX8_Thread()` (`textureloader.cpp:342-345`)
+   accidentally true from every thread. Draft 1's Phase-0 research
+   already flagged this exact file ("scaffolded but non-functional").
+   The Windows path uses `_beginthread`/`SetThreadPriority`/
+   `TerminateThread`/`CreateEvent`; the portable ingredients already
+   exist (`thread_compat.h`'s pthread-based `GetCurrentThreadId`/`Sleep`,
+   and `systimer.h`'s portable `TIMEGETTIME`). Also: `textureloader.cpp`
+   calls raw `timeGetTime()` via `<mmsystem.h>` (`:837,840,860`) - the
+   exact literal-symbol trap Draft 1 documented - which must move to
+   `TIMEGETTIME()`.
+
+3. **The whole format question collapses onto A8R8G8B8 through the
+   engine's own fallback logic - DXT decompression is already
+   implemented in CPU code.** `Get_Valid_Texture_Format`
+   (`ww3dformat.cpp:305-385`) maps every DXT format to
+   `A8R8G8B8`/`X8R8G8B8` when `Support_DXTC()` is false, then walks a
+   final `Support_Texture_Format` fallback chain that lands on
+   `A8R8G8B8`; the GL backend's `CheckDeviceFormat`
+   (`dx8wrapper_gl.cpp:953-959`) already answers "A8R8G8B8 only", and
+   `X8R8G8B8` maps to the same 32-bit layout at copy time
+   (`bitmaphandler`'s `Write_B8G8R8A8`). When the chosen dest format is
+   uncompressed but the DDS source is DXT, `DDSFileClass::
+   Copy_Level_To_Surface` takes its block-decode path
+   (`ddsfile.cpp:490-505`) through `Get_4x4_Block`
+   (`ddsfile.cpp:1037-1258`) - a complete, existing software DXT1/DXT5
+   decoder (DXT2/3/4 decode as opaque white, `ddsfile.cpp:1124-1129` - a
+   pre-existing engine limitation, not a port gap; Generals assets use
+   DXT1/DXT5). TGA sources similarly converge: 16-bit/paletted/L8
+   sources are CPU-converted to A8R8G8B8 before upload
+   (`textureloader.cpp:1755-1788`), and thumbnails (A4R4G4B4,
+   `textureloader.cpp:430`) convert through the same
+   `Get_Valid_Texture_Format` + `BitmapHandlerClass::Copy_Image`
+   machinery. Consequence: **the GL backend keeps its A8R8G8B8-only
+   upload path and still loads every real asset format; GPU S3TC upload
+   is a clean deferral, not a compromise.** `ddsfile.cpp` itself is pure
+   CPU code; its only Windows dependency is `<ddraw.h>` (`ddsfile.cpp:28`)
+   for the `DDSCAPS2_CUBEMAP`/`DDSCAPS2_VOLUME` constants (the DDS header
+   structs are self-contained `Legacy*` copies in `ddsfile.h:51-151`).
+
+4. **Mipmaps are NOT deferrable this milestone - and two fabricated-caps
+   zeros are live grenades.** The M2 `Levels==1` assert cannot survive:
+   `TextureLoadTaskClass::Lock_Surfaces` locks *every* level
+   (`textureloader.cpp:1631-1651`), `MIP_LEVELS_ALL` (=0 = full chain,
+   `texturefilter.h:46-61`, max 12) is the default everywhere,
+   `MissingTexture::_Init` builds a full chain (`missingtexture.cpp:
+   64-117`), and W3D texinfo carries explicit mip attributes
+   (`texture.cpp:1071-1102`). The GL texture object therefore needs
+   per-level shadow buffers, `LockRect(level)`/`UnlockRect(level)`,
+   real `GetLevelCount()` (the PortableD3D8 base stub returns 1,
+   `d3d8.h:108`), `GetSurfaceLevel`/`GetLevelDesc` (currently
+   NOTAVAILABLE stubs, `d3d8.h:115-116`), and `GL_TEXTURE_MAX_LEVEL`.
+   `D3DSURFACE_DESC` does not exist in PortableD3D8 *at all* (verified
+   by grep - `GetLevelDesc` takes `void*` precisely to dodge it); it
+   must be added with the D3D8-specific `Size` field that
+   `Get_Texture_Memory_Usage` reads (`texture.cpp:1018-1029`). The
+   grenades: the fabricated GL `D3DCAPS8` is memset-zero except for six
+   fields (`dx8wrapper_gl.cpp:1148-1161`), so `MaxTextureWidth`/
+   `MaxTextureHeight`/`MaxVolumeExtent` are all 0 - and
+   `TextureLoader::Validate_Texture_Size` clamps every texture's
+   power-of-two size against exactly those fields
+   (`textureloader.cpp:381-391`): every load would clamp to 0x0 and
+   then divide by zero in the aspect-ratio loop (`:399`). Likewise
+   `TextureFilterCaps == 0` makes `TextureFilterClass::_Init_Filters`
+   (`texturefilter.cpp:174-235`) silently degrade every mode to POINT.
+   Both found by reading, before any run could crash on them.
+
+5. **The GL device is missing the sampler-state layer entirely.**
+   `TextureClass::Apply` ends in `Filter.Apply(stage)`
+   (`texture.cpp:961`), which issues `D3DTSS_MINFILTER`/`MAGFILTER`/
+   `MIPFILTER`/`ADDRESSU`/`ADDRESSV` stage states
+   (`texturefilter.cpp:88-115`) - and the GL device does not override
+   `SetTextureStageState` at all (verified: no override in
+   `dx8wrapper_gl.cpp`; the PortableD3D8 accept-stub swallows them).
+   D3D8 sampler state is per-*stage*, not per-texture - GL 3.3 core
+   includes `ARB_sampler_objects`, so one GL sampler object per stage
+   bound at draw time reproduces D3D semantics exactly (per-texture
+   `glTexParameteri` would be subtly wrong for textures bound at two
+   stages). Address-mode plumbing is not optional polish: W3D texinfo's
+   `CLAMP_U`/`CLAMP_V` attributes flow through `Load_Texture`
+   (`texture.cpp:1138-1141`) into exactly this path.
+
+6. **Texture creation lives behind D3DX in the Windows-only file; the
+   GL side gets real bodies for the same declared methods.**
+   `_Create_DX8_Texture` (`dx8wrapper_d3d8.cpp:1745-1863`) is
+   `D3DXCreateTexture` plus the D3D-pool out-of-memory
+   release-and-retry dance (referencing `TextureClass::
+   Invalidate_Old_Unused_Textures` and `WW3D::_Invalidate_Mesh_Cache` -
+   the same D3D-resource-manager pattern Draft 20 gated out of the
+   buffer classes). `dx8wrapper_d3d8.cpp` and `dx8wrapper_gl.cpp` are
+   already "mutually exclusive backends for the same declared
+   DX8Wrapper methods" (CMakeLists:246-248), so the GL file simply
+   implements `_Create_DX8_Texture(w,h,fmt,mips,pool,rt)` (device
+   `CreateTexture`, no retry dance, `DX8_ErrorCode` on failure) and
+   `_Create_DX8_Surface(w,h,fmt)` (device `CreateImageSurface` -
+   currently a nullptr stub, `d3d8.h:219`). `MissingTexture::
+   _Create_Missing_Surface` additionally needs device `CopyRects`
+   (`missingtexture.cpp:50-55`). The three remaining `D3DX` call sites
+   in the closure are all `D3DXLoadSurfaceFromSurface`:
+   `missingtexture.cpp:105` (2:1 mip fill - but the texture is filled
+   with a *constant* color, `missingtexture.cpp:92`, so the portable
+   path can fill every level directly, no filtering needed),
+   `surfaceclass.cpp:477` (same-size copy - portable memcpy-per-row),
+   and `surfaceclass.cpp:519` (`Stretch_Copy` - no Milestone-4 caller;
+   gate with a loud WWASSERT on !_WIN32, callers like `bmp2d`/`font3d`
+   are Milestone 5+). The filename-based `_Create_DX8_Texture` overload
+   (`D3DXCreateTextureFromFileExA`, `:1866`) has no caller in this
+   milestone's closure and returns the missing texture on GL.
+
+7. **Second round of `ww3d.cpp` static extraction is required - same
+   root cause Draft 20 fixed, different members.** `texture.cpp` and
+   `textureloader.cpp` call `WW3D::Get_Texture_Reduction()`
+   (`texture.cpp:370`, `textureloader.cpp:1307`),
+   `Get_Texture_Min_Dimension()` (`textureloader.cpp:1317`), and
+   `Is_Large_Texture_Extra_Reduction_Enabled()` (`texture.cpp:373`) -
+   all defined in monolithic `ww3d.cpp:1735-1768` over file-local
+   statics (`_TextureReduction` etc., `ww3d.cpp:133`), pulling
+   `ww3d.cpp`'s whole closure into any harness link. Their setters call
+   `WW3D::_Invalidate_Textures()` (`ww3d.cpp:646-660`), whose own
+   closure (TextureLoader flush + asset-manager hash walk + `texture.cpp`)
+   is entirely within Milestone 4's ported set - so the whole
+   texture-reduction family plus `_Invalidate_Textures` moves to
+   `ww3d_common.cpp` cleanly. Everything else the pipeline reads from
+   `WW3D` (`Get_Sync_Time`, `Get_Thumbnail_Enabled`,
+   `Is_Texturing_Enabled`, `Get_Texture_Filter`, `Get_Anisotropy_Level`,
+   `Get_Device_Resolution`, `Get_Texture_Bitdepth`) is already inline
+   or already in `ww3d_common.cpp` (M3 step 1, verified at
+   `ww3d_common.cpp:113-140`).
+
+8. **The game's real runtime path is the foreground loader - thumbnails
+   are disabled in Generals.** `W3DDisplay::init` unconditionally calls
+   `WW3D::Set_Thumbnail_Enabled(false)`
+   (`GeneralsMD/.../W3DDisplay.cpp:827`, Generals `:777`), so in real
+   gameplay `TextureClass::Init` takes `Request_Foreground_Loading` -
+   synchronous `Finish_Load` on the DX8 thread (`texture.cpp:849-862`,
+   `textureloader.cpp:722-751`) - and the background thread mostly
+   idles. The thumbnail/background machinery must still compile, link,
+   and *work* (the loader thread starts unconditionally in
+   `TextureLoader::Init`, `textureloader.cpp:326`, and `Update()` +
+   `Invalidate_Old_Unused_Textures` run every frame), but the harness
+   must exercise the foreground path as the primary check and the
+   background path as the threading proof, not vice versa. Remaining
+   portability sweep items found per-file: `texturethumbnail.cpp`'s
+   `<windows.h>` (`:30` - only for `stricmp`/`_strlwr`, both already
+   portable), `dx8texman.cpp` - zero Windows/D3D dependencies in the TU
+   at all (pure list management; its header's `Recreate()` calls
+   `_Create_DX8_Texture`, satisfied by finding 6), `bitmaphandler.cpp` -
+   already pure CPU code (`always.h`/`wwdebug`/`colorspace` only),
+   `Targa`/`ffactory`/`bufffile`/`wwprofile`/`wwmemlog` - all compiled
+   portably in WWLib/WWDebug since Milestone 1 (Draft 15 fixed
+   `TARGA.cpp`'s `<malloc.h>`).
+
+**Design decisions:**
+
+- **Make `ThreadClass` genuinely functional on POSIX** (finding 2)
+  rather than short-circuiting the loader to synchronous-only:
+  `Execute` via pthreads (or `std::thread`), `Stop` as
+  `running=false` + join (the `TerminateThread` watchdog is a
+  Windows-only last resort; the loader thread polls `running` every
+  iteration, `textureloader.cpp:976`, so join converges),
+  `Switch_Thread` as a 1ms sleep (matching the Windows
+  `WaitForSingleObject(test_event,1)` behavior), and
+  `_Get_Current_Thread_ID` via `thread_compat.h`'s
+  `GetCurrentThreadId` - which also makes `Is_DX8_Thread()` and
+  `DX8_THREAD_ASSERT` real on POSIX for the first time (they currently
+  compare 0==0). Windows branches byte-untouched. GameSpy's five
+  threaded classes (Phase 7) inherit this for free. `MutexClass`/
+  `CriticalSectionClass`'s `_UNIX` stubs are NOT needed by this
+  milestone (the loader uses only `FastCriticalSectionClass`) and stay
+  as-is, noted not hidden.
+- **A8R8G8B8-only GL upload, DXT via the engine's own software decode**
+  (finding 3): `CheckDeviceFormat` keeps answering A8R8G8B8-only, which
+  steers `Get_Valid_Texture_Format` so every TGA/DDS/thumbnail load
+  converges to the one format Milestone 2's upload path already
+  handles. GPU S3TC (`GL_EXT_texture_compression_s3tc`) is an
+  optimization for a later milestone, gated behind caps honesty - flip
+  `Support_DXTC` on only when the GL path actually uploads compressed
+  blocks.
+- **Mipmapped `GLTexture8` + CPU `GLSurface8`** (findings 4, 6): the
+  texture keeps M2's shadow-copy design per level (level count from the
+  D3D `Levels` semantics - 0 means full chain - clamped to
+  `MIP_LEVELS_MAX`=12, `texturefilter.h:60`); `UnlockRect(level)`
+  re-uploads that level. `GetSurfaceLevel` returns a surface view whose
+  `UnlockRect` re-uploads its level; `CreateImageSurface` returns a
+  standalone CPU surface (no GL object - D3D image surfaces are
+  system-memory by definition); `CopyRects` is memcpy + re-upload when
+  the destination is a texture view. Level-0 semantics stay
+  bit-identical so the M2/M3 harnesses keep passing untouched.
+- **One GL sampler object per stage** (finding 5), configured from the
+  cached `D3DTSS_*` values at draw time - exact D3D per-stage
+  semantics, no per-texture-object state pollution.
+- **Honest caps completion, not caps theater** (finding 4):
+  `MaxTextureWidth`/`Height` from `GL_MAX_TEXTURE_SIZE`,
+  `MaxTextureAspectRatio=0` (no limit - the code path handles 0,
+  `textureloader.cpp:394`), `MaxVolumeExtent` likewise real,
+  `TextureFilterCaps` = point+linear min/mag/mip only (anisotropic
+  stays unset until actually implemented - `_Init_Filters`' fallback
+  then does the right thing *for* us, same argument as Draft 20
+  finding 3).
+- **Link hygiene before link users, again** (findings 1, 7):
+  `assetmgr_common.cpp` (TheInstance) and the `ww3d_common.cpp`
+  second extraction land as their own step with full MSVC
+  no-duplicate/no-loss verification, before any step makes the
+  texture TUs portable.
+- **The GL `Create_Device` does NOT grow texture-subsystem calls this
+  milestone.** Wiring `MissingTexture::_Init`/`TextureLoader::Init`
+  into the GL device path (the real `Do_Onetime_Device_Dependent_Inits`
+  order, `dx8wrapper_d3d8.cpp:302-326`) would make every existing
+  harness's link drag the entire texture closure - exactly the
+  monolith-coupling mistake this port keeps un-making. The M4 harness
+  performs the same init sequence explicitly in the documented order;
+  Milestone 5 / Phase 4 owns a portable `Do_Onetime_*` once the mesh
+  renderer exists. (Same reasoning as Draft 20 keeping `Set_Light(
+  LightClass&)` out of the portable file.)
+- **Deferrals gated loudly**: `_Create_DX8_Texture`'s out-of-memory
+  retry dance is Windows-only by construction (GL body doesn't have
+  it); `Stretch_Copy` asserts on !_WIN32; cube/volume texture GL
+  creation returns nullptr with `WWDEBUG_SAY` (their classes compile
+  and link - `textureloader.cpp` forces that - but nothing in Generals
+  constructs them at runtime); `statistics.cpp` stays no-op'd per M3
+  (its un-gating belongs with the mesh stats in M5).
+
+**Explicit non-goals (Milestone 5+ / other phases):** real W3D *mesh*
+rendering and `Load_Texture`'s chunk-driven entry (`texture.cpp:1033` -
+it calls the virtual `Get_Texture`, which needs a live
+`WW3DAssetManager` instance; constructing one drags the prototype
+loaders and the whole mesh closure - M5, along with `assetmgr.cpp` Core
+unification, for which this milestone's 7-line diff analysis stands as
+the prep work); GPU-compressed-texture upload (S3TC extension);
+cube/volume/Z/render-target textures at runtime (`_Create_DX8_ZTexture`
+stays a stub; `DX8TextureManagerClass`'s POOL_DEFAULT trackers compile
+but stay unexercised - file-loaded textures are POOL_MANAGED,
+`textureloader.cpp:66`); anisotropic filtering; bumpmap formats (caps
+report them unsupported; the engine's own fallback declines them,
+`texture.cpp:676-694`); paletted textures (engine never supported them,
+`textureloader.cpp:565`); HSV-shift recolor verification (code compiles
+and runs, pixel-checking it is not a gate); DXT2/3/4 decode fidelity
+(pre-existing opaque-white behavior, finding 3); `.big`-archive file
+access (the game routes `_TheFileFactory` through its own filesystem
+layer in Phase 4/5(e); this milestone's loose-file path is the same
+code the harness exercises); un-gating `statistics.cpp`;
+`MutexClass`/`CriticalSectionClass` POSIX implementations (GameSpy,
+Phase 7); windowing/Phase 4.
+
+**Implementation ordering** (each step independently buildable; after
+every step: `linux-x64` `z_gameenginedevice` holds the 17-error
+baseline, real MSVC win32 build of `g_ww3d2`/`z_ww3d2`/
+`g_gameenginedevice`/`z_gameenginedevice` stays at 0 errors, and all
+three existing harnesses (`RenderDeviceInit`, `RenderTexturedTriangle`,
+`RenderEngineDrawPath`) still RUN green whenever a step touches
+anything they link):
+
+1. **Real `ThreadClass` on POSIX** (`WWLib/thread.cpp`): pthread-backed
+   `Execute`/`Stop`/`Switch_Thread`/`Sleep_Ms`/`_Get_Current_Thread_ID`
+   per the design decision; Windows branches untouched. `GL Init`'s
+   `_MainThreadID` (`dx8wrapper_gl.cpp:986`) becomes a real ID for
+   free. Verify: linux/macOS compile of `core_wwlib`; all three
+   harnesses re-run (they link `thread.cpp` via `core_wwvegas` and now
+   exercise the new `_Get_Current_Thread_ID`); full MSVC rebuild.
+2. **Mipmapped `GLTexture8` + `GLSurface8` + missing PortableD3D8
+   types**: `D3DSURFACE_DESC` (with `Size`) into `d3d8types.h`, typed
+   `GetLevelDesc`/`GetSurfaceLevel`; per-level shadow buffers, the
+   `Levels==1` assert replaced by real chain allocation (clamp 12),
+   `LockRect/UnlockRect(level)`, real `GetLevelCount`;
+   `CreateImageSurface`/`CopyRects` real bodies; surface
+   `LockRect`/`UnlockRect`/`GetDesc`. A8R8G8B8-only stays asserted.
+   Verify: linux compile + RE-RUN M2/M3 harnesses (level-0 behavior
+   must be bit-identical - they are the regression proof for the
+   shadow-buffer refactor).
+3. **GL sampler-state layer + caps completion + GL creation bodies**:
+   `SetTextureStageState` override translating `D3DTSS_MINFILTER`/
+   `MAGFILTER`/`MIPFILTER`/`ADDRESSU`/`ADDRESSV` into per-stage GL
+   sampler objects bound in `DrawIndexedPrimitive`; fill
+   `MaxTextureWidth`/`Height`/`MaxVolumeExtent`/`TextureFilterCaps`
+   (finding 4's grenades defused); GL bodies for
+   `_Create_DX8_Texture`/`_Create_DX8_Surface` (+ loud nullptr
+   cube/volume/Z/filename variants) in `dx8wrapper_gl.cpp`. Verify:
+   all three harnesses re-run (they now draw through a bound sampler
+   object - the white-fallback and UV checks in M2/M3 harnesses
+   regression-test default sampler state).
+4. **Link hygiene: `assetmgr_common.cpp` + `ww3d_common.cpp` round 2**:
+   move `WW3DAssetManager::TheInstance` out of both per-tree
+   `assetmgr.cpp` files into new portable Core `assetmgr_common.cpp`;
+   move the texture-reduction family + `_Invalidate_Textures`
+   (finding 7) from `ww3d.cpp` to `ww3d_common.cpp`. Pure moves.
+   Verify: full MSVC rebuild of all four targets with explicit
+   no-duplicate/no-loss symbol checks (the Draft 18 `Log_DX8_ErrorCode`
+   lesson), linux compile.
+5. **Portability sweep + `WW3D2_SRC_PORTABLE` moves**: the compile
+   gates found per-file (finding 3, 6, 8): `ddsfile.cpp`'s `<ddraw.h>`
+   (portable `DDSCAPS2_*` constants), `textureloader.cpp`'s
+   `timeGetTime`->`TIMEGETTIME` + `<mmsystem.h>`/`<d3dx8tex.h>` gates,
+   `texturethumbnail.cpp`'s `<windows.h>`, `texture.cpp`/
+   `missingtexture.cpp`/`surfaceclass.cpp`'s `<d3dx8*.h>` gates with
+   the three `D3DXLoadSurfaceFromSurface` sites replaced per finding 6
+   (constant-fill mips / row-memcpy / loud assert). Move all nine TUs
+   (`texture`, `texturefilter`, `textureloader`, `texturethumbnail`,
+   `ddsfile`, `dx8texman`, `missingtexture`, `surfaceclass`,
+   `bitmaphandler`) into `WW3D2_SRC_PORTABLE`. Verify: linux + macOS
+   compile of the nine TUs, full MSVC rebuild (the gates touch shared
+   code), existing harnesses re-run (their file lists are untouched
+   but shared headers moved).
+6. **`Tests/RenderTexturePipeline/` harness + CI - the exit
+   criterion.** Sibling harness (M1/M2/M3 harnesses stay untouched);
+   links the nine pipeline TUs + `assetmgr_common.cpp` on top of the
+   M3 harness's file list. The harness *authors its asset bytes
+   itself* at startup into a temp directory - a well-formed 8x8
+   32-bit TGA and a well-formed DDS (magic + `LegacyDDSURFACEDESC2` +
+   hand-computed DXT1 blocks with col0==col1 for exactly predictable
+   decode) - then loads them through the real `_TheFileFactory`/
+   `Targa`/`DDSFileClass` code; real file-format bytes, reviewable in
+   source, no binary blobs in the repo. Init sequence mirrors
+   `Do_Onetime_Device_Dependent_Inits` order: `MissingTexture::_Init`,
+   `TextureFilterClass::_Init_Filters`, `TextureLoader::Init`.
+   Checks: (1) **foreground TGA load** - `TextureClass(name, path,
+   MIP_LEVELS_1)`, `Init()`, `Apply(0)`, quad through the real M3 draw
+   path, sampled pixels exactly match authored texel colors
+   (`WW3D::Set_Thumbnail_Enabled(false)` - the game's real
+   configuration, finding 8); (2) **engine-generated mip chain** -
+   checkerboard TGA with `MIP_LEVELS_ALL`, minified draw with point
+   mip filter samples the engine's own box-filtered average (a
+   deterministic mid-value) - proves multi-level upload AND
+   `BitmapHandlerClass`'s real mip generation ran; (3) **DDS/DXT1
+   software decode** - compressed-allowed load of the authored DDS;
+   caps say no DXTC, so `Get_4x4_Block` decodes to A8R8G8B8; rendered
+   color equals the authored block color; (4) **missing-texture
+   fallback** - nonexistent filename renders the magenta
+   `0x7FFF00FF` pattern (`missingtexture.cpp:92`); (5) **the real
+   background thread** - `Set_Thumbnail_Enabled(true)` +
+   `Create_Thumbnail_If_Not_Found`, a `MIP_LEVELS_ALL` texture
+   `Init()`s into a queued background task; assert
+   `_TextureLoadThread.Is_Running()`, pump `TextureLoader::Update()`
+   until `Initialized`, final pixels identical to check 2 - the first
+   real cross-thread texture load on POSIX, proving step 1's threads
+   and the lock-pointer handoff; then `TextureLoader::Deinit` joins
+   cleanly (no leaked thread - the POSIX `Stop` proven); (6) **sampler
+   plumbing** - same texture drawn with UV>1 under WRAP vs CLAMP
+   (the W3D texinfo path, `texture.cpp:1138-1141`) yields the two
+   different predicted patterns, and point-vs-linear magnification
+   differs at a texel boundary - proves `Filter.Apply` ->
+   `SetTextureStageState` -> GL sampler objects end-to-end. Wire into
+   `linux-native.yml` behind `xvfb-run`; re-run ALL FOUR harnesses in
+   CI. A REAL RUN is the exit criterion - Milestone 2's
+   two only-found-at-runtime bugs remain the standing argument, and
+   finding 4's caps grenades are precisely the kind of thing only
+   this run can prove defused.
+
+**What this milestone does NOT yet make possible, honestly:** still no
+image from real *game* data - no W3D mesh ever renders, no texture is
+pulled from a `.big` archive, and `WW3DAssetManager::Get_Texture`'s
+cache path never executes (no manager instance exists). What it does
+make possible: after Milestone 4, `TextureClass` + the entire loader
+pipeline behave identically on GL and D3D8 for the two real asset
+formats, which is the last texture-side prerequisite for Milestone 5
+(meshes + `dx8renderer.cpp` + `assetmgr` unification - at which point
+`Load_Texture`, material passes, and real W3D files close the loop).
+The ladder after M4: meshes/dx8renderer (M5) -> `W3DDisplay`/scene/
+camera + windowing (Phase 4/5(e) convergence).
