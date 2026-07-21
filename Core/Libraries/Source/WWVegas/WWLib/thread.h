@@ -21,6 +21,10 @@
 #include "always.h"
 #include "Vector.h"
 
+#ifdef _UNIX
+#include <pthread.h>
+#endif
+
 struct _EXCEPTION_POINTERS;
 
 
@@ -91,6 +95,14 @@ protected:
 
 private:
 	static void __cdecl Internal_Thread_Function(void*);
+#ifdef _UNIX
+	// pthread's start routine returns void*, not void; this adapts to
+	// Internal_Thread_Function's shared (both-platform) signature.
+	static void* Posix_Thread_Trampoline(void*);
+#endif
 	volatile unsigned long handle;
 	int thread_priority;
+#ifdef _UNIX
+	pthread_t posix_thread;
+#endif
 };

@@ -30,6 +30,10 @@
 #include <windows.h>
 #endif
 
+#ifdef _UNIX
+#include <pthread.h>
+#endif
+
 ThreadClass::ThreadClass(const char *thread_name, ExceptionHandlerType exception_handler) : handle(0), running(false), thread_priority(0)
 {
 	if (thread_name) {
@@ -84,12 +88,22 @@ void __cdecl ThreadClass::Internal_Thread_Function(void* params)
 	tc->ThreadID = 0;
 }
 
+#ifdef _UNIX
+void* ThreadClass::Posix_Thread_Trampoline(void* params)
+{
+	Internal_Thread_Function(params);
+	return nullptr;
+}
+#endif
+
 void ThreadClass::Execute()
 {
 	WWASSERT(!handle);	// Only one thread at a time!
 	#ifdef _UNIX
-		// assert(0);
-		return;
+		int res = pthread_create(&posix_thread, nullptr, &Posix_Thread_Trampoline, this);
+		WWASSERT(res == 0);
+		handle = 1;	// POSIX has no D3D-style handle value; nonzero just means "a thread is running"
+		WWDEBUG_SAY(("ThreadClass::Execute: Started thread %s", ThreadName));
 	#else
 		handle=_beginthread(&Internal_Thread_Function,0,this);
 		SetThreadPriority((HANDLE)handle,THREAD_PRIORITY_NORMAL+thread_priority);
@@ -111,8 +125,14 @@ void ThreadClass::Set_Priority(int priority)
 void ThreadClass::Stop(unsigned ms)
 {
 	#ifdef _UNIX
-		// assert(0);
-		return;
+		running=false;
+		// No portable timed-join; the loader thread polls "running" every
+		// iteration and exits promptly, so a plain join converges. The
+		// TerminateThread watchdog below is a Windows-only last resort.
+		if (handle) {
+			pthread_join(posix_thread, nullptr);
+			handle=0;
+		}
 	#else
 		running=false;
 		unsigned time=TIMEGETTIME();
@@ -140,7 +160,8 @@ HANDLE test_event = ::CreateEvent (nullptr, FALSE, FALSE, "");
 void ThreadClass::Switch_Thread()
 {
 	#ifdef _UNIX
-		return;
+		// Matches the Windows WaitForSingleObject(test_event,1) behavior below.
+		Sleep_Ms(1);
 	#else
 		//	::SwitchToThread ();
 		::WaitForSingleObject (test_event, 1);
@@ -152,7 +173,7 @@ void ThreadClass::Switch_Thread()
 unsigned ThreadClass::_Get_Current_Thread_ID()
 {
 	#ifdef _UNIX
-		return 0;
+		return GetCurrentThreadId();
 	#else
 		return GetCurrentThreadId();
 	#endif
