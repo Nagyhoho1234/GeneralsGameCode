@@ -122,9 +122,14 @@ typedef uint32_t SwapType32;
 typedef uint64_t SwapType64;
 
 #elif defined(__APPLE__)
-typedef UInt16 SwapType16;
-typedef UInt32 SwapType32;
-typedef UInt64 SwapType64;
+// Genuine pre-existing bug, not platform-specific: UInt16/UInt32/UInt64
+// are old Mac Carbon types (MacTypes.h), never included here - they
+// were never declared at all, unlike every other branch's uint16_t/
+// uint32_t/uint64_t (native port plan Phase 2, confirmed via real
+// macOS CI).
+typedef uint16_t SwapType16;
+typedef uint32_t SwapType32;
+typedef uint64_t SwapType64;
 
 #elif defined(__OpenBSD__)
 typedef uint16_t SwapType16;

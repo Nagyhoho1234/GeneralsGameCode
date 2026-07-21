@@ -35,6 +35,10 @@
 // SOCKET_ERROR is Winsock's name for the same -1 BSD sockets already
 // return on error (native port plan Phase 1).
 #define SOCKET_ERROR (-1)
+// socklen_t's declaration was only reaching this file transitively via
+// some other header on Linux - not guaranteed, and didn't happen on
+// macOS at all (native port plan Phase 2, confirmed via real macOS CI).
+#include <sys/socket.h>
 typedef socklen_t socklen_compat_t;
 #else
 typedef int socklen_compat_t;

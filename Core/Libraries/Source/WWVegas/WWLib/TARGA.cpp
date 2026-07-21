@@ -64,7 +64,11 @@
 #ifndef TGA_USES_WWLIB_FILE_CLASSES
 #include "WWDebug/wwdebug.h"
 #endif
-#include <malloc.h>
+// <malloc.h> is a Linux(glibc)/Windows convenience header, doesn't
+// exist on macOS. This file only uses plain malloc/free, which
+// <cstdlib> declares everywhere (native port plan Phase 2, confirmed
+// via real macOS CI).
+#include <cstdlib>
 #include <memory.h>
 #include "stringex.h"
 #ifdef TGA_USES_WWLIB_FILE_CLASSES

@@ -94,7 +94,12 @@
 #include	"win.h"
 #include "XPIPE.h"
 #include "XSTRAW.h"
-#include <malloc.h>
+// <malloc.h> is a Linux(glibc)/Windows convenience header, doesn't
+// exist on macOS. _alloca's declaration already comes from
+// mem_compat.h's <alloca.h>; <cstdlib> covers plain malloc/free/realloc
+// everywhere including macOS (native port plan Phase 2, confirmed via
+// real macOS CI).
+#include <cstdlib>
 #ifdef _UNIX
 #include <ctype.h>
 #endif

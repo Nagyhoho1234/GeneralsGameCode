@@ -18,7 +18,12 @@
 
 #include "PreRTS.h"
 
-#include <malloc.h>
+// <malloc.h> is a Linux(glibc)/Windows convenience header, doesn't
+// exist on macOS. This file only uses plain malloc/free, which
+// <cstdlib> declares everywhere (native port plan Phase 2, confirmed
+// via real macOS CI - proactively fixed here since it wasn't yet
+// reached in that CI run at the time of writing).
+#include <cstdlib>
 
 #include "Common/GameMemoryNull.h"
 

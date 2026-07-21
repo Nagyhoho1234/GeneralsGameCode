@@ -102,6 +102,9 @@ MYEIP1:
 
 //*****************************************************************************
 //*****************************************************************************
+// DWORD-typed, and its only caller is DumpExceptionInfo (Windows SEH-only,
+// see above) - gated together (native port plan Phase 2).
+#ifdef _WIN32
 void StackDumpFromContext(DWORD eip,DWORD esp,DWORD ebp, void (*callback)(const char*))
 {
 	if (callback == nullptr)
@@ -114,6 +117,7 @@ void StackDumpFromContext(DWORD eip,DWORD esp,DWORD ebp, void (*callback)(const 
 
 	MakeStackTrace(eip,esp,ebp, 0,  callback);
 }
+#endif // _WIN32
 
 
 //*****************************************************************************
@@ -477,6 +481,7 @@ void WriteStackLine(void*address, void (*callback)(const char*))
 
 //*****************************************************************************
 //*****************************************************************************
+#ifdef _WIN32
 void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 {
 	DEBUG_LOG_RAW(("\n"));
@@ -632,6 +637,7 @@ void DumpExceptionInfo( unsigned int u, EXCEPTION_POINTERS* e_info )
 	DEBUG_LOG(( "********** END EXCEPTION DUMP ****************" ));
 	DEBUG_LOG_RAW(("\n"));
 }
+#endif // _WIN32
 
 
 #pragma pack(pop)

@@ -67,7 +67,12 @@ static std::filesystem::path fixFilenameFromWindowsPath(const Char *filename, In
 
 		std::filesystem::path pathFixed;
 		std::filesystem::path pathCurrent;
-		for (auto& p : path)
+		// const auto&, not auto&: libc++ (macOS/Clang) returns path
+		// components by value from its iterator's operator*(), which a
+		// non-const reference cannot bind to - libstdc++ (Linux/GCC) is
+		// more permissive here, so this only failed on real macOS CI
+		// (native port plan Phase 2). p is never modified in this loop.
+		for (const auto& p : path)
 		{
 			std::filesystem::path pathFixedPart;
 			if (pathCurrent.empty())
