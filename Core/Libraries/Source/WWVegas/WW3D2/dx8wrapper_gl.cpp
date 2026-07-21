@@ -220,6 +220,73 @@ namespace
 	using GLVertexBuffer8 = GLShadowBuffer8<IDirect3DVertexBuffer8, GL_ARRAY_BUFFER>;
 	using GLIndexBuffer8 = GLShadowBuffer8<IDirect3DIndexBuffer8, GL_ELEMENT_ARRAY_BUFFER>;
 
+	// GL-backed IDirect3DTexture8 (Milestone 2, Step 5). CreateTexture is
+	// called directly, sidestepping DX8Wrapper::_Create_DX8_Texture (which
+	// stays Windows-only/D3DX-only, untouched - see Draft 18). Scope is
+	// deliberately narrow, matching the milestone's single-synthetic-
+	// texture need: only Level 0 (mipmaps are a non-goal) and only
+	// D3DFMT_A8R8G8B8 (the only format Milestone 2's test harness needs;
+	// DDS/compressed/other uncompressed formats are non-goals) are
+	// supported, both WWASSERT-enforced in CreateTexture below rather than
+	// silently mishandled. LockRect ignores pRect (whole-texture locks
+	// only) for the same reason - unlike the vertex/index buffer shadow
+	// copy, there is no partial-texture-update use case in this milestone.
+	//
+	// Same malloc'd-CPU-shadow-copy design as GLShadowBuffer8: Unlock
+	// re-uploads to the GL texture via glTexSubImage2D. Upload format is
+	// GL_BGRA, matching D3DCOLOR_ARGB's in-memory little-endian byte order
+	// (B,G,R,A) exactly - a standard, unambiguous technique, unlike the
+	// vertex-diffuse-color question Step 4 deliberately left for Step 7's
+	// canary check.
+	class GLTexture8 : public IDirect3DTexture8
+	{
+	public:
+		GLTexture8(UINT width, UINT height) :
+			m_Width(width),
+			m_Height(height),
+			m_ShadowData(static_cast<BYTE*>(malloc(width * height * 4))),
+			m_GLTexture(0)
+		{
+			glGenTextures(1, &m_GLTexture);
+			glBindTexture(GL_TEXTURE_2D, m_GLTexture);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		}
+
+		virtual ~GLTexture8() override
+		{
+			if (m_GLTexture) glDeleteTextures(1, &m_GLTexture);
+			free(m_ShadowData);
+		}
+
+		virtual HRESULT LockRect(UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) override
+		{
+			if (Level != 0) return D3DERR_NOTAVAILABLE;
+			pLockedRect->Pitch = static_cast<INT>(m_Width * 4);
+			pLockedRect->pBits = m_ShadowData;
+			return D3D_OK;
+		}
+
+		virtual HRESULT UnlockRect(UINT Level) override
+		{
+			if (Level != 0) return D3DERR_NOTAVAILABLE;
+			glBindTexture(GL_TEXTURE_2D, m_GLTexture);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_Width, m_Height, GL_BGRA, GL_UNSIGNED_BYTE, m_ShadowData);
+			return D3D_OK;
+		}
+
+		GLuint Get_GL_Texture() const { return m_GLTexture; }
+
+	private:
+		UINT   m_Width;
+		UINT   m_Height;
+		BYTE*  m_ShadowData;
+		GLuint m_GLTexture;
+	};
+
 	// FVF -> GL vertex-attribute layout (Milestone 2, Step 3). Table-driven:
 	// exact-matches the FVF bit pattern against 10 of dx8fvf.h's 13 named
 	// formats (XYZ, XYZN, XYZNUV1/2, XYZNDUV1/2 - the latter is
@@ -431,6 +498,14 @@ HRESULT IDirect3DDevice8::CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF
 HRESULT IDirect3DDevice8::CreateIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DIndexBuffer8** ppIndexBuffer)
 {
 	*ppIndexBuffer = new GLIndexBuffer8(Length, Usage);
+	return D3D_OK;
+}
+
+HRESULT IDirect3DDevice8::CreateTexture(UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture8** ppTexture)
+{
+	WWASSERT_PRINT(Levels == 1, "CreateTexture: only Levels==1 supported (mipmaps are a Milestone 2 non-goal)");
+	WWASSERT_PRINT(Format == D3DFMT_A8R8G8B8, "CreateTexture: only D3DFMT_A8R8G8B8 supported this milestone");
+	*ppTexture = new GLTexture8(Width, Height);
 	return D3D_OK;
 }
 

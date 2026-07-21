@@ -36,11 +36,17 @@
 // IDirect3D8::CreateDevice) are declared only here; their real GL-backed
 // bodies are defined in dx8wrapper_gl.cpp (kept out of this header so it
 // doesn't have to include GLFW/GL). Milestone 2 adds CreateVertexBuffer/
-// CreateIndexBuffer to that list (declared only here, real bodies in
-// dx8wrapper_gl.cpp) - the concrete GL-backed IDirect3DVertexBuffer8/
-// IDirect3DIndexBuffer8 subclasses they construct are file-local to
-// dx8wrapper_gl.cpp and never named here, matching this header's role as
-// a pure vocabulary/vtable-shape stand-in.
+// CreateIndexBuffer/CreateTexture to that list (declared only here, real
+// bodies in dx8wrapper_gl.cpp) - the concrete GL-backed
+// IDirect3DVertexBuffer8/IDirect3DIndexBuffer8/IDirect3DTexture8
+// subclasses they construct are file-local to dx8wrapper_gl.cpp and never
+// named here, matching this header's role as a pure vocabulary/
+// vtable-shape stand-in. IDirect3DTexture8's own LockRect/UnlockRect stay
+// inline trivial stubs (unlike CreateTexture) - only the file-local GL
+// subclass overrides them with real bodies, so moving the base class's
+// declarations out-of-line would risk an unemitted-vtable link error for
+// no benefit (see the caution in the equivalent commit history for
+// IDirect3DVertexBuffer8/IDirect3DIndexBuffer8, Milestone 2 Step 2).
 #pragma once
 
 #ifndef PORTABLE_D3D8_H
@@ -102,7 +108,7 @@ public:
 	D3DRESOURCETYPE GetType() override { return D3DRTYPE_TEXTURE; }
 	virtual HRESULT GetLevelDesc(UINT Level, void* pDesc) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT GetSurfaceLevel(UINT Level, IDirect3DSurface8** ppSurfaceLevel) { *ppSurfaceLevel = nullptr; return D3DERR_NOTAVAILABLE; }
-	virtual HRESULT LockRect(UINT Level, void* pLockedRect, CONST RECT* pRect, DWORD Flags) { return D3DERR_NOTAVAILABLE; }
+	virtual HRESULT LockRect(UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT UnlockRect(UINT Level) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT AddDirtyRect(CONST RECT* pDirtyRect) { return D3D_OK; }
 };
@@ -197,7 +203,7 @@ public:
 	virtual HRESULT GetRasterStatus(D3DRASTER_STATUS* pRasterStatus) { return D3DERR_NOTAVAILABLE; }
 	virtual void SetGammaRamp(DWORD Flags, CONST D3DGAMMARAMP* pRamp) {}
 	virtual void GetGammaRamp(D3DGAMMARAMP* pRamp) {}
-	virtual HRESULT CreateTexture(UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture8** ppTexture) { *ppTexture = nullptr; return D3DERR_NOTAVAILABLE; }
+	virtual HRESULT CreateTexture(UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture8** ppTexture);
 	virtual HRESULT CreateVolumeTexture(UINT Width, UINT Height, UINT Depth, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DVolumeTexture8** ppVolumeTexture) { *ppVolumeTexture = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT CreateCubeTexture(UINT EdgeLength, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DCubeTexture8** ppCubeTexture) { *ppCubeTexture = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer8** ppVertexBuffer);
