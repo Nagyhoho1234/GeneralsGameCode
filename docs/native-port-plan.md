@@ -1556,8 +1556,17 @@ category.
   both turned out to be genuine, platform-independent bugs, not
   pointer-width issues at all. `LocalFile.cpp`'s `writeChar()` (both
   overloads) returned the character pointer's own address instead of
-  "a copy of the character written" (its own doc comment's words) -
-  zero callers exist anywhere in this codebase, so fixed for real.
+  "a copy of the character written" (its own doc comment's words).
+  **Correction, caught by this draft's own fable review**: the
+  original claim here ("zero callers exist anywhere") was checked
+  insufficiently and was wrong - `Recorder.cpp` (both trees) calls
+  `writeChar()` 5 times each, writing a replay file's null
+  terminators. The fix is still behaviorally safe (verified: every one
+  of those 10 call sites is a bare statement that discards the return
+  value entirely, so correcting what gets returned changes nothing
+  observable), but the verification claim itself needed re-checking,
+  not just the code - a reminder that "I checked this" needs the same
+  scrutiny as any other claim in this document.
   `FirewallHelper.cpp` had a `ntohl()` call whose return value was
   entirely discarded (a complete no-op - the real byte-order handling
   already happens correctly a few lines later) - removed the dead
@@ -1658,3 +1667,13 @@ category.
   the strongest evidence yet for why the macOS-CI-validation habit
   (established back in the Phase 3 spike's GLFW investigation) matters
   as a standing practice, not a one-off.
+
+  A fable review of every commit in this draft found the code changes
+  themselves clean (the `writeChar()` verification-claim correction
+  above was its one real finding) and flagged one process note worth
+  keeping: `linux-native.yml`'s regression-count guard step runs under
+  the job's `continue-on-error: true`, so a failing guard cannot
+  actually fail the workflow run - "the workflow is green" is a
+  weaker signal than it looks for this specific check, appropriate for
+  an advisory workflow but worth remembering if this ever gets
+  promoted to a required merge gate.
