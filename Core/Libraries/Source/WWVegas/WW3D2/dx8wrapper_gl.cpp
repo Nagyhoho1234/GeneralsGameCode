@@ -40,6 +40,7 @@
 #include <GLFW/glfw3.h>
 #include <cstdlib>
 #include <cstdint>
+#include <cstring>
 
 namespace
 {
@@ -302,72 +303,227 @@ namespace
 	using GLVertexBuffer8 = GLShadowBuffer8<IDirect3DVertexBuffer8, GL_ARRAY_BUFFER>;
 	using GLIndexBuffer8 = GLShadowBuffer8<IDirect3DIndexBuffer8, GL_ELEMENT_ARRAY_BUFFER>;
 
-	// GL-backed IDirect3DTexture8 (Milestone 2, Step 5). CreateTexture is
-	// called directly, sidestepping DX8Wrapper::_Create_DX8_Texture (which
-	// stays Windows-only/D3DX-only, untouched - see Draft 18). Scope is
-	// deliberately narrow, matching the milestone's single-synthetic-
-	// texture need: only Level 0 (mipmaps are a non-goal) and only
-	// D3DFMT_A8R8G8B8 (the only format Milestone 2's test harness needs;
-	// DDS/compressed/other uncompressed formats are non-goals) are
-	// supported, both WWASSERT-enforced in CreateTexture below rather than
-	// silently mishandled. LockRect ignores pRect (whole-texture locks
-	// only) for the same reason - unlike the vertex/index buffer shadow
-	// copy, there is no partial-texture-update use case in this milestone.
+	// Matches MIP_LEVELS_MAX (WW3D2/texturefilter.h) - not included here
+	// yet (that file isn't portable until Draft 22 Step 5), so the cap is
+	// duplicated as a plain constant rather than taking on an early
+	// dependency on a file this step doesn't otherwise need.
+	const UINT GL_MAX_MIP_LEVELS = 12;
+
+	class GLTexture8;
+
+	// GL-backed IDirect3DSurface8 (Draft 22 Step 2). Two flavors, matching
+	// real D3D8's own duality:
+	//  - a standalone system-memory surface (IDirect3DDevice8::
+	//    CreateImageSurface) that owns its buffer, since a D3D image
+	//    surface has no GL object at all;
+	//  - a "level view" (IDirect3DTexture8::GetSurfaceLevel) whose pixel
+	//    data IS the owning GLTexture8's shadow buffer for that level -
+	//    real D3D8 treats a texture level and its surface view as the same
+	//    underlying resource, so this class doesn't own that memory and its
+	//    UnlockRect re-uploads through the owner instead of freeing on
+	//    destruction.
+	class GLSurface8 : public IDirect3DSurface8
+	{
+	public:
+		// Standalone surface - owns m_Data.
+		GLSurface8(UINT width, UINT height, D3DFORMAT format) :
+			m_Width(width),
+			m_Height(height),
+			m_Format(format),
+			m_BytesPerPixel(Get_Bytes_Per_Pixel(D3DFormat_To_WW3DFormat(format))),
+			m_Data(static_cast<BYTE*>(malloc(width * height * m_BytesPerPixel))),
+			m_OwnsData(true),
+			m_OwnerTexture(nullptr),
+			m_OwnerLevel(0)
+		{
+		}
+
+		// Level-view surface - aliases the owner's shadow buffer for Level.
+		GLSurface8(GLTexture8* owner, UINT level, UINT width, UINT height, D3DFORMAT format, BYTE* data) :
+			m_Width(width),
+			m_Height(height),
+			m_Format(format),
+			m_BytesPerPixel(Get_Bytes_Per_Pixel(D3DFormat_To_WW3DFormat(format))),
+			m_Data(data),
+			m_OwnsData(false),
+			m_OwnerTexture(owner),
+			m_OwnerLevel(level)
+		{
+		}
+
+		virtual ~GLSurface8() override
+		{
+			if (m_OwnsData) free(m_Data);
+		}
+
+		virtual HRESULT GetDesc(D3DSURFACE_DESC* pDesc) override
+		{
+			pDesc->Format = m_Format;
+			pDesc->Type = D3DRTYPE_SURFACE;
+			pDesc->Usage = 0;
+			pDesc->Pool = D3DPOOL_SYSTEMMEM;
+			pDesc->Size = m_Width * m_Height * m_BytesPerPixel;
+			pDesc->MultiSampleType = D3DMULTISAMPLE_NONE;
+			pDesc->Width = m_Width;
+			pDesc->Height = m_Height;
+			return D3D_OK;
+		}
+
+		// pRect is ignored (whole-surface locks only) - same narrow-scope
+		// reasoning GLTexture8::LockRect has always used; no caller in this
+		// milestone's ported closure needs a partial surface lock.
+		virtual HRESULT LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) override
+		{
+			pLockedRect->Pitch = static_cast<INT>(m_Width * m_BytesPerPixel);
+			pLockedRect->pBits = m_Data;
+			return D3D_OK;
+		}
+
+		virtual HRESULT UnlockRect() override;	// defined after GLTexture8 (needs its complete type)
+
+		UINT Width() const { return m_Width; }
+		UINT Height() const { return m_Height; }
+		D3DFORMAT Format() const { return m_Format; }
+		unsigned Bytes_Per_Pixel() const { return m_BytesPerPixel; }
+		BYTE* Data() const { return m_Data; }
+
+	private:
+		UINT        m_Width;
+		UINT        m_Height;
+		D3DFORMAT   m_Format;
+		unsigned    m_BytesPerPixel;
+		BYTE*       m_Data;
+		bool        m_OwnsData;
+		GLTexture8* m_OwnerTexture;
+		UINT        m_OwnerLevel;
+	};
+
+	// GL-backed IDirect3DTexture8 (Milestone 2, Step 5; mipmapped as of
+	// Draft 22 Step 2). CreateTexture is called directly, sidestepping
+	// DX8Wrapper::_Create_DX8_Texture (which stays Windows-only/D3DX-only,
+	// untouched - see Draft 18). Only D3DFMT_A8R8G8B8 is supported
+	// (WWASSERT-enforced in CreateTexture below) - the only format
+	// CheckDeviceFormat honestly answers for, and per the plan's finding 3
+	// every real asset format converges onto it before upload anyway.
+	// LockRect/UnlockRect ignore pRect (whole-level locks only), same
+	// narrow-scope reasoning as GLSurface8.
 	//
-	// Same malloc'd-CPU-shadow-copy design as GLShadowBuffer8: Unlock
-	// re-uploads to the GL texture via glTexSubImage2D. Upload format is
-	// GL_BGRA, matching D3DCOLOR_ARGB's in-memory little-endian byte order
-	// (B,G,R,A) exactly - a standard, unambiguous technique, unlike the
+	// Same malloc'd-CPU-shadow-copy design as GLShadowBuffer8, now one
+	// shadow buffer per level: UnlockRect(level) re-uploads that level to
+	// the GL texture via glTexSubImage2D. Upload format is GL_BGRA,
+	// matching D3DCOLOR_ARGB's in-memory little-endian byte order (B,G,R,A)
+	// exactly - a standard, unambiguous technique, unlike the
 	// vertex-diffuse-color question Step 4 deliberately left for Step 7's
 	// canary check.
 	class GLTexture8 : public IDirect3DTexture8
 	{
 	public:
-		GLTexture8(UINT width, UINT height) :
-			m_Width(width),
-			m_Height(height),
-			m_ShadowData(static_cast<BYTE*>(malloc(width * height * 4))),
+		// levels must already be resolved (Levels==0 "full chain" expanded,
+		// clamped to GL_MAX_MIP_LEVELS) by CreateTexture before construction.
+		GLTexture8(UINT width, UINT height, UINT levels) :
+			m_LevelCount(levels),
 			m_GLTexture(0)
 		{
+			WWASSERT(levels >= 1 && levels <= GL_MAX_MIP_LEVELS);
 			glGenTextures(1, &m_GLTexture);
 			glBindTexture(GL_TEXTURE_2D, m_GLTexture);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+			UINT levelWidth = width, levelHeight = height;
+			for (UINT level = 0; level < m_LevelCount; ++level)
+			{
+				m_Levels[level].Width = levelWidth;
+				m_Levels[level].Height = levelHeight;
+				m_Levels[level].ShadowData = static_cast<BYTE*>(malloc(levelWidth * levelHeight * 4));
+				glTexImage2D(GL_TEXTURE_2D, static_cast<GLint>(level), GL_RGBA, levelWidth, levelHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, nullptr);
+				if (levelWidth > 1) levelWidth >>= 1;
+				if (levelHeight > 1) levelHeight >>= 1;
+			}
+			// MIN/MAG filter stay GL_NEAREST here, byte-identical to
+			// Milestone 2/3's behavior (Draft 22 Step 3 wires real
+			// MINFILTER/MAGFILTER/MIPFILTER translation via sampler
+			// objects). GL_TEXTURE_MAX_LEVEL is real from the start: it
+			// just states how many levels actually exist (0 for the
+			// single-level case, matching GL's own default and every
+			// existing harness's texture bit-for-bit), and is required for
+			// GL texture completeness once Step 3 enables mip filtering.
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(m_LevelCount - 1));
 		}
 
 		virtual ~GLTexture8() override
 		{
 			if (m_GLTexture) glDeleteTextures(1, &m_GLTexture);
-			free(m_ShadowData);
+			for (UINT level = 0; level < m_LevelCount; ++level) free(m_Levels[level].ShadowData);
+		}
+
+		virtual DWORD GetLevelCount() override { return m_LevelCount; }
+
+		virtual HRESULT GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) override
+		{
+			if (Level >= m_LevelCount) return D3DERR_NOTAVAILABLE;
+			pDesc->Format = D3DFMT_A8R8G8B8;
+			pDesc->Type = D3DRTYPE_TEXTURE;
+			pDesc->Usage = 0;
+			pDesc->Pool = D3DPOOL_MANAGED;
+			pDesc->Size = m_Levels[Level].Width * m_Levels[Level].Height * 4;
+			pDesc->MultiSampleType = D3DMULTISAMPLE_NONE;
+			pDesc->Width = m_Levels[Level].Width;
+			pDesc->Height = m_Levels[Level].Height;
+			return D3D_OK;
+		}
+
+		virtual HRESULT GetSurfaceLevel(UINT Level, IDirect3DSurface8** ppSurfaceLevel) override
+		{
+			if (Level >= m_LevelCount) { *ppSurfaceLevel = nullptr; return D3DERR_NOTAVAILABLE; }
+			*ppSurfaceLevel = new GLSurface8(this, Level, m_Levels[Level].Width, m_Levels[Level].Height, D3DFMT_A8R8G8B8, m_Levels[Level].ShadowData);
+			return D3D_OK;
 		}
 
 		virtual HRESULT LockRect(UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) override
 		{
-			if (Level != 0) return D3DERR_NOTAVAILABLE;
-			pLockedRect->Pitch = static_cast<INT>(m_Width * 4);
-			pLockedRect->pBits = m_ShadowData;
+			if (Level >= m_LevelCount) return D3DERR_NOTAVAILABLE;
+			pLockedRect->Pitch = static_cast<INT>(m_Levels[Level].Width * 4);
+			pLockedRect->pBits = m_Levels[Level].ShadowData;
 			return D3D_OK;
 		}
 
 		virtual HRESULT UnlockRect(UINT Level) override
 		{
-			if (Level != 0) return D3DERR_NOTAVAILABLE;
-			glBindTexture(GL_TEXTURE_2D, m_GLTexture);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_Width, m_Height, GL_BGRA, GL_UNSIGNED_BYTE, m_ShadowData);
+			if (Level >= m_LevelCount) return D3DERR_NOTAVAILABLE;
+			Reupload_Level(Level);
 			return D3D_OK;
+		}
+
+		// Shared by UnlockRect(level) above and a GetSurfaceLevel() view's
+		// UnlockRect() below - both must push the same bytes, since real
+		// D3D8 treats them as the same underlying resource.
+		void Reupload_Level(UINT Level)
+		{
+			glBindTexture(GL_TEXTURE_2D, m_GLTexture);
+			glTexSubImage2D(GL_TEXTURE_2D, static_cast<GLint>(Level), 0, 0, m_Levels[Level].Width, m_Levels[Level].Height, GL_BGRA, GL_UNSIGNED_BYTE, m_Levels[Level].ShadowData);
 		}
 
 		GLuint Get_GL_Texture() const { return m_GLTexture; }
 
 	private:
-		UINT   m_Width;
-		UINT   m_Height;
-		BYTE*  m_ShadowData;
-		GLuint m_GLTexture;
+		struct MipLevel
+		{
+			UINT  Width;
+			UINT  Height;
+			BYTE* ShadowData;
+		};
+		UINT     m_LevelCount;
+		GLuint   m_GLTexture;
+		MipLevel m_Levels[GL_MAX_MIP_LEVELS];
 	};
+
+	HRESULT GLSurface8::UnlockRect()
+	{
+		if (m_OwnerTexture) m_OwnerTexture->Reupload_Level(m_OwnerLevel);
+		return D3D_OK;
+	}
 
 	// FVF -> GL vertex-attribute layout (Milestone 2, Step 3). Table-driven:
 	// exact-matches the FVF bit pattern against 10 of dx8fvf.h's 13 named
@@ -624,9 +780,78 @@ HRESULT IDirect3DDevice8::CreateIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT 
 
 HRESULT IDirect3DDevice8::CreateTexture(UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture8** ppTexture)
 {
-	WWASSERT_PRINT(Levels == 1, "CreateTexture: only Levels==1 supported (mipmaps are a Milestone 2 non-goal)");
 	WWASSERT_PRINT(Format == D3DFMT_A8R8G8B8, "CreateTexture: only D3DFMT_A8R8G8B8 supported this milestone");
-	*ppTexture = new GLTexture8(Width, Height);
+	UINT levelCount = Levels;
+	if (levelCount == 0)
+	{
+		// Real D3D8 semantics: Levels==0 means "generate the full chain
+		// down to 1x1" (MIP_LEVELS_ALL, WW3D2/texturefilter.h).
+		levelCount = 1;
+		UINT w = Width, h = Height;
+		while (w > 1 || h > 1)
+		{
+			if (w > 1) w >>= 1;
+			if (h > 1) h >>= 1;
+			++levelCount;
+		}
+	}
+	if (levelCount > GL_MAX_MIP_LEVELS) levelCount = GL_MAX_MIP_LEVELS;
+	*ppTexture = new GLTexture8(Width, Height, levelCount);
+	return D3D_OK;
+}
+
+HRESULT IDirect3DDevice8::CreateImageSurface(UINT Width, UINT Height, D3DFORMAT Format, IDirect3DSurface8** ppSurface)
+{
+	*ppSurface = new GLSurface8(Width, Height, Format);
+	return D3D_OK;
+}
+
+// One rectangle's worth of the row-by-row memcpy CopyRects below needs -
+// shared between its cRects==0 (whole-surface) and explicit-rect-array
+// cases. D3D8 requires matching formats for CopyRects (no stretch, no
+// format conversion); WWASSERT_PRINT-enforced rather than silently
+// mishandled, same convention as CreateTexture's format check above.
+static void Copy_Surface_Rect(GLSurface8* src, RECT SrcRect, GLSurface8* dst, POINT DestPoint)
+{
+	unsigned bpp = src->Bytes_Per_Pixel();
+	UINT srcPitch = src->Width() * bpp;
+	UINT dstPitch = dst->Width() * bpp;
+	UINT w = static_cast<UINT>(SrcRect.right - SrcRect.left);
+	UINT h = static_cast<UINT>(SrcRect.bottom - SrcRect.top);
+	for (UINT row = 0; row < h; ++row)
+	{
+		const BYTE* s = src->Data() + (static_cast<UINT>(SrcRect.top) + row) * srcPitch + static_cast<UINT>(SrcRect.left) * bpp;
+		BYTE* d = dst->Data() + (static_cast<UINT>(DestPoint.y) + row) * dstPitch + static_cast<UINT>(DestPoint.x) * bpp;
+		memcpy(d, s, w * bpp);
+	}
+}
+
+HRESULT IDirect3DDevice8::CopyRects(IDirect3DSurface8* pSourceSurface, CONST RECT* pSourceRectsArray, UINT cRects, IDirect3DSurface8* pDestinationSurface, CONST POINT* pDestPointsArray)
+{
+	// static_cast, not dynamic_cast: every IDirect3DSurface8 this backend
+	// ever hands out IS a GLSurface8 (CreateImageSurface/GetSurfaceLevel
+	// are the only factories) - same reasoning as everywhere else in this
+	// file.
+	GLSurface8* src = static_cast<GLSurface8*>(pSourceSurface);
+	GLSurface8* dst = static_cast<GLSurface8*>(pDestinationSurface);
+	WWASSERT_PRINT(src->Format() == dst->Format(), "CopyRects: format conversion not supported");
+
+	if (cRects == 0)
+	{
+		RECT full = { 0, 0, static_cast<LONG>(src->Width()), static_cast<LONG>(src->Height()) };
+		Copy_Surface_Rect(src, full, dst, POINT{ 0, 0 });
+	}
+	else
+	{
+		for (UINT i = 0; i < cRects; ++i)
+		{
+			RECT r = pSourceRectsArray ? pSourceRectsArray[i] : RECT{ 0, 0, static_cast<LONG>(src->Width()), static_cast<LONG>(src->Height()) };
+			POINT p = pDestPointsArray ? pDestPointsArray[i] : POINT{ r.left, r.top };
+			Copy_Surface_Rect(src, r, dst, p);
+		}
+	}
+
+	dst->UnlockRect();	// re-uploads through the owning texture if dst is a GetSurfaceLevel() view
 	return D3D_OK;
 }
 

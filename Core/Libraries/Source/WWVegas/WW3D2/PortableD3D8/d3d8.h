@@ -112,7 +112,7 @@ class IDirect3DTexture8 : public IDirect3DBaseTexture8
 {
 public:
 	D3DRESOURCETYPE GetType() override { return D3DRTYPE_TEXTURE; }
-	virtual HRESULT GetLevelDesc(UINT Level, void* pDesc) { return D3DERR_NOTAVAILABLE; }
+	virtual HRESULT GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT GetSurfaceLevel(UINT Level, IDirect3DSurface8** ppSurfaceLevel) { *ppSurfaceLevel = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT LockRect(UINT Level, D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT UnlockRect(UINT Level) { return D3DERR_NOTAVAILABLE; }
@@ -163,8 +163,8 @@ public:
 	virtual ULONG AddRef() { return ++m_RefCount; }
 	virtual ULONG Release() { ULONG count = --m_RefCount; if (count == 0) delete this; return count; }
 	virtual HRESULT GetDevice(IDirect3DDevice8** ppDevice) { *ppDevice = nullptr; return D3D_OK; }
-	virtual HRESULT GetDesc(void* pDesc) { return D3DERR_NOTAVAILABLE; }
-	virtual HRESULT LockRect(void* pLockedRect, CONST RECT* pRect, DWORD Flags) { return D3DERR_NOTAVAILABLE; }
+	virtual HRESULT GetDesc(D3DSURFACE_DESC* pDesc) { return D3DERR_NOTAVAILABLE; }
+	virtual HRESULT LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT UnlockRect() { return D3DERR_NOTAVAILABLE; }
 
 private:
@@ -216,8 +216,12 @@ public:
 	virtual HRESULT CreateIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DIndexBuffer8** ppIndexBuffer);
 	virtual HRESULT CreateRenderTarget(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, BOOL Lockable, IDirect3DSurface8** ppSurface) { *ppSurface = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT CreateDepthStencilSurface(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, IDirect3DSurface8** ppSurface) { *ppSurface = nullptr; return D3DERR_NOTAVAILABLE; }
-	virtual HRESULT CreateImageSurface(UINT Width, UINT Height, D3DFORMAT Format, IDirect3DSurface8** ppSurface) { *ppSurface = nullptr; return D3DERR_NOTAVAILABLE; }
-	virtual HRESULT CopyRects(IDirect3DSurface8* pSourceSurface, CONST RECT* pSourceRectsArray, UINT cRects, IDirect3DSurface8* pDestinationSurface, CONST POINT* pDestPointsArray) { return D3D_OK; }
+	// Defined out-of-line in dx8wrapper_gl.cpp (native port plan Phase 5(a)
+	// Milestone 4, Draft 22 Step 2) - missingtexture.cpp's
+	// _Create_Missing_Surface genuinely needs a real system-memory surface
+	// and a real blit, same precedent as CreateTexture above.
+	virtual HRESULT CreateImageSurface(UINT Width, UINT Height, D3DFORMAT Format, IDirect3DSurface8** ppSurface);
+	virtual HRESULT CopyRects(IDirect3DSurface8* pSourceSurface, CONST RECT* pSourceRectsArray, UINT cRects, IDirect3DSurface8* pDestinationSurface, CONST POINT* pDestPointsArray);
 	virtual HRESULT UpdateTexture(IDirect3DBaseTexture8* pSourceTexture, IDirect3DBaseTexture8* pDestinationTexture) { return D3D_OK; }
 	virtual HRESULT GetFrontBuffer(IDirect3DSurface8* pDestSurface) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT SetRenderTarget(IDirect3DSurface8* pRenderTarget, IDirect3DSurface8* pNewZStencil) { return D3D_OK; }

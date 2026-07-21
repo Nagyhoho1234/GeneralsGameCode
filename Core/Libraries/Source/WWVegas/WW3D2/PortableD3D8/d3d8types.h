@@ -563,6 +563,22 @@ typedef struct _D3DLOCKED_RECT
 	void* pBits;
 } D3DLOCKED_RECT;
 
+// (native port plan Phase 5(a) Milestone 4, Draft 22 Step 2) Absent until
+// now - GetLevelDesc/GetDesc dodged it via a void* parameter. Shape matches
+// the real SDK exactly (build/win32/_deps/dx8-src/d3d8types.h); Size is the
+// field texture.cpp's Get_Texture_Memory_Usage sums across levels.
+typedef struct _D3DSURFACE_DESC
+{
+	D3DFORMAT           Format;
+	D3DRESOURCETYPE     Type;
+	DWORD               Usage;
+	D3DPOOL             Pool;
+	UINT                Size;
+	D3DMULTISAMPLE_TYPE MultiSampleType;
+	UINT                Width;
+	UINT                Height;
+} D3DSURFACE_DESC;
+
 typedef struct _D3DDISPLAYMODE
 {
 	UINT      Width;
