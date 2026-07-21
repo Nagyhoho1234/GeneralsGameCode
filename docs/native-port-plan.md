@@ -2097,3 +2097,314 @@ draft's source research; the next continuation of this work should begin
 at "Step 1: `PortableD3D8/d3d8types.h` gaps" and proceed in order,
 verifying Windows unregressed after every step exactly as every prior
 phase of this port has done.
+
+## Draft 20: Milestone 3 plan - the real engine draw path (buffer classes,
+state application, transforms) through DX8Wrapper's high-level API, planned
+as a fable background agent per standing user request, against Milestone 2's
+actual delivered code (commits `03f2a75fc`..`bf7fe36a64`, HEAD at planning
+time), not just its plan.
+
+**What Milestone 2 actually delivered (verified by reading the 7 commits'
+diffs and current file contents, not the messages):** real GL-backed
+`CreateVertexBuffer`/`CreateIndexBuffer`/`Lock`/`Unlock` (CPU-shadow-copy
+design, honoring `SizeToLock==0`/byte-offset-region/`DISCARD`/`NOOVERWRITE`
+semantics), `CreateTexture`/`LockRect`/`UnlockRect` (A8R8G8B8 level 0 only),
+`Translate_FVF_To_GL_Layout` (10 of 13 FVFs), the stage-0
+`MODULATE(TEXTURE,DIFFUSE)` GLSL program, and `SetVertexShader`/
+`SetStreamSource`/`SetIndices`/`SetTexture`/`SetRenderState`(cull+depth
+only)/`DrawIndexedPrimitive` (`glDrawElementsBaseVertex`, 16-bit indices) -
+all verified by an actually-executed 6-check pixel-level harness
+(`Tests/RenderTexturedTriangle/`), which caught 2 real bugs compilation
+never would have: the vertex-diffuse R/B order (fixed with `GL_BGRA` as
+`glVertexAttribPointer`'s size argument) and Draft 18's `DWORD`/`bittype.h`
+size-divergence "watch item", which the harness turned into a demonstrated
+bug (two TUs disagreeing on `sizeof(Vertex)`, 32 vs 24) and which is now
+FIXED at the single source of truth (`bittype.h`: `unsigned long` on
+`_WIN32` exactly matching `<windows.h>`, `unsigned int` elsewhere; full
+MSVC rebuild 1688/1688 confirmed). That Draft 18 deferred item is closed.
+The `DazzleLayerClass::Clear_Visible_List` use-after-free remains open,
+still correctly out of native-port scope. The mesh `TriIndex` deferral has
+moved: commit `8d65653d3` added the load-time truncation assert Draft 17
+named as the precondition, so mesh unification is now *unblocked* - but
+deliberately still not this milestone (see non-goals).
+
+**Milestone 3 scope decision.** Candidates considered: (a) port the real
+engine-side buffer classes + DX8Wrapper's high-level draw path; (b) Phase 4
+windowing (visible GLFW window). Chose **(a), narrowed**, for the same
+reason Milestone 2 chose the device-object seam: it is the next load-bearing
+layer. Everything the engine renders - meshes, terrain, UI - goes through
+`DX8VertexBufferClass`/`DX8IndexBufferClass`/`Set_Vertex_Buffer`/
+`Apply_Render_State_Changes`/`Draw_Triangles`; none of it can run until this
+layer exists on GL. Windowing (b) adds no engine-porting progress: the
+offscreen-FBO + `glReadPixels` approach keeps everything verifiable headless
+on CI, and Phase 4 is gated on `WinMain.cpp`/`Win32GameEngine` work anyway.
+The narrowing: "so a REAL mesh can render" is correct as a direction but
+overshoots one milestone - real W3D mesh rendering additionally needs the
+texture pipeline (`texture.cpp`'s closure: `textureloader.cpp` + background
+thread, `texturethumbnail.cpp`, `ddsfile`, `dx8texman`, `missingtexture`,
+`surfaceclass`, and per-tree `assetmgr.cpp` which isn't even unified into
+`Core/`), the `dx8renderer.cpp` mesh-rendering pipeline, and mesh/TriIndex
+unification. Those are Milestones 4 (textures) and 5 (meshes), each with
+this layer as a prerequisite. Milestone 3 = every draw the engine issues
+flows through real, unmodified engine classes end-to-end; the only
+synthetic thing left is the harness's vertex data.
+
+**Key findings, verified against current code (file:line), that shape the
+design:**
+
+1. **The high-level functions are API-neutral and should be MOVED, not
+   reimplemented.** `Set_Vertex_Buffer` (both overloads,
+   `dx8wrapper_d3d8.cpp:1764,1814`), `Set_Index_Buffer` (both, `:1790,1838`),
+   `Draw_Sorting_IB_VB` (`:1858`), `Draw` (`:1942`), `Draw_Triangles` (both,
+   `:2085,2106`), `Draw_Strip` (`:2121`), `Apply_Render_State_Changes`
+   (`:2136`), `Set_Viewport` (`:1750`), `Set_Light(unsigned, const
+   D3DLIGHT8*)` (`:2879`), and `DX8_Assert` (`:1580`) touch the device
+   exclusively through `DX8CALL`/device vtable calls that PortableD3D8
+   already declares (verified against `PortableD3D8/d3d8.h` - every method
+   these bodies invoke exists there, mostly as accept-stubs). Moving them to
+   a shared TU is the same extraction Milestone 1 did for the static member
+   definitions (`dx8wrapper_common.cpp`), and follows the port's
+   single-source rule: one implementation, not a GL fork that drifts.
+
+2. **Link-closure landmines, enumerated up front** (Milestone 1 learned the
+   hard way that the linker pulls whole object files, so one stray symbol
+   reference drags a monolith's entire undefined-symbol closure into a test
+   executable's link):
+   - **`WW3D`'s static data members are defined in monolithic `ww3d.cpp`.**
+     `mapper.cpp` calls `WW3D::Get_Sync_Time()` 45 times,
+     `sortingrenderer.cpp` calls `WW3D::Is_Sorting_Enabled()`, and
+     `SNAPSHOT_SAY` (`ww3d.h:62`, active - `MESH_RENDER_SNAPSHOT_ENABLED` is
+     unconditionally defined at `ww3d.h:61`) references
+     `WW3D::Is_Snapshot_Activated()` throughout
+     `Apply_Render_State_Changes` and the `Set_DX8_*` inlines. These
+     accessors are inline, but the *statics they read* are symbols in
+     `ww3d.cpp.o` - referencing any of them pulls all of `ww3d.cpp`'s
+     closure (mesh, boxrobj, texture filters, ...) into the harness link.
+     Fix at the root, once: extract `WW3D`'s static member definitions into
+     a new portable `ww3d_common.cpp` (exact `dx8wrapper_common.cpp`
+     precedent), killing this entire class of link failure.
+   - **Buffer-creation failure retry paths** reference
+     `TextureClass::Invalidate_Old_Unused_Textures`,
+     `WW3D::_Invalidate_Mesh_Cache`, and `ResourceManagerDiscardBytes`
+     (`dx8vertexbuffer.cpp:455-481`, `dx8indexbuffer.cpp:311-330`). This
+     "release D3D-pool assets and retry" dance is D3D resource-manager
+     memory management with no GL analog; gate the retry behind `_WIN32`
+     (first failure stays fatal via the existing `DX8_ErrorCode(ret)`) -
+     honest, and it severs the only *direct* `texture.cpp`/`ww3d.cpp`
+     symbol references in the buffer classes.
+   - **`Debug_Statistics` drags the texture subsystem.** `Draw()` records
+     via `DX8_RECORD_RENDER` -> `Debug_Statistics::
+     Record_DX8_Polys_And_Vertices` (`statistics.h:71`), and
+     `statistics.cpp` calls `TextureBaseClass::Get_Texture_Memory_Usage`
+     (`statistics.cpp:121,219-222`) - pulling `statistics.cpp.o` requires
+     `texture.cpp`. Gate the `DX8_RECORD_TEXTURE`/`DX8_RECORD_RENDER`-family
+     macros to no-ops behind `#ifndef _WIN32` in `statistics.h`
+     (diagnostics-only, zero rendering behavior - same category as the
+     `MEMORYSTATUS` precedent), deferred until Milestone 4 ports textures.
+     Note `DX8FrameStatistics` (draw_calls etc. in `dx8wrapper.h`) is a
+     separate, already-portable mechanism and stays fully live.
+   - **The snapshot-debug name decoders live in the Windows-only file.**
+     `Get_DX8_Render_State_Value_Name` / `Get_DX8_Texture_Stage_State_
+     Value_Name` (`dx8wrapper_d3d8.cpp:3900,4048`) and the
+     `Get_DX8_*_Name` family are referenced from the active
+     `MESH_RENDER_SNAPSHOT_ENABLED` blocks inside code this milestone makes
+     portable (`Apply_Render_State_Changes`, inline
+     `Set_DX8_Render_State`). They are pure string/switch tables with zero
+     D3D calls - move them along with the draw functions.
+   - **`TextureBaseClass::Apply_Null` (`texture.cpp:388`) is one line**
+     (`Set_DX8_Texture(stage, nullptr)`) but a direct symbol reference from
+     `Apply_Render_State_Changes`; `Textures[i]->Apply(i)` by contrast is a
+     virtual call (no direct symbol, and no `TextureBaseClass` is ever
+     constructed on this milestone's path, so no vtable is needed). Host
+     `Apply_Null` in a new `texture_common.cpp` that Milestone 4 will grow -
+     NOT in the wrapper files, keeping subsystem code in its subsystem.
+
+3. **`Get_Current_Caps()` must become real on GL.** It `WWASSERT`s
+   `CurrentCaps` non-null and is called by `DX8VertexBufferClass`
+   (`Support_TnL`, `dx8vertexbuffer.cpp:441`), the dynamic buffers
+   (`Support_NPatches`, `:782`), `Apply_Render_State_Changes`
+   (`Get_Max_Textures_Per_Pass`), inline `Set_Texture`, `ShaderClass::Apply`
+   (`TextureOpCaps`, `shader.cpp:413`; vendor check `:552`), and
+   `Set_Projection_Transform_With_Z_Bias` (`Support_ZBias`). `DX8Caps` has
+   a ready-made `D3DCAPS8`-taking constructor (`dx8caps.cpp:483`) that
+   never touches the device - the GL path fabricates one honest `D3DCAPS8`
+   (report only what the GL backend genuinely does: TnL yes - the GPU
+   transforms; `MaxSimultaneousTextures=2` - matching the engine's actual
+   2-stage usage and the eventual combiner-shader plan; NPatches/ZBias no;
+   `TextureOpCaps` limited to `DISABLE|SELECTARG1|SELECTARG2|MODULATE|ADD`;
+   shader versions 0). `dx8caps.cpp` itself needs its
+   `<windows.h>`/`<mmsystem.h>` includes gated and `HIWORD`/`LOWORD` added
+   to `win32_compat.h` (verified missing). Zeroed
+   `D3DADAPTER_IDENTIFIER8` -> `VENDOR_UNKNOWN` makes every vendor-quirk
+   path (Voodoo3 etc.) correctly inert.
+
+4. **The transform pipeline is the real new GL work.** The engine path is:
+   `Set_Transform(D3DTS_WORLD/VIEW,...)` deferred into `render_state` ->
+   `Apply_Render_State_Changes` -> `_Set_DX8_Transform` -> device
+   `SetTransform` (today a `return D3D_OK` stub), and projection goes
+   straight through (`Set_Projection_Transform_With_Z_Bias`,
+   `dx8wrapper.h:1199`). The GL device must store world/view/projection and
+   compose the MVP uniform at draw time. Two facts make this small: (i) a
+   D3D row-major/row-vector `float[16]` of the product `W*V*P` is
+   byte-identical to the GL column-major layout of its transpose
+   `P^T*V^T*W^T` - which IS the column-vector MVP, so compose with one
+   plain 4x4 multiply in D3D convention and reinterpret, no transpose
+   code; (ii) the already-validated `Convert_D3D_Projection_To_GL` z-row
+   remap applied to the *composed* matrix is exactly the required
+   clip-space conversion (it is a left-multiplied constant row operation).
+   **Compatibility rule so the Milestone 2 harness stays untouched as a
+   regression test** (the same invariant M2 kept for M1's harness): the
+   device tracks a transforms-dirty flag; `DrawIndexedPrimitive` recomputes
+   the MVP uniform only if any `SetTransform` has ever been seen, so
+   `Set_Fixed_Function_MVP`-driven harnesses keep working bit-for-bit.
+
+5. **Small real GL additions with pixel-visible effects**: (i) a 1x1 white
+   fallback texture bound when stage 0 has no texture, so untextured draws
+   (the norm in this milestone - textures are M4) resolve
+   `MODULATE(TEXTURE,DIFFUSE)` to the vertex diffuse instead of GL's
+   unbound-sampler black; (ii) `SetRenderState` gains
+   `D3DRS_ALPHABLENDENABLE`/`D3DRS_SRCBLEND`/`D3DRS_DESTBLEND`
+   (`glEnable(GL_BLEND)` + a `D3DBLEND_*`->`GLenum` table) so
+   `ShaderClass::Apply`'s preset vocabulary (opaque/additive/alpha-blend)
+   actually controls GL output - the first time real `shader.cpp` code
+   drives visible GL state.
+
+6. **Portable-compile gaps in the files themselves** (each verified by
+   reading the file, not grep counts): `dx8fvf.cpp`'s only D3DX dependency
+   is `D3DXGetFVFVertexSize` (`dx8fvf.cpp:48`) - replace with a portable
+   FVF-bit size computation on `!_WIN32` (the class's own constructor
+   already computes every component offset portably right below it);
+   `dx8vertexbuffer.cpp:48`/`dx8fvf.cpp:44`'s `<d3dx8core.h>` includes get
+   gated; `sortingrenderer.cpp` has exactly 3 D3DX math call sites
+   (`D3DXMATRIX` multiplies + `D3DXVec3Transform`, `:245-248,474`) -
+   portable equivalents via WWMath on `!_WIN32`, Windows path untouched;
+   `shader.cpp`/`vertmaterial.cpp`/`mapper.cpp` have no direct D3DX/Win32
+   dependencies at all (verified - their whole D3D surface is
+   `Set_DX8_Render_State`/`Set_DX8_Texture_Stage_State`/`SetMaterial`/
+   `SetTransform` calls that PortableD3D8 accepts). Risk flag: `mapper.cpp`
+   includes per-tree `mesh.h`/`rendobj.h` headers (compile-time only; the
+   M2 harness's GeneralsMD-include-dir precedent covers it, but this is
+   unverified until a real compile - budget for header fixes, not for
+   porting those subsystems).
+
+**Design decisions:**
+
+- **Move, don't fork** (finding 1): new `dx8wrapper_draw.cpp`, compiled on
+  every platform, receives the high-level draw-path functions + the name
+  decoders out of `dx8wrapper_d3d8.cpp` verbatim. A NEW TU rather than
+  growing `dx8wrapper_common.cpp`, because the two existing test harnesses
+  compile `dx8wrapper_common.cpp` directly and must keep linking without
+  the buffer/shader/material closure this file drags in. The Draft 18
+  `Log_DX8_ErrorCode` lesson applies with force: after the move, verify by
+  full MSVC rebuild AND by checking the moved bodies are gone from
+  `dx8wrapper_d3d8.cpp` (no duplicates, no silent losses).
+- **Root-cause link hygiene first** (finding 2): `ww3d_common.cpp` statics
+  extraction lands before anything references the accessors, so no step
+  ever debugs a 50-symbol link explosion.
+- **Honest caps** (finding 3): the GL `D3DCAPS8` reports only implemented
+  capability; anything the engine asks about that GL doesn't do yet reads
+  as "not supported", making `shader.cpp`'s fallback logic work *for* the
+  port instead of against it.
+- **CPU-shadow buffers vindicated, unchanged** (Draft 18's design): the
+  real `WriteLockClass`/`AppendLockClass`/`DynamicVBAccessClass` callers
+  need zero changes in `GLShadowBuffer8` - whole-buffer locks, region
+  locks, `DISCARD`/`NOOVERWRITE` all already honored. This milestone is
+  the proof that seam was cut correctly.
+- **Deferrals are gated loudly, not silently**: buffer-retry (`_WIN32`
+  gate + comment), `Debug_Statistics` (no-op macros + comment), alpha
+  *test* (needs shader `discard`; meaningful only with real textures - M4,
+  and the spike already validated the technique), sorting-renderer
+  *flush* (compiles and links; `Insert_Triangles` works; `Flush` is only
+  reachable via `WW3D::Render`, out of scope - noted, not hidden).
+
+**Explicit non-goals (Milestone 4+ / other phases):** `texture.cpp` and the
+whole texture pipeline (textureloader + its background thread, thumbnails,
+DDS, `dx8texman`, `missingtexture`, `surfaceclass`, per-tree `assetmgr`) -
+Milestone 4; real W3D mesh loading and `mesh.cpp`/`meshgeometry.cpp`/
+`hlod.cpp` unification (now unblocked by the TriIndex assert, still not
+this milestone) and `dx8renderer.cpp` - Milestone 5; lighting emulation
+(`D3DLIGHT8`->GLSL; `SetLight`/`LightEnable` stay accept-stubs and
+`D3DRS_LIGHTING` is ignored - harness uses the vertex-diffuse path);
+texture-stage combiner emulation beyond stage-0 MODULATE; fog; alpha test;
+mappers *executing* (mapper.cpp compiles/links; UV-generation correctness
+is M4 work with real textures); programmable shaders; render targets;
+`Create_Additional_Swap_Chain`; multiple vertex streams;
+`DrawPrimitiveUP`; device-loss/`Reset_Device`; `Set_Light(unsigned, const
+LightClass&)` (drags `light.cpp`, stays in the d3d8 file);
+`SortingRendererClass::Flush` end-to-end; windowing/Phase 4; the dazzle
+use-after-free (separate engine-correctness work).
+
+**Implementation ordering** (each step independently buildable; after every
+step: full `linux-x64` build of `z_gameenginedevice` must hold the
+17-error baseline, real MSVC win32 build of `g_ww3d2`/`z_ww3d2`/
+`g_gameenginedevice`/`z_gameenginedevice` must stay at 0 errors, and both
+existing harnesses must still RUN green under WSL2 whenever a step touches
+anything they link):
+
+1. **`ww3d_common.cpp`**: extract `WW3D`'s static member definitions from
+   `ww3d.cpp` into the new portable TU; add to `WW3D2_SRC_PORTABLE` and to
+   both existing harness targets (inert there until later steps, but keeps
+   one file list). Pure move - full MSVC rebuild is the verification that
+   nothing was lost or duplicated.
+2. **Vocabulary + compile-gap sweep, no behavior change**: portable
+   `Get_FVF_Vertex_Size` in `dx8fvf.cpp`; gate `<d3dx8core.h>` includes;
+   gate both buffer-retry paths; no-op the `Debug_Statistics` macros on
+   `!_WIN32`; `HIWORD`/`LOWORD` into `win32_compat.h`; gate
+   `dx8caps.cpp`'s Windows includes. Move `dx8fvf.cpp` + `dx8caps.cpp`
+   into `WW3D2_SRC_PORTABLE`; verify they compile on linux-x64.
+3. **Real `CurrentCaps` on GL**: honest `D3DCAPS8` from the GL device's
+   `GetDeviceCaps`; GL `Create_Device` constructs `CurrentCaps` via the
+   `D3DCAPS8` ctor (+ `CurrentAdapterIdentifier` fill), `Release_Device`
+   tears it down; `CheckDeviceFormat` returns success only for the
+   formats the GL backend supports. Add `dx8caps.cpp` to the harness
+   targets; RE-RUN both harnesses (first real run with caps constructed).
+4. **`dx8vertexbuffer.cpp` + `dx8indexbuffer.cpp` portable**: into
+   `WW3D2_SRC_PORTABLE`; compile-verify both platforms. No GL-side changes
+   expected (Milestone 2's Lock/Unlock semantics were built for exactly
+   these callers).
+5. **`shader.cpp` + `vertmaterial.cpp` + `mapper.cpp` +
+   `sortingrenderer.cpp` portable**: the 3 sortingrenderer D3DX math
+   sites get WWMath equivalents behind `!_WIN32`; the rest is expected to
+   be include-path/compile fixes only (the mapper.cpp per-tree-header risk
+   flag lives here). Into `WW3D2_SRC_PORTABLE`; compile-verify.
+6. **`dx8wrapper_draw.cpp` + `texture_common.cpp`**: the verbatim function
+   moves (finding 1 + decoders + `Apply_Null`). The single highest-risk
+   step for Windows regression - verify with a full MSVC rebuild of all
+   four targets plus explicit no-duplicate/no-loss symbol checking, and
+   linux compile of the new TUs.
+7. **GL device: transforms + blend + white fallback**: real `SetTransform`
+   storage, dirty-flagged MVP composition in `DrawIndexedPrimitive`
+   (design per finding 4), `D3DRS_ALPHABLENDENABLE`/`SRCBLEND`/`DESTBLEND`
+   translation, 1x1 white fallback texture at stage 0. RE-RUN the
+   Milestone 2 harness - it must pass bit-identically (the dirty-flag
+   compatibility rule proven, not assumed).
+8. **`Tests/RenderEngineDrawPath/` harness + CI**: new sibling harness (M1
+   and M2 harnesses stay untouched regression tests) driving the REAL
+   path end-to-end: `DX8VertexBufferClass` filled through a real
+   `WriteLockClass`, `DX8IndexBufferClass`, `Set_Vertex_Buffer`/
+   `Set_Index_Buffer`, `Set_Shader` with real `ShaderClass` presets,
+   `Set_Material` (a real `VertexMaterialClass` and the null path),
+   `Set_Transform(WORLD/VIEW)` + a real D3D-style perspective projection,
+   `Draw_Triangles` - plus a second draw through `DynamicVBAccessClass`/
+   `DynamicIBAccessClass` (exercising `DISCARD`/`NOOVERWRITE` locks and
+   nonzero `VertexBufferOffset`/`IndexBufferOffset` through real code for
+   the first time). Pixel-level checks: (1) background integrity; (2)
+   opaque quad sampled at *numerically predicted* projected pixel
+   positions (validates the whole W*V*P -> GL-clip-space chain against
+   independent CPU-side math, spike-style); (3) vertex-diffuse color
+   exactness through the white-fallback (proves untextured draws); (4)
+   additive-blend sum check via the real additive preset (proves
+   `ShaderClass::Apply` -> GL blend plumbing); (5) depth occlusion with
+   the depth states coming from the real shader vocabulary; (6) the
+   dynamic-buffer draw's content at its own location (proves the offset
+   plumbing `glDrawElementsBaseVertex` was built for, now driven by real
+   engine code). Wire into `linux-native.yml` behind `xvfb-run` (M1
+   precedent), and re-run all three harnesses in CI. A REAL RUN, not
+   compilation, is this milestone's exit criterion - Milestone 2's two
+   only-found-at-runtime bugs are the standing argument.
+
+**What this milestone does NOT yet make possible, honestly:** no image
+from real game data. After Milestone 3, the remaining ladder to "the game
+renders on Linux" is: textures (M4) -> meshes + dx8renderer (M5) ->
+`W3DDisplay`/scene/camera wiring + windowing (Phase 4/5(e) convergence).
+Each rung stands on this one; none skips it.
