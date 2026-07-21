@@ -2097,3 +2097,149 @@ draft's source research; the next continuation of this work should begin
 at "Step 1: `PortableD3D8/d3d8types.h` gaps" and proceed in order,
 verifying Windows unregressed after every step exactly as every prior
 phase of this port has done.
+
+## Draft 19: fable review of Milestone 2 (commits `03f2a75fc`..`bf7fe36a6`)
+
+Independent re-verification of the 7-commit Milestone 2 implementation
+("draw one textured triangle" through the device-object-level buffer/
+texture/draw-call API) against the actual code, git history, and - going
+one step beyond Draft 18's methodology - a from-scratch rebuild and live
+re-run of both test harnesses plus deliberate mutation testing of the two
+headline bug-fix claims.
+
+**Verdict: clean. Zero non-cosmetic bugs found in the milestone's own
+code.** Every commit-message claim checked held up, including both "real
+bugs found and fixed" stories in the Step 7 commit. The single highest-
+risk change (the `bittype.h` DWORD/ULONG platform split) is correct,
+complete for the names it touches, and verified include-order-safe - but
+it has an unfixed sibling (`uint32`, see watch items) that will bite
+Milestone 3's mesh loading if not addressed first.
+
+Confirmed correct (each independently re-derived, not taken on trust):
+
+- **Re-ran everything from scratch.** Fresh CMake configure + build of
+  this exact tree on WSL2 linux-x64 (`-DRTS_BUILD_TESTS=ON`), then ran
+  `RenderTexturedTriangleTest` under WSLg's `DISPLAY=:0` exactly as the
+  commit describes: all 6 checks pass, exit code 0.
+  `RenderDeviceInitTest` re-run: still passes (no Milestone 1
+  regression). The "actually RUN, not just compiled" claim is true.
+- **Mutation-tested the two Step 7 canaries** (temporarily broke the
+  code, rebuilt, confirmed the harness catches it, reverted):
+  reverting the diffuse fix (`GL_BGRA` -> plain `4` in
+  `DrawIndexedPrimitive`) makes check 4 report `(0,0,255)` against
+  expected `(255,0,0)` - exactly the predicted R/B swap, exit code 1;
+  breaking the `D3DCULL_CW` mapping (`GL_CCW` -> `GL_CW` front face)
+  fails 4 of the 7 pixel samples. Neither check can pass for the wrong
+  reason: a false positive would require the mutated pixel to land
+  within +/-2 of a 255-vs-0 channel difference, which these mutations
+  demonstrate it does not.
+- **Test-harness math re-derived by hand** (`Tests/RenderTexturedTriangle/
+  main.cpp`): the NDC-to-top-down-pixel mapping, the interior-sample
+  derivation (offset `(+0.3h,-0.3h)` satisfies the triangle's
+  `x_rel >= y_rel` inside condition with ~13px/22px edge margins), the
+  affine UV map (`u=(x_rel+h)/2h`, `v=(y_rel+h)/2h` - checked against
+  all three vertices), and the V-flip-at-upload quadrant correspondence
+  (GL `v` -> author row `1-v`; sample 1 resolves to author top-right/
+  green, sample 2 to bottom-right/yellow) are all correct. The
+  orientation pin is genuine: without the flip, sample 1 would read
+  yellow and fail. Check 6's depth control is a real negative control
+  (near-then-far draw order; a no-op `D3DRS_ZENABLE` leaves red on top
+  and fails). Exit-code plumbing verified: a failing check really does
+  exit 1 (confirmed during mutation testing).
+- **Cull semantics match real D3D8**, re-derived from first principles:
+  D3D8's default front face is *visually* clockwise (the classic D3D
+  tutorial triangle is authored CW and renders under default
+  `D3DCULL_CCW`); both APIs map NDC +Y to the visual top, so visual
+  winding is API-invariant, and GL-window CCW == visual CCW. Therefore
+  `D3DCULL_CW` (cull visually-CW) == `glFrontFace(GL_CCW)` + cull back,
+  exactly what `SetRenderState` implements. The test's CCW-wound
+  triangle surviving `D3DCULL_CW` and dying under `D3DCULL_CCW` is what
+  real D3D8 would do with the same data.
+- **The `GL_BGRA` vertex-attribute technique is the standard one**:
+  `ARB_vertex_array_bgra`, promoted to core in GL 3.2, so available in
+  this 3.3 context; the spec's requirements (type `GL_UNSIGNED_BYTE`,
+  `normalized == GL_TRUE`) are both met. No other new code assumes the
+  old byte order: `Clear` decodes D3DCOLOR via shifts (endian-safe),
+  the texture path uploads `GL_BGRA` with matching BGRA-authored test
+  data, and `Convert_Color` composes via shifts.
+- **The `bittype.h` fix is sound and include-order-safe.** On `_WIN32`
+  the preprocessed result is token-identical to the old header
+  (`unsigned long`, matching real `<windows.h>`), which structurally
+  guarantees the "MSVC full rebuild unregressed" claim; the C2371 story
+  is real C++ semantics (a typedef redeclared with a different
+  underlying type is ill-formed even at equal width - `unsigned long`
+  vs `unsigned int` are distinct types). On LP64 both headers now
+  produce `unsigned int` == `uint32_t`, so the "whichever header wins"
+  divergence is genuinely closed, in both include orders. Step 1's new
+  `INT` typedef in `win32_compat.h` sits *outside* the
+  `#ifndef WWLIB_BITTYPE_H` sub-guard, so `D3DLOCKED_RECT` compiles
+  regardless of include order (bittype.h never defines `INT`).
+  Blast-radius search for 8-byte-DWORD assumptions on non-Windows came
+  up empty: every `sizeof(DWORD)` hit and the one pointer-in-DWORD cast
+  (`simpleplayer.cpp`) live in Windows-only code; no serialization/
+  bit-trick/union use depends on the old 8-byte width. The narrowing
+  direction (8 -> 4) restores the Win32 ABI width the name promises,
+  which cross-platform CRC/save parity will eventually require anyway.
+- **Step 1/6's D3D constants match the real SDK** (`D3DUSAGE_*`,
+  `D3DLOCK_*`, `D3DCULL_* = 1/2/3`, `D3DCMP_* = 1..8`,
+  `D3DLOCKED_RECT {INT Pitch; void* pBits}`, FVF bits/TEXCOUNT
+  mask+shift) - checked value-for-value.
+- **`Translate_FVF_To_GL_Layout` is offset-equivalent to
+  `FVFInfoClass`** (dx8fvf.cpp) for all 10 supported formats: the two
+  could only diverge on SPECULAR or beta-weight FVFs, which are
+  exactly the excluded/asserting cases. The harness's `Vertex` struct
+  (pos@0/diffuse@12/uv@16, stride 24) matches both.
+- **Buffer/texture Lock-Unlock shadow-copy logic honors the documented
+  D3D semantics**: `SizeToLock==0` -> whole-remainder lock, byte-region
+  re-upload via `glBufferSubData` of exactly the locked range,
+  `glDrawElementsBaseVertex` as the correct `BaseVertexIndex`
+  equivalent with `startIndex * sizeof(unsigned short)` as the index-
+  buffer byte offset.
+- **Non-goals genuinely untouched**: the 7 commits' complete file list
+  (12 files) contains no `dx8vertexbuffer.cpp`/`dx8indexbuffer.cpp`/
+  `texture.cpp`/`shader.cpp`/`vertmaterial.cpp`, no
+  `dx8wrapper_d3d8.cpp`, no dazzle files (the pre-existing
+  `Clear_Visible_List` use-after-free is still present, unmodified, as
+  intended), no `Tests/RenderDeviceInit` changes; `SetTransform` is
+  still the trivial stub; `_Create_DX8_Texture` stays Windows/D3DX-only.
+
+Not independently verified: the per-step intermediate builds and the
+MSVC 1688/1688 rebuild (no MSVC run in this review - the structural
+token-identity argument above makes the Windows claim near-certain, and
+Windows CI will confirm).
+
+Watch items / deferred (none urgent for this milestone; the first one is
+urgent *before* Milestone 3):
+
+1. **`bittype.h`'s `uint32`/`sint32` are still `unsigned long`/`signed
+   long` - 8 bytes on 64-bit Linux - and `w3d_file.h` (the W3D binary
+   mesh-file format) uses `uint32` in 123 places.** This is the exact
+   sibling of the DWORD bug this milestone just fixed, and it sits
+   directly on Milestone 3's critical path: the moment real mesh
+   loading is ported, every on-disk chunk struct will have the wrong
+   size/layout on LP64. Self-consistent within a build (single
+   definition, no dual-header race), so nothing breaks today - but it
+   should get the same platform-split (or `<cstdint>`) treatment before
+   any W3D file is ever parsed on Linux.
+2. Check 6 never discriminates `D3DRS_ZFUNC`: GL's *default* depth func
+   is already `GL_LESS`, so a no-op ZFUNC would still pass (ZENABLE is
+   genuinely tested; the ZFUNC translation table is correct by
+   inspection). A future depth-state test should use a non-default func.
+3. The fixed-function program (function-local static) and its GL handle
+   survive a `Release_Device`/`Create_Device` cycle stale; same for
+   nothing re-priming `Set_Fixed_Function_MVP`. Never exercised (the
+   harness creates the device once) - needs a rebuild hook when device
+   recreation becomes real.
+4. `SetViewport` passes D3D's top-left-origin Y straight to
+   `glViewport` (bottom-left-origin) - correct only for full-surface
+   viewports (all this milestone uses). Needs `FBHeight - Y - Height`
+   when partial viewports appear. (Pre-existing from Milestone 1, more
+   relevant now that draws exist.)
+5. `GLTexture8::LockRect` silently ignores `pRect` - documented in a
+   comment, but unlike the milestone's other narrow-scope guards it has
+   no `WWASSERT(pRect == nullptr)` to fail loudly if a future caller
+   passes one.
+6. Minor: check 2/3's first sample point sits only ~2.5px from the
+   triangle's hypotenuse and ~3 texels from the quadrant boundary -
+   deterministic under NEAREST/no-MSAA/llvmpipe, but tight enough that
+   a future MSAA or filtering change could flake it.
