@@ -38,3 +38,11 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderTexturedTriangle)
 endif()
+
+# Phase 5(a) Milestone 3 (native port plan) - the real engine draw path
+# (DX8VertexBufferClass/DX8IndexBufferClass, DX8Wrapper's high-level
+# Set_Vertex_Buffer/Set_Shader/Set_Material/Draw_Triangles) end-to-end,
+# non-Windows only. See RenderEngineDrawPath/CMakeLists.txt.
+if(NOT WIN32)
+    add_subdirectory(RenderEngineDrawPath)
+endif()
