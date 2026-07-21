@@ -560,24 +560,10 @@ void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,b
 }
 
 
-/***********************************************************************************************
- * WW3D::Get_Device_Resolution -- get the current resolution and bitdepth                      *
- *                                                                                             *
- * INPUT:                                                                                      *
- *                                                                                             *
- * OUTPUT:                                                                                     *
- *                                                                                             *
- * WARNINGS:                                                                                   *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   3/24/98    GTH : Created.                                                                 *
- *   1/25/2001  gth : converted to dx8                                                         *
- *=============================================================================================*/
-void WW3D::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
-{
-	DX8Wrapper::Get_Device_Resolution(set_w,set_h,set_bits,set_windowed);
-}
-
+// WW3D::Get_Device_Resolution moved to ww3d_common.cpp (native port plan
+// Phase 5(a) Milestone 3, finding 2) - ww3dformat.cpp's Get_Valid_Texture_
+// Format calls it, and referencing it from that portable TU used to
+// require this whole file's link closure.
 
 /***********************************************************************************************
  * WW3D::Registry_Save_Render_Device -- Saves settings to Registry
@@ -1931,10 +1917,8 @@ void WW3D::Set_Texture_Bitdepth(int bitdepth)
 	DX8Wrapper::Set_Texture_Bitdepth(bitdepth);
 }
 
-int WW3D::Get_Texture_Bitdepth()
-{
-	return DX8Wrapper::Get_Texture_Bitdepth();
-}
+// WW3D::Get_Texture_Bitdepth moved to ww3d_common.cpp alongside
+// Get_Device_Resolution above (same reason: ww3dformat.cpp needs it).
 
 void WW3D::Set_MSAA_Mode(MultiSampleModeEnum mode)
 {

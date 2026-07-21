@@ -21,6 +21,9 @@ add_executable(RenderDeviceInitTest
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/PortableD3D8/gl_core33.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3d_common.cpp
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8caps.cpp
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/formconv.cpp
+    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3dformat.cpp
 )
 
 target_link_libraries(RenderDeviceInitTest PRIVATE

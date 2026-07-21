@@ -232,8 +232,8 @@ set(WW3D2_SRC
     w3dexclusionlist.h
     #ww3d.cpp
     #ww3d.h
-    ww3dformat.cpp
-    ww3dformat.h
+    #ww3dformat.cpp
+    #ww3dformat.h
     ww3dids.h
     ww3dtrig.h
 )
@@ -260,6 +260,8 @@ set(WW3D2_SRC_PORTABLE
     ww3d.cpp
     ww3d.h
     ww3d_common.cpp
+    ww3dformat.cpp
+    ww3dformat.h
 )
 
 if(WIN32)

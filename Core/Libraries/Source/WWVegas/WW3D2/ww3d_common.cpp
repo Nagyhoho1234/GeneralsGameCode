@@ -30,6 +30,7 @@
 // dx8wrapper_common.cpp). Hosting just the statics here, once, kills that
 // whole class of link failure at the root instead of debugging it per step.
 #include "ww3d.h"
+#include "dx8wrapper.h"
 #include "shader.h"
 #include "texturefilter.h"
 
@@ -124,3 +125,17 @@ int														WW3D::TextureFilter = TextureFilterClass::TextureFilterMode::TE
 int														WW3D::AnisotropyLevel = TextureFilterClass::AnisotropicFilterMode::TEXTURE_FILTER_ANISOTROPIC_2X;
 
 bool														WW3D::Lite = false;
+
+// Trivial DX8Wrapper forwarders, moved here alongside the statics above
+// (native port plan Phase 5(a) Milestone 3, finding 2) - ww3dformat.cpp's
+// Get_Valid_Texture_Format calls both, and referencing either from that
+// portable TU used to require ww3d.cpp's whole link closure.
+void WW3D::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
+{
+	DX8Wrapper::Get_Device_Resolution(set_w,set_h,set_bits,set_windowed);
+}
+
+int WW3D::Get_Texture_Bitdepth()
+{
+	return DX8Wrapper::Get_Texture_Bitdepth();
+}

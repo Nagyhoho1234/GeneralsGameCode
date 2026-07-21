@@ -33,6 +33,7 @@
 //   loading and a background TextureLoader thread).
 // - Trap 2: Begin_Scene()/End_Scene() below never reference DX8WebBrowser.
 #include "dx8wrapper.h"
+#include "formconv.h"
 #include "PortableD3D8/gl_core33.h"
 #include "PortableD3D8/gl_fixed_function.h"
 
@@ -814,6 +815,23 @@ HRESULT IDirect3D8::GetDeviceCaps(UINT Adapter, D3DDEVTYPE DeviceType, D3DCAPS8*
 	return D3D_OK;
 }
 
+// Honest caps (native port plan Phase 5(a) Milestone 3, finding 3): only
+// D3DFMT_A8R8G8B8 plain textures are genuinely supported - Milestone 2's
+// CreateTexture/LockRect never implemented anything else, and no
+// render-target/depth-stencil texture path exists yet either. Answering
+// truthfully here (instead of PortableD3D8's usual D3D_OK accept-stub)
+// makes DX8Caps::Check_Texture_Format_Support/Check_Render_To_Texture_
+// Support/Check_Depth_Stencil_Support - and in turn ShaderClass's
+// capability-gated fallback logic - work FOR the port instead of against
+// it.
+HRESULT IDirect3D8::CheckDeviceFormat(UINT Adapter, D3DDEVTYPE DeviceType, D3DFORMAT AdapterFormat, DWORD Usage, D3DRESOURCETYPE RType, D3DFORMAT CheckFormat)
+{
+	if (RType != D3DRTYPE_TEXTURE) return D3DERR_NOTAVAILABLE;
+	if (Usage & (D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL)) return D3DERR_NOTAVAILABLE;
+	if (CheckFormat != D3DFMT_A8R8G8B8) return D3DERR_NOTAVAILABLE;
+	return D3D_OK;
+}
+
 HRESULT IDirect3D8::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, IDirect3DDevice8** ppReturnedDeviceInterface)
 {
 	*ppReturnedDeviceInterface = new IDirect3DDevice8();
@@ -885,6 +903,8 @@ void DX8Wrapper::Shutdown()
 		D3DInterface->Release();
 		D3DInterface = nullptr;
 	}
+
+	DX8Caps::Shutdown();
 
 	glfwTerminate();
 	IsInitted = false;
@@ -976,6 +996,43 @@ bool DX8Wrapper::Create_Device()
 	// real texture creation and a background TextureLoader thread, both
 	// out of scope for this milestone.
 	D3DDevice = new IDirect3DDevice8();
+
+	// Real CurrentCaps (native port plan Phase 5(a) Milestone 3, finding
+	// 3), fabricated directly via DX8Caps' device-free D3DCAPS8 constructor
+	// rather than Do_Onetime_Device_Dependent_Inits' DX8Wrapper::Compute_
+	// Caps (which drives the Init_Caps overload through the device's
+	// GetDeviceCaps accept-stub - the wrong ctor for this milestone, same
+	// Trap 1 reasoning). Reports only what the GL backend genuinely does
+	// today: TnL yes (the GPU transforms), 2 simultaneous textures
+	// (matching the engine's actual 2-stage usage and the eventual
+	// combiner-shader plan), NPatches/ZBias no (their DevCaps/RasterCaps
+	// bits are simply left unset), shader versions 0.
+	DisplayFormat = D3DFMT_A8R8G8B8;
+
+	D3DCAPS8 caps;
+	memset(&caps, 0, sizeof(caps));
+	caps.DeviceType = D3DDEVTYPE_HAL;
+	caps.AdapterOrdinal = 0;
+	caps.DevCaps = D3DDEVCAPS_HWTRANSFORMANDLIGHT;
+	caps.MaxSimultaneousTextures = 2;
+	caps.TextureOpCaps =
+		D3DTEXOPCAPS_DISABLE |
+		D3DTEXOPCAPS_SELECTARG1 |
+		D3DTEXOPCAPS_SELECTARG2 |
+		D3DTEXOPCAPS_MODULATE |
+		D3DTEXOPCAPS_ADD;
+	caps.VertexShaderVersion = 0;
+	caps.PixelShaderVersion = 0;
+
+	// Zeroed D3DADAPTER_IDENTIFIER8 -> VENDOR_UNKNOWN (Define_Vendor(0))
+	// makes every vendor-quirk path in DX8Caps::Compute_Caps correctly
+	// inert (finding 3); GetAdapterIdentifier fills in the Driver/
+	// Description strings only.
+	D3DInterface->GetAdapterIdentifier(0, 0, &CurrentAdapterIdentifier);
+
+	delete CurrentCaps;
+	CurrentCaps = new DX8Caps(D3DInterface, caps, D3DFormat_To_WW3DFormat(DisplayFormat), CurrentAdapterIdentifier);
+
 	return true;
 }
 
@@ -986,6 +1043,12 @@ void DX8Wrapper::Release_Device()
 		D3DDevice->Release();
 		D3DDevice = nullptr;
 	}
+
+	// Mirrors just the CurrentCaps piece of the real path's
+	// Do_Onetime_Device_Dependent_Shutdowns() - the rest of that chain
+	// (texture/mesh/etc. subsystems) is Trap 1, out of scope here.
+	delete CurrentCaps;
+	CurrentCaps = nullptr;
 
 	if (g_VAO) { gl_DeleteVertexArrays(1, &g_VAO); g_VAO = 0; }
 	g_CurrentVertexBuffer = nullptr;

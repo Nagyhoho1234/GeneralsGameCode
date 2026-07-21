@@ -1196,16 +1196,6 @@ bool DX8Wrapper::Set_Device_Resolution(int width,int height,int bits,int windowe
 	}
 }
 
-void DX8Wrapper::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
-{
-	WWASSERT(IsInitted);
-
-	set_w = ResolutionWidth;
-	set_h = ResolutionHeight;
-	set_bits = BitDepth;
-	set_windowed = IsWindowed;
-}
-
 void DX8Wrapper::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
 {
 	WWASSERT(IsInitted);

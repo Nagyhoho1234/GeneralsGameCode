@@ -100,6 +100,21 @@ DX8_CleanupHook* DX8Wrapper::m_pCleanupHook = nullptr;
 DX8_Stats DX8Wrapper::stats;
 #endif
 
+// Pure accessor of the static members above - identical on both platforms,
+// no device dependency. Moved out of dx8wrapper_d3d8.cpp (native port plan
+// Phase 5(a) Milestone 3, finding 2 precedent): WW3D::Get_Device_Resolution
+// forwards to this from ww3d_common.cpp, and referencing it from portable
+// code used to require the whole d3d8-only TU.
+void DX8Wrapper::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
+{
+	WWASSERT(IsInitted);
+
+	set_w = ResolutionWidth;
+	set_h = ResolutionHeight;
+	set_bits = BitDepth;
+	set_windowed = IsWindowed;
+}
+
 bool _DX8SingleThreaded = false;
 
 // Non-Windows fallback: the real D3DXGetErrorStringA (Windows D3DX-only)
