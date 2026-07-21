@@ -45,11 +45,41 @@
 #include "vertmaterial.h"
 #include "texture.h"
 #include "d3d8.h"
+#ifdef _WIN32
 #include "d3dx8math.h"
+#endif
 #include "statistics.h"
 #include <wwprofile.h>
 #include <algorithm>
 #include <list>
+
+#ifndef _WIN32
+// Portable replacements for D3DXMATRIX's operator* and D3DXVec3Transform
+// (D3DX8, Windows-only, isn't available here) - literal translations of
+// D3DX8's documented algorithms operating directly on D3DMATRIX (native
+// port plan Phase 5(a) Milestone 3, finding 6).
+static D3DMATRIX Multiply_D3DMATRIX(const D3DMATRIX& a, const D3DMATRIX& b)
+{
+	D3DMATRIX out;
+	for (int i = 0; i < 4; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			out.m[i][j] = a.m[i][0]*b.m[0][j] + a.m[i][1]*b.m[1][j] + a.m[i][2]*b.m[2][j] + a.m[i][3]*b.m[3][j];
+		}
+	}
+	return out;
+}
+
+// D3DXVec3Transform: out = [v.x, v.y, v.z, 1] * m (row-vector convention).
+static Vector4 Transform_Vec3_By_D3DMATRIX(const Vector3& v, const D3DMATRIX& m)
+{
+	return Vector4(
+		v[0]*m.m[0][0] + v[1]*m.m[1][0] + v[2]*m.m[2][0] + m.m[3][0],
+		v[0]*m.m[0][1] + v[1]*m.m[1][1] + v[2]*m.m[2][1] + m.m[3][1],
+		v[0]*m.m[0][2] + v[1]*m.m[1][2] + v[2]*m.m[2][2] + m.m[3][2],
+		v[0]*m.m[0][3] + v[1]*m.m[1][3] + v[2]*m.m[2][3] + m.m[3][3]
+	);
+}
+#endif // !_WIN32
 
 
 bool SortingRendererClass::_EnableTriangleDraw=true;
@@ -242,6 +272,7 @@ void SortingRendererClass::Insert_Triangles(
 
 	if (bounding_sphere.Is_Valid())
 	{
+#ifdef _WIN32
 		D3DXMATRIX mtx=(D3DXMATRIX&)state->sorting_state.world*(D3DXMATRIX&)state->sorting_state.view;
 		D3DXVECTOR3 vec=(D3DXVECTOR3&)bounding_sphere.Center;
 		D3DXVECTOR4 transformed_vec;
@@ -250,6 +281,11 @@ void SortingRendererClass::Insert_Triangles(
 			&vec,
 			&mtx);
 		state->transformed_center=Vector3(transformed_vec[0],transformed_vec[1],transformed_vec[2]);
+#else
+		D3DMATRIX mtx = Multiply_D3DMATRIX(state->sorting_state.world, state->sorting_state.view);
+		Vector4 transformed_vec = Transform_Vec3_By_D3DMATRIX(bounding_sphere.Center, mtx);
+		state->transformed_center=Vector3(transformed_vec[0],transformed_vec[1],transformed_vec[2]);
+#endif
 
 		Insert_To_Sorted_List(state);
 	}
@@ -471,7 +507,11 @@ void SortingRendererClass::Flush_Sorting_Pool()
 			memcpy(dest_verts, src_verts, sizeof(VertexFormatXYZNDUV2)*state->vertex_count);
 			dest_verts += state->vertex_count;
 
+#ifdef _WIN32
 			D3DXMATRIX d3d_mtx=(D3DXMATRIX&)state->sorting_state.world*(D3DXMATRIX&)state->sorting_state.view;
+#else
+			D3DMATRIX d3d_mtx=Multiply_D3DMATRIX(state->sorting_state.world, state->sorting_state.view);
+#endif
 			const Matrix4x4& mtx=(const Matrix4x4&)d3d_mtx;
 
 			unsigned short* indices=nullptr;

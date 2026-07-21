@@ -109,8 +109,8 @@ set(WW3D2_SRC
     line3d.h
     #linegrp.cpp
     #linegrp.h
-    mapper.cpp
-    mapper.h
+    #mapper.cpp
+    #mapper.h
     matinfo.cpp
     matinfo.h
     matpass.cpp
@@ -179,15 +179,15 @@ set(WW3D2_SRC
     segline.h
     seglinerenderer.cpp
     seglinerenderer.h
-    shader.cpp
-    shader.h
+    #shader.cpp
+    #shader.h
     shattersystem.cpp
     shattersystem.h
     shdlib.h
     snappts.cpp
     snapPts.h
-    sortingrenderer.cpp
-    sortingrenderer.h
+    #sortingrenderer.cpp
+    #sortingrenderer.h
     soundlibrarybridge.h
     soundrobj.cpp
     soundrobj.h
@@ -217,8 +217,8 @@ set(WW3D2_SRC
     textureloader.h
     texturethumbnail.cpp
     texturethumbnail.h
-    vertmaterial.cpp
-    vertmaterial.h
+    #vertmaterial.cpp
+    #vertmaterial.h
     visrasterizer.cpp
     visrasterizer.h
     w3d_dep.cpp
@@ -258,6 +258,14 @@ set(WW3D2_SRC_PORTABLE
     dx8vertexbuffer.cpp
     dx8vertexbuffer.h
     dx8wrapper.h
+    mapper.cpp
+    mapper.h
+    shader.cpp
+    shader.h
+    sortingrenderer.cpp
+    sortingrenderer.h
+    vertmaterial.cpp
+    vertmaterial.h
     dx8wrapper_common.cpp
     formconv.cpp
     formconv.h
