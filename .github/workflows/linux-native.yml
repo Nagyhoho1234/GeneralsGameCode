@@ -34,7 +34,8 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build cmake g++
+          sudo apt-get install -y ninja-build cmake g++ \
+            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev mesa-utils
 
       - name: Show toolchain versions
         run: |
@@ -46,7 +47,7 @@ jobs:
 
       - name: Configure (linux-x64 preset - native, no vcpkg)
         id: configure
-        run: cmake --preset linux-x64 2>&1 | tee configure-log.txt
+        run: cmake --preset linux-x64 -DRTS_BUILD_TESTS=ON 2>&1 | tee configure-log.txt
 
       - name: Build g_gameenginedevice (Generals)
         id: build-generals
@@ -56,6 +57,17 @@ jobs:
       - name: Build z_gameenginedevice (Zero Hour)
         id: build-zerohour
         run: cmake --build --preset linux-x64 --target z_gameenginedevice -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Build RenderDeviceInitTest (Phase 5(a) Milestone 1 - GL device backend)
+        id: build-renderdeviceinit
+        run: cmake --build --preset linux-x64 --target RenderDeviceInitTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run RenderDeviceInitTest (headless Mesa software rendering)
+        id: run-renderdeviceinit
+        if: steps.build-renderdeviceinit.outcome == 'success'
+        run: LIBGL_ALWAYS_SOFTWARE=1 ./build/linux-x64/Tests/RenderDeviceInit/RenderDeviceInitTest 2>&1 | tee -a configure-log.txt
         continue-on-error: true
 
       - name: Upload configure/build log
@@ -73,6 +85,11 @@ jobs:
           echo "Build Generals outcome: ${{ steps.build-generals.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Build Zero Hour outcome: ${{ steps.build-zerohour.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Expected: 17 unique error lines each, all already-catalogued deferred items in docs/native-port-plan.md (real COM/ATL work, imagehlp.h, d3dx8math.h, mbstring.h) - not pointer-width or build-system issues. See the uploaded log artifact for exact diagnostics." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 1: GL device backend (Tests/RenderDeviceInit)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-renderdeviceinit.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-renderdeviceinit.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Expects a real DX8Wrapper::Init/Set_Render_Device/Create_Device/Begin_Scene/Clear/End_Scene cycle against the PortableD3D8 GL backend, verified by reading back an offscreen FBO and checking every pixel matches the requested clear color." >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if unexpected error count
         if: always()
