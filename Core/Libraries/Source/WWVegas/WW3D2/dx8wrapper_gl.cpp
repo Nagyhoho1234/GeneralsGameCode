@@ -219,6 +219,82 @@ namespace
 
 	using GLVertexBuffer8 = GLShadowBuffer8<IDirect3DVertexBuffer8, GL_ARRAY_BUFFER>;
 	using GLIndexBuffer8 = GLShadowBuffer8<IDirect3DIndexBuffer8, GL_ELEMENT_ARRAY_BUFFER>;
+
+	// FVF -> GL vertex-attribute layout (Milestone 2, Step 3). Table-driven:
+	// exact-matches the FVF bit pattern against 10 of dx8fvf.h's 13 named
+	// formats (XYZ, XYZN, XYZNUV1/2, XYZNDUV1/2 - the latter is
+	// dx8vertexbuffer.h's ubiquitous dynamic_fvf_type, XYZDUV1/2, XYZUV1/2).
+	// The 3 excluded formats (XYZNDUV1TG3, XYZNUV2DMAP, XYZNDCUBEMAP) use
+	// exotic 1/3/4-component texcoords and tangent-space data this
+	// milestone's fixed-function-emulation GLSL program (Step 4) has no use
+	// for - rejected loudly via WWASSERT rather than silently mishandled.
+	//
+	// Deliberately reimplemented here rather than reusing dx8fvf.cpp's
+	// FVFInfoClass: that class's vertex-size computation calls
+	// D3DXGetFVFVertexSize, a Windows/D3DX-only dependency (dx8fvf.cpp is
+	// gated behind if(WIN32) in this directory's CMakeLists.txt, unlike this
+	// file) - the offset math below is otherwise equivalent.
+	struct GLVertexLayout
+	{
+		UINT Stride;
+		bool HasNormal;
+		bool HasDiffuse;
+		int  TexCoordCount; // 0, 1, or 2
+		UINT PositionOffset;
+		UINT NormalOffset;
+		UINT DiffuseOffset;
+		UINT TexCoordOffset[2];
+	};
+
+	bool Translate_FVF_To_GL_Layout(DWORD FVF, GLVertexLayout* out_layout)
+	{
+		static const DWORD SUPPORTED_FVFS[] = {
+			D3DFVF_XYZ,
+			D3DFVF_XYZ | D3DFVF_NORMAL,
+			D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1,
+			D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX2,
+			D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX1 | D3DFVF_DIFFUSE,
+			D3DFVF_XYZ | D3DFVF_NORMAL | D3DFVF_TEX2 | D3DFVF_DIFFUSE, // dynamic_fvf_type
+			D3DFVF_XYZ | D3DFVF_TEX1 | D3DFVF_DIFFUSE,
+			D3DFVF_XYZ | D3DFVF_TEX2 | D3DFVF_DIFFUSE,
+			D3DFVF_XYZ | D3DFVF_TEX1,
+			D3DFVF_XYZ | D3DFVF_TEX2,
+		};
+
+		bool recognized = false;
+		for (DWORD candidate : SUPPORTED_FVFS)
+		{
+			if (candidate == FVF) { recognized = true; break; }
+		}
+		if (!recognized)
+		{
+			WWASSERT_PRINT(false, "Translate_FVF_To_GL_Layout: unsupported FVF (exotic/shader-era format)");
+			return false;
+		}
+
+		out_layout->HasNormal = (FVF & D3DFVF_NORMAL) != 0;
+		out_layout->HasDiffuse = (FVF & D3DFVF_DIFFUSE) != 0;
+		out_layout->TexCoordCount = static_cast<int>((FVF & D3DFVF_TEXCOUNT_MASK) >> D3DFVF_TEXCOUNT_SHIFT);
+
+		UINT offset = 0;
+		out_layout->PositionOffset = offset;
+		offset += 3 * sizeof(float);
+
+		out_layout->NormalOffset = offset;
+		if (out_layout->HasNormal) offset += 3 * sizeof(float);
+
+		out_layout->DiffuseOffset = offset;
+		if (out_layout->HasDiffuse) offset += sizeof(DWORD);
+
+		for (int i = 0; i < 2; ++i)
+		{
+			out_layout->TexCoordOffset[i] = offset;
+			if (i < out_layout->TexCoordCount) offset += 2 * sizeof(float);
+		}
+
+		out_layout->Stride = offset;
+		return true;
+	}
 }
 
 HRESULT IDirect3DDevice8::CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer8** ppVertexBuffer)
