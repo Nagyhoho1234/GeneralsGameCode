@@ -396,11 +396,12 @@ namespace
 	// stage-0 D3DTOP_MODULATE(D3DTA_TEXTURE, D3DTA_DIFFUSE) - not general
 	// texture-stage-combiner emulation (Milestone 2 non-goal). Whether the
 	// vertex-diffuse D3DCOLOR bytes need an R/B swizzle to read correctly as
-	// this shader's vec4 is deliberately NOT resolved here - Step 7's test
-	// harness includes an explicit R/B byte-order canary check for exactly
-	// this question (see docs/native-port-plan.md Draft 18); this shader
-	// just consumes the 4 unsigned bytes GL_UNSIGNED_BYTE/normalized gives
-	// it in memory order, unmodified.
+	// this shader's vDiffuse was an open question when this program was
+	// first written - resolved in Step 6's DrawIndexedPrimitive via
+	// GL_BGRA as the vertex-attrib size argument (not here in the shader;
+	// this fragment shader just consumes whatever vDiffuse it's given).
+	// Step 7's test harness has an explicit R/B byte-order canary check
+	// that exercises this for real (see docs/native-port-plan.md Draft 18).
 	GLuint Compile_Shader(GLenum type, const char* src)
 	{
 		GLuint shader = gl_CreateShader(type);
@@ -708,7 +709,16 @@ HRESULT IDirect3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, U
 	if (layout.HasDiffuse)
 	{
 		gl_EnableVertexAttribArray(GL_ATTRIB_DIFFUSE);
-		gl_VertexAttribPointer(GL_ATTRIB_DIFFUSE, 4, GL_UNSIGNED_BYTE, GL_TRUE, static_cast<GLsizei>(g_CurrentVertexStride),
+		// GL_BGRA as the *size* argument (not a type) is the standard core-GL
+		// (ARB_vertex_array_bgra, promoted in 3.2) technique for exactly this
+		// case: D3DCOLOR_ARGB packs a little-endian DWORD whose in-memory
+		// byte order is B,G,R,A (byte0=b, byte3=a - see d3d8types.h's
+		// D3DCOLOR_ARGB macro). Reading those same 4 bytes with a plain
+		// component count of 4 would silently swap R and B in the shader;
+		// GL_BGRA tells GL to read the bytes in that order and present them
+		// to the shader correctly as (R,G,B,A) - resolves the R/B question
+		// Step 4/6 deliberately left open, without any shader-side swizzle.
+		gl_VertexAttribPointer(GL_ATTRIB_DIFFUSE, GL_BGRA, GL_UNSIGNED_BYTE, GL_TRUE, static_cast<GLsizei>(g_CurrentVertexStride),
 			reinterpret_cast<const void*>(static_cast<uintptr_t>(layout.DiffuseOffset)));
 	}
 	else

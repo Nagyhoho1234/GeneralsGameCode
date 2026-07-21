@@ -31,3 +31,10 @@ add_test(NAME core_tests COMMAND core_tests)
 if(NOT WIN32)
     add_subdirectory(RenderDeviceInit)
 endif()
+
+# Phase 5(a) Milestone 2 (native port plan) - "draw one textured triangle"
+# through the real device-object-level buffer/texture/draw-call API,
+# non-Windows only. See RenderTexturedTriangle/CMakeLists.txt.
+if(NOT WIN32)
+    add_subdirectory(RenderTexturedTriangle)
+endif()
