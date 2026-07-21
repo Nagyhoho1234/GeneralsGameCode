@@ -1957,3 +1957,143 @@ Confirmed out of scope for Milestone 2: shader constants (real
 programmable-shader path), lighting, `CreateAdditionalSwapChain`, and the
 render-target/surface family (screenshot/backbuffer capture, not
 rendering).
+
+## Draft 18: fable review of Milestone 1 (commits `008ffceca`..`6b2df4e76`)
+and a full Milestone 2 implementation plan, both run as parallel
+background fable-model agents per explicit user request ("use multiple
+agents full throttle... review the previous milestone with fable... plan
+the implementation in another... also fable").
+
+**Fable review verdict: trustworthy, with documentation-level defects
+only.** All 8 specific claims checked (unification correctness, real-vs-
+stub method inventory, both trap-avoidances, the RenderDeviceInit test's
+per-pixel assertion being genuine and non-tautological, the two CMake
+link-dependency fixes, the 5-file-pair unification with bugfixes
+preserved byte-for-byte, the `hrawanim.cpp` `Set_Pivot()` fix, and the
+mesh/TriIndex deferral reasoning) were independently confirmed against
+the actual code and git history, not just the commit messages. Two real
+(non-cosmetic) issues were found and fixed in this draft:
+
+1. `dx8wrapper_common.cpp`'s `Log_DX8_ErrorCode` was silently compiled on
+   every platform including Windows, downgrading Windows' error logging
+   from real `D3DXGetErrorStringA`-decoded messages to raw hex - the
+   comment claiming Windows "keeps its own richer implementation" was
+   false (that implementation was actually deleted in the
+   `dx8wrapper.cpp` → `dx8wrapper_d3d8.cpp` split and never restored, a
+   real gap in this session's own "bit-for-bit unregressed on Windows"
+   verification claims). Fixed: restored the real D3DX-based
+   `Log_DX8_ErrorCode` to `dx8wrapper_d3d8.cpp`, gated
+   `dx8wrapper_common.cpp`'s fallback behind `#ifndef _WIN32`.
+2. `Generals`/`GeneralsMD`'s `WW3D2/CMakeLists.txt` both had a stale
+   comment claiming "corei_ww3d2 contributes zero sources on
+   non-Windows" - false since Phase 5(a)'s portable subset now attaches
+   8+ real sources there on every platform (the INTERFACE-vs-STATIC
+   design itself was already correct; only the comment was wrong).
+   Corrected in both files.
+
+Verified (commit `7994c4dec`): `g_ww3d2`/`z_ww3d2`/`g_gameenginedevice`/
+`z_gameenginedevice` build and link cleanly on real MSVC (no duplicate-
+symbol errors - confirms exactly one `Log_DX8_ErrorCode` definition per
+Windows build); `z_gameenginedevice` on `linux-x64` still produces
+exactly the established 17-error baseline.
+
+Two more findings were deliberately **not** acted on, flagged instead for
+separate follow-up:
+- A pre-existing (not introduced by this port - present in GeneralsMD's
+  original code, faithfully copied during unification) potential
+  use-after-free in `DazzleLayerClass::Clear_Visible_List`: it calls
+  `n->Release_Ref()` and *then* reads `n->on_list`/`n->Succ()`, which is
+  unsafe if that was the last reference. Out of scope for native-port
+  work; needs its own investigation/fix as unrelated engine-correctness
+  work, not bundled into a port commit.
+- A `DWORD` size-divergence hazard between `WWLib/bittype.h`
+  (`unsigned long`, 8 bytes on 64-bit Linux) and
+  `Utility/win32_compat.h` (`uint32_t`, correctly 4 bytes) - the two are
+  mutually `#ifndef`-guarded so "whichever header a given translation
+  unit includes first wins," which means two Linux TUs with different
+  include orders could disagree on the size of any `DWORD`-typed member
+  of a struct shared across a TU boundary. No reproduction found yet
+  (the review agent called this "a watch item, not a demonstrated bug").
+  Needs a deliberate single-source-of-truth fix (most likely: make
+  `bittype.h`'s `DWORD` genuinely 32-bit, matching the Win32 ABI
+  contract it's named for, rather than leaving it as a bare `unsigned
+  long`) - deferred rather than patched hastily given the size of its
+  blast radius (every non-Windows TU that includes `bittype.h`).
+
+**Milestone 2 plan** ("draw one textured triangle" through DX8Wrapper's
+real buffer/texture/draw-call API, not through real mesh loading -
+confirmed by Draft 17's research that a synthetic hardcoded triangle
+suffices, deferring `mesh.cpp`/`meshgeometry.cpp`/`hlod.cpp` and the
+TriIndex question entirely). Key findings re-verified against current
+code (not just the prior research pass):
+
+- `DX8Wrapper`'s *high-level* buffer/draw API (`Set_Vertex_Buffer`,
+  `Apply_Render_State_Changes`, `Draw_Triangles`) lives in Windows-only
+  `dx8wrapper_d3d8.cpp` and drags in `shader.cpp`/`texture.cpp`/
+  `vertmaterial.cpp` and a non-null `CurrentCaps` (never computed on the
+  GL path) - **out of reach for this milestone, correctly so**. The real
+  seam is one level down: the *device-object* level
+  (`IDirect3DDevice8`/`IDirect3DVertexBuffer8`/...), driven directly the
+  same way `dx8vertexbuffer.cpp` itself already calls
+  `_Get_D3D_Device8()->CreateVertexBuffer(...)`.
+- Real Lock/Unlock semantics a correct backend must honor (from actually
+  reading `dx8vertexbuffer.cpp`/`dx8indexbuffer.cpp`'s callers, not
+  assumed): `SizeToLock==0` means "whole buffer"; byte offsets/sizes are
+  computed from vertex counts, not vertex indices; `D3DLOCK_DISCARD`
+  (orphan) vs `D3DLOCK_NOOVERWRITE` (append) both occur in practice;
+  `SetIndices`' `BaseVertexIndex` and `DrawIndexedPrimitive`'s
+  `startIndex` are both routinely nonzero - a backend that only handles
+  zero offsets would be fake.
+- `PortableD3D8/d3d8types.h` is missing `D3DLOCK_*`, `D3DUSAGE_*`,
+  `D3DCULL_*`, and `D3DLOCKED_RECT` - needed before any buffer/texture
+  code compiles.
+- The `D3DXCreateTexture` dependency found in Draft 17's research is
+  confirmed genuinely sidestepped: Milestone 2's test calls
+  `CreateTexture` directly (bypassing `DX8Wrapper::_Create_DX8_Texture`,
+  which stays Windows-only/D3DX-only, untouched).
+- `native-port-spike/main.cpp` already solved the raw-GL half (VAO/VBO
+  setup, a minimal MVP+texture+alpha-test GLSL 330 program, the
+  numerically-validated D3D-to-GL clip-space z-row remap, and the
+  texture-origin V-flip fix) - directly reusable.
+
+Design decisions: buffer Lock/Unlock via a malloc'd CPU shadow copy per
+buffer (not `glMapBufferRange`) - chosen because it gives exact D3D
+semantics (whole-buffer locks, byte-offset region locks, reads of
+previously-written bytes within a lock - legal in D3D, UB under
+write-only GL mappings) "for free," and keeps buffer writes thread-safe
+by construction for whenever the background `TextureLoader` thread
+becomes relevant; FVF-to-GL-attribute translation via one table-driven
+function covering `XYZ`+optional `NORMAL`+optional `DIFFUSE`+0-2 texcoord
+sets (10 of `dx8fvf.h`'s 13 formats, including the ubiquitous
+`dynamic_fvf_type`), with exotic shader-era formats rejected loudly via
+`WWASSERT` rather than silently mishandled; one small always-on GLSL
+program emulating exactly D3D's default stage-0
+`MODULATE(TEXTURE,DIFFUSE)` (not general texture-stage-combiner
+emulation); new sibling `Tests/RenderTexturedTriangle/` harness (not an
+extension of `Tests/RenderDeviceInit/`, to keep Milestone 1's harness an
+untouched regression test) with a 7-point verification plan (background-
+color integrity, textured-interior sampling against a 4-quadrant marker
+texture, D3D top-left-origin orientation pin, an R/B byte-order canary
+via vertex-diffuse-color + white texel, cull-mode plumbing, and depth-
+test plumbing) - all real pixel-level assertions, matching Milestone 1's
+verification bar, not "did it not crash."
+
+Explicit non-goals for Milestone 2 (deferred to Milestone 3+): porting
+`dx8vertexbuffer.cpp`/`dx8indexbuffer.cpp`/`texture.cpp`/`shader.cpp`/
+`vertmaterial.cpp` and the high-level `Set_Vertex_Buffer`/
+`Apply_Render_State_Changes`/`Draw_Triangles` GL bodies; a GL
+`_Create_DX8_Texture` counterpart replicating D3DX's pow2/format-
+fallback/mip behaviors; texture files/DDS/mipmaps/filters beyond
+NEAREST; volume/cube/Z textures, surfaces, render targets,
+`GetSurfaceLevel`; texture-stage combiner emulation, lighting, fog,
+materials, alpha test, shader constants, programmable shaders, multiple
+vertex streams, `DrawPrimitiveUP`, sorting buffers, device-loss/
+`D3DPOOL` semantics, mesh/TriIndex unification, windowing (Phase 4).
+
+Full 7-step implementation ordering (each independently buildable, real
+compiler/rebuild verification after every step on both `linux-x64` and
+real MSVC) and the complete file-level design are captured in this
+draft's source research; the next continuation of this work should begin
+at "Step 1: `PortableD3D8/d3d8types.h` gaps" and proceed in order,
+verifying Windows unregressed after every step exactly as every prior
+phase of this port has done.
