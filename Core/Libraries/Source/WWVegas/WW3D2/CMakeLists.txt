@@ -247,6 +247,7 @@ endif() # WIN32
 # platform-specific backends for the same declared DX8Wrapper methods;
 # dx8wrapper_common.cpp is genuinely shared bookkeeping compiled into both.
 set(WW3D2_SRC_PORTABLE
+    assetmgr_common.cpp
     camera.cpp
     camera.h
     dx8caps.cpp

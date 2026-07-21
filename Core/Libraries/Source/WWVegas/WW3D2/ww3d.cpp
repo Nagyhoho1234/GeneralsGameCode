@@ -130,9 +130,16 @@ const char* DAZZLE_INI_FILENAME="DAZZLE.INI";
 // from portable TUs used to pull this whole file's link closure in.
 
 static HWND												_Hwnd = nullptr;		// Not a member to hide windows from WW3D users
-static int												_TextureReduction = 0;
-static int												_TextureMinDim = 1;
-static bool												_LargeTextureExtraReductionEnabled = false;
+
+// _TextureReduction/_TextureMinDim/_LargeTextureExtraReductionEnabled were
+// file-local statics here; now defined (external linkage) in
+// ww3d_common.cpp alongside the three getters that read them (native port
+// plan Phase 5(a) Milestone 4, Draft 22 Step 4, finding 7) - see that
+// file's comment for why the setters below stay here instead of moving
+// with them.
+extern int												_TextureReduction;
+extern int												_TextureMinDim;
+extern bool												_LargeTextureExtraReductionEnabled;
 
 /**********************************************************************************
 **
@@ -1720,39 +1727,10 @@ void WW3D::Enable_Coloring(unsigned int color)
 	IsColoringEnabled = (color == 0) ? false : true;
 }
 
-/***********************************************************************************************
- * WW3D::Get_Texture_Reduction -- gets the (hacky) texture reduction factor                    *
- *                                                                                             *
- * INPUT:                                                                                      *
- *                                                                                             *
- * OUTPUT:                                                                                     *
- *                                                                                             *
- * WARNINGS:                                                                                   *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   11/25/99    TSS : Created.                                                                 *
- *=============================================================================================*/
-int	WW3D::Get_Texture_Reduction()
-{
-	return _TextureReduction;
-}
-
-/***********************************************************************************************
- * WW3D::Get_Texture_Min_Mip_Levels -- gets the minimum number of mip levels permitted		   *
- *                                                                                             *
- * INPUT:                                                                                      *
- *                                                                                             *
- * OUTPUT:                                                                                     *
- *                                                                                             *
- * WARNINGS:                                                                                   *
- *                                                                                             *
- * HISTORY:                                                                                    *
- *   11/25/99    TSS : Created.                                                                 *
- *=============================================================================================*/
-int	WW3D::Get_Texture_Min_Dimension()
-{
-	return _TextureMinDim;
-}
+// WW3D::Get_Texture_Reduction/Get_Texture_Min_Dimension/
+// Is_Large_Texture_Extra_Reduction_Enabled moved to ww3d_common.cpp (Draft
+// 22 Step 4, finding 7) - see the extern declarations above and that
+// file's comment.
 
 void WW3D::Enable_Large_Texture_Extra_Reduction(bool onoff)
 {
@@ -1760,11 +1738,6 @@ void WW3D::Enable_Large_Texture_Extra_Reduction(bool onoff)
 		_LargeTextureExtraReductionEnabled = onoff;
 		_Invalidate_Textures();
 	}
-}
-
-bool WW3D::Is_Large_Texture_Extra_Reduction_Enabled()
-{
-	return _LargeTextureExtraReductionEnabled;
 }
 
 /***********************************************************************************************

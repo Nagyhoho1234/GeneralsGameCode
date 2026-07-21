@@ -117,10 +117,11 @@
 #include "ringobj.h"
 #include "sphereobj.h"
 
-/*
-** Static member variable which keeps track of the single instanced asset manager
-*/
-WW3DAssetManager *		WW3DAssetManager::TheInstance = nullptr;
+// WW3DAssetManager::TheInstance moved to Core/Libraries/Source/WWVegas/
+// WW3D2/assetmgr_common.cpp (native port plan Phase 5(a) Milestone 4,
+// Draft 22 Step 4) - compiled on every platform now, so this per-tree file
+// doesn't need to define it (or even to be linked at all) for texture.cpp
+// to reach the one symbol it genuinely needs from the asset-manager closure.
 
 /*
 ** Static instance of the Null prototype.  This render object is special cased

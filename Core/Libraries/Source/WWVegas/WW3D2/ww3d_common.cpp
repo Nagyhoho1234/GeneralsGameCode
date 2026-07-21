@@ -139,3 +139,45 @@ int WW3D::Get_Texture_Bitdepth()
 {
 	return DX8Wrapper::Get_Texture_Bitdepth();
 }
+
+// Texture-reduction family, round 2 of the static-extraction precedent
+// above (native port plan Phase 5(a) Milestone 4, Draft 22 Step 4, finding
+// 7): texture.cpp calls Get_Texture_Reduction()/
+// Is_Large_Texture_Extra_Reduction_Enabled() and textureloader.cpp calls
+// Get_Texture_Min_Dimension() - all three were defined in monolithic
+// ww3d.cpp over file-local (internal-linkage) statics, so referencing any
+// of them from a portable TU used to pull ww3d.cpp's whole closure in.
+//
+// Scoped narrower than "the whole family" on purpose: only these three
+// pure getters (and the statics they read) move here. Their setters
+// (Set_Texture_Reduction, Enable_Large_Texture_Extra_Reduction) call
+// WW3D::_Invalidate_Textures(), whose own body calls
+// TextureLoader::Flush_Pending_Load_Tasks()/TextureClass::Invalidate() -
+// both still Windows-only until Step 5's portability sweep lands. Moving
+// the setters (or _Invalidate_Textures itself) here now would make this
+// already-linked TU carry an unresolved external symbol, breaking
+// RenderDeviceInit/RenderTexturedTriangle/RenderEngineDrawPath's link
+// today for code no harness yet exercises - the same link-closure trap
+// this milestone's Step 3 hit once already (DX8_Assert()). The setters
+// and _Invalidate_Textures stay in ww3d.cpp untouched, reading these same
+// statics via the extern declarations there; nothing in the pipeline's
+// read path (finding 7's own citations) needs them to be portable, only
+// the getters.
+int  _TextureReduction = 0;
+int  _TextureMinDim = 1;
+bool _LargeTextureExtraReductionEnabled = false;
+
+int	WW3D::Get_Texture_Reduction()
+{
+	return _TextureReduction;
+}
+
+int	WW3D::Get_Texture_Min_Dimension()
+{
+	return _TextureMinDim;
+}
+
+bool WW3D::Is_Large_Texture_Extra_Reduction_Enabled()
+{
+	return _LargeTextureExtraReductionEnabled;
+}
