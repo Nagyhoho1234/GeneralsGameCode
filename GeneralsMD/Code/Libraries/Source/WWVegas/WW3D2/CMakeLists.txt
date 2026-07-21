@@ -24,7 +24,7 @@ set(WW3D2_SRC
     #boxrobj.h
     #bwrender.cpp
     #bwrender.h
-    camera.cpp
+    #camera.cpp
     #camera.h
     #classid.h
     #collect.cpp
@@ -222,7 +222,7 @@ set(WW3D2_SRC
     #w3derr.h
     #w3dexclusionlist.cpp
     #w3dexclusionlist.h
-    ww3d.cpp
+    #ww3d.cpp
     #ww3d.h
     #ww3dformat.cpp
     #ww3dformat.h
