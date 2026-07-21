@@ -11,7 +11,7 @@ set(WW3D2_SRC
     agg_def.h
     animatedsoundmgr.cpp
     animatedsoundmgr.h
-    #animobj.cpp
+    animobj.cpp
     animobj.h
     #assetmgr.cpp
     assetmgr.h
@@ -36,8 +36,8 @@ set(WW3D2_SRC
     coltype.h
     composite.cpp
     composite.h
-    #dazzle.cpp
-    #dazzle.h
+    dazzle.cpp
+    dazzle.h
     ddsfile.cpp
     ddsfile.h
     #decalmsh.cpp
@@ -134,8 +134,8 @@ set(WW3D2_SRC
     metalmap.h
     missingtexture.cpp
     missingtexture.h
-    #motchan.cpp
-    #motchan.h
+    motchan.cpp
+    motchan.h
     #nullrobj.cpp
     nullrobj.h
     #part_buf.cpp
@@ -160,8 +160,8 @@ set(WW3D2_SRC
     proto.h
     proxy.h
     rddesc.h
-    #render2d.cpp
-    #render2d.h
+    render2d.cpp
+    render2d.h
     render2dsentence.cpp
     render2dsentence.h
     renderobjectrecycler.cpp
@@ -173,7 +173,7 @@ set(WW3D2_SRC
     ringobj.cpp
     ringobj.h
     robjlist.h
-    #scene.cpp
+    scene.cpp
     scene.h
     segline.cpp
     segline.h
