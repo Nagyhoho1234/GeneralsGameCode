@@ -41,12 +41,22 @@
 
 typedef unsigned char	uint8;
 typedef unsigned short	uint16;
-typedef unsigned long	uint32;
+// `unsigned int`, not `unsigned long`: same LP64-vs-LLP64 hazard as
+// DWORD/ULONG below (see that comment) - `unsigned long` is 64-bit on
+// 64-bit Linux/macOS, silently breaking every "32-bit" promise this
+// type's name makes. Unlike DWORD/ULONG there is no real <windows.h>
+// counterpart to stay type-identical with here (uint32/sint32 are
+// WWLib-only names), so no platform split is needed - `unsigned int`/
+// `signed int` are correct and sufficient on every platform. w3d_file.h
+// alone uses `uint32` in 123 on-disk-format struct fields (Draft 19,
+// docs/native-port-plan.md) - left un-32-bit here, every one of those
+// would compute a wrong struct size/offset on 64-bit Linux/macOS.
+typedef unsigned int	uint32;
 typedef unsigned int    uint;
 
 typedef signed char		sint8;
 typedef signed short		sint16;
-typedef signed long		sint32;
+typedef signed int	sint32;
 typedef signed int      sint;
 
 typedef float				float32;

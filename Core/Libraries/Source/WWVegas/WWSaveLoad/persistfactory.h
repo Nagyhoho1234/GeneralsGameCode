@@ -43,6 +43,8 @@
 #include "saveload.h"
 #include "persist.h"
 
+#include <cstdint>
+
 /*
 ** PersistFactoryClass
 ** Create a PersistFactoryClass for each concrete derived PersistClass.  These
@@ -120,7 +122,16 @@ SimplePersistFactoryClass<T,CHUNKID>::Load(ChunkLoadClass & cload) const
 template<class T, int CHUNKID> void
 SimplePersistFactoryClass<T,CHUNKID>::Save(ChunkSaveClass & csave,PersistClass * obj) const
 {
-	uint32 objptr = (uint32)obj;
+	// obj is never dereferenced from this value - it's a runtime-only
+	// identity token SaveLoadSystemClass::Register_Pointer/Find_Pointer
+	// remap back to a real pointer within the same save/load session, so
+	// truncating a 64-bit pointer's low 32 bits here is safe by design,
+	// not just tolerated. The two-step cast (through uintptr_t) is
+	// required on 64-bit platforms - a direct (uint32)obj is a hard
+	// -fpermissive error once uint32 is genuinely 32-bit (it was silently
+	// "lossless" only because uint32 used to be 64-bit on Linux, see
+	// bittype.h's uint32 comment).
+	uint32 objptr = static_cast<uint32>(reinterpret_cast<uintptr_t>(obj));
 	csave.Begin_Chunk(SIMPLEFACTORY_CHUNKID_OBJPOINTER);
 	csave.Write(&objptr,sizeof(uint32));
 	csave.End_Chunk();
