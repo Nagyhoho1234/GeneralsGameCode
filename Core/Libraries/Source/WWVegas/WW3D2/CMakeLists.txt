@@ -25,8 +25,8 @@ set(WW3D2_SRC
     boxrobj.h
     bwrender.cpp
     bwrender.h
-    camera.cpp
-    camera.h
+    #camera.cpp
+    #camera.h
     #classid.h # unused
     collect.cpp
     collect.h
@@ -66,8 +66,9 @@ set(WW3D2_SRC
     dx8vertexbuffer.h
     dx8webbrowser.cpp
     dx8webbrowser.h
-    dx8wrapper.cpp
-    dx8wrapper.h
+    #dx8wrapper_d3d8.cpp
+    #dx8wrapper_common.cpp
+    #dx8wrapper.h
     dynamesh.cpp
     dynamesh.h
     font3d.cpp
@@ -229,14 +230,45 @@ set(WW3D2_SRC
     w3derr.h
     w3dexclusionlist.cpp
     w3dexclusionlist.h
-    ww3d.cpp
-    ww3d.h
+    #ww3d.cpp
+    #ww3d.h
     ww3dformat.cpp
     ww3dformat.h
     ww3dids.h
     ww3dtrig.h
 )
 endif() # WIN32
+
+# Portable subset: built on every platform (native port plan Phase 5(a)
+# Milestone 1 - device init + clear-to-color). dx8wrapper.h's WWINLINE
+# methods delegate through PortableD3D8/ (non-Windows) or the real D3D8 SDK
+# (Windows) without changing, so it stays out of the WIN32-gated list above.
+# dx8wrapper_d3d8.cpp and dx8wrapper_gl.cpp are mutually exclusive
+# platform-specific backends for the same declared DX8Wrapper methods;
+# dx8wrapper_common.cpp is genuinely shared bookkeeping compiled into both.
+set(WW3D2_SRC_PORTABLE
+    camera.cpp
+    camera.h
+    dx8wrapper.h
+    dx8wrapper_common.cpp
+    ww3d.cpp
+    ww3d.h
+)
+
+if(WIN32)
+    list(APPEND WW3D2_SRC_PORTABLE dx8wrapper_d3d8.cpp)
+else()
+    list(APPEND WW3D2_SRC_PORTABLE
+        dx8wrapper_gl.cpp
+        PortableD3D8/d3d8.h
+        PortableD3D8/d3d8types.h
+        PortableD3D8/d3d8caps.h
+        PortableD3D8/gl_core33.h
+        PortableD3D8/gl_core33.cpp
+    )
+endif()
+
+list(APPEND WW3D2_SRC ${WW3D2_SRC_PORTABLE})
 
 add_library(corei_ww3d2 INTERFACE)
 
@@ -253,3 +285,9 @@ target_link_libraries(corei_ww3d2 INTERFACE
     core_wwlib
     core_wwmath
 )
+
+if(NOT WIN32)
+    target_link_libraries(corei_ww3d2 INTERFACE
+        portabled3d8_gl
+    )
+endif()

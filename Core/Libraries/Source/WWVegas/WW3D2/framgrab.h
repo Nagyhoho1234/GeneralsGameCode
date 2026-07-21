@@ -38,6 +38,12 @@
 
 #include "always.h"
 
+// FramGrab.h: interface for the FrameGrabClass class.
+//
+//////////////////////////////////////////////////////////////////////
+
+#ifdef _WIN32
+
 #if defined (_MSC_VER)
 #pragma warning (push, 3)	// (gth) system headers complain at warning level 4...
 #endif
@@ -49,10 +55,6 @@
 #if defined (_MSC_VER)
 #pragma warning (pop)
 #endif
-
-// FramGrab.h: interface for the FrameGrabClass class.
-//
-//////////////////////////////////////////////////////////////////////
 
 class FrameGrabClass
 {
@@ -97,3 +99,35 @@ protected:
 	void ConvertFrame(void *BitmapPointer);
 
 };
+
+#else // !_WIN32
+
+// AVI capture (Video for Windows) has no non-Windows equivalent implemented
+// yet - this is a portable stand-in exposing WW3D::Movie's actual call
+// surface (ww3d.cpp: constructor, destructor, GetBuffer, Grab, GetFrameRate)
+// as no-ops, following this port's established "same public surface, empty
+// body" pattern for not-yet-ported Windows-only features.
+class FrameGrabClass
+{
+public:
+	enum MODE {
+		RAW,
+		AVI
+	};
+
+	FrameGrabClass(const char *filename, MODE mode, int width, int height, int bitdepth, float framerate)
+		: FrameRate(framerate) {}
+
+	virtual ~FrameGrabClass() {}
+
+	void ConvertGrab(void *BitmapPointer) {}
+	void Grab(void *BitmapPointer) {}
+
+	long * GetBuffer()			{ return nullptr; }
+	float	GetFrameRate()			{ return FrameRate; }
+
+protected:
+	float FrameRate;
+};
+
+#endif // _WIN32

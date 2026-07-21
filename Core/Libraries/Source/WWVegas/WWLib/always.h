@@ -45,6 +45,10 @@
 // TheSuperHackers @build feliwir 17/04/2025 include utility macros for cross-platform compatibility
 #include <Utility/compat.h>
 #include <Utility/stdint_adapter.h>
+// Generic Win32 basic types (HWND, DWORD, HKEY, ...) for non-Windows builds
+// (native port plan Phase 5(a)) - always.h is included practically
+// everywhere in this codebase, same rationale as compat.h above.
+#include <Utility/win32_compat.h>
 
 // Disable warning about exception handling not being enabled. It's used as part of STL - in a part of STL we don't use.
 #pragma warning(disable : 4530)

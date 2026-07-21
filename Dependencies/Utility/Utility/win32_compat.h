@@ -100,6 +100,45 @@ inline bool operator!=(const GUID& a, const GUID& b)
 #define FAILED(hr) (((HRESULT)(hr)) < 0)
 #define SUCCEEDED(hr) (((HRESULT)(hr)) >= 0)
 
+// Opaque registry key handle - the Windows Registry itself has no
+// non-Windows equivalent (registry.cpp stays Windows-only), but this lets
+// registry.h's declarations parse wherever they're transitively included.
+struct HKEY__;
+typedef HKEY__* HKEY;
+
+// BITMAPFILEHEADER/BITMAPINFOHEADER are a stable on-disk file format (the
+// Windows BMP spec), not an OS API - WW3D::Make_Screen_Shot() only ever
+// memcpy/Write()s these structs to a file, so the real Windows field
+// layout (2-byte packed) is all that's needed here, ported without any
+// GDI/HBITMAP dependency.
+#pragma pack(push, 2)
+typedef struct tagBITMAPFILEHEADER
+{
+	WORD  bfType;
+	DWORD bfSize;
+	WORD  bfReserved1;
+	WORD  bfReserved2;
+	DWORD bfOffBits;
+} BITMAPFILEHEADER;
+
+typedef struct tagBITMAPINFOHEADER
+{
+	DWORD biSize;
+	LONG  biWidth;
+	LONG  biHeight;
+	WORD  biPlanes;
+	WORD  biBitCount;
+	DWORD biCompression;
+	DWORD biSizeImage;
+	LONG  biXPelsPerMeter;
+	LONG  biYPelsPerMeter;
+	DWORD biClrUsed;
+	DWORD biClrImportant;
+} BITMAPINFOHEADER;
+#pragma pack(pop)
+
+#define BI_RGB 0L
+
 #endif // !_WIN32
 
 #endif // WIN32_COMPAT_H

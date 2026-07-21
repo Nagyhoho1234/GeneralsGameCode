@@ -163,11 +163,11 @@ public:
 	virtual HRESULT GetBackBuffer(UINT BackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface8** ppBackBuffer) { *ppBackBuffer = nullptr; return D3DERR_NOTAVAILABLE; }
 };
 
-// GL-specific device state lives behind this opaque pointer so this header
-// (transitively included via dx8wrapper.h into ~104 files) never has to
-// include GLFW/GL headers. Defined and owned by dx8wrapper_gl.cpp.
-struct PortableGLDeviceState;
-
+// GL-specific device state (GLFW window, FBO) lives as file-local statics
+// in dx8wrapper_gl.cpp, not as members here - there is only ever one
+// IDirect3DDevice8 instance in this milestone, and keeping GLFW/GL headers
+// out of this one (transitively included via dx8wrapper.h into ~104 files)
+// is worth the small loss of per-instance generality.
 class IDirect3DDevice8
 {
 public:
@@ -269,9 +269,6 @@ public:
 	virtual HRESULT DrawRectPatch(UINT Handle, CONST float* pNumSegs, CONST D3DRECTPATCH_INFO* pRectPatchInfo) { return D3D_OK; }
 	virtual HRESULT DrawTriPatch(UINT Handle, CONST float* pNumSegs, CONST D3DTRIPATCH_INFO* pTriPatchInfo) { return D3D_OK; }
 	virtual HRESULT DeletePatch(UINT Handle) { return D3D_OK; }
-
-private:
-	PortableGLDeviceState* m_GLState;
 };
 
 class IDirect3D8

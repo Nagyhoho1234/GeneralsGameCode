@@ -55,6 +55,12 @@ if((WIN32 OR "${CMAKE_SYSTEM}" MATCHES "Windows") AND ${CMAKE_SIZEOF_VOID_P} EQU
     include(cmake/dx8.cmake)
 endif()
 
+# PortableD3D8 GL backend's GLFW/OpenGL dependency (native port plan Phase
+# 5(a)) - non-Windows only, Windows keeps the real D3D8 backend above.
+if(NOT WIN32)
+    include(cmake/opengl.cmake)
+endif()
+
 # Define a dummy stlport target when not on VC6.
 if (IS_VS6_BUILD)
     include(cmake/stlport.cmake)

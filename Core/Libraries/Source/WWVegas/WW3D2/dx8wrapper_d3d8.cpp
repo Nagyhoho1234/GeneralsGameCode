@@ -87,13 +87,17 @@
 
 #include "shdlib.h"
 
+// DX8Wrapper's static member variable definitions, _DX8SingleThreaded, and
+// Log_DX8_ErrorCode now live in dx8wrapper_common.cpp, compiled on every
+// platform - see that file for why. Only genuinely Windows/D3D8-only
+// file-local state remains here. DEFAULT_* are plain internal-linkage file
+// consts (not extern), so redeclaring the same literals here alongside
+// dx8wrapper_common.cpp's copies is not an ODR conflict - Init() below
+// still references them by name in this file.
 const int DEFAULT_RESOLUTION_WIDTH = 640;
 const int DEFAULT_RESOLUTION_HEIGHT = 480;
 const int DEFAULT_BIT_DEPTH = 32;
-const int DEFAULT_TEXTURE_BIT_DEPTH = 16;
-const D3DMULTISAMPLE_TYPE DEFAULT_MSAA = D3DMULTISAMPLE_NONE;
 
-DX8FrameStatistics DX8Wrapper::FrameStatistics;
 static DX8FrameStatistics LastFrameStatistics;
 
 bool DX8Wrapper_IsWindowed = true;
@@ -101,77 +105,7 @@ bool DX8Wrapper_IsWindowed = true;
 // FPU_PRESERVE
 int DX8Wrapper_PreserveFPU = 0;
 
-/***********************************************************************************
-**
-** DX8Wrapper Static Variables
-**
-***********************************************************************************/
-
 static HWND						_Hwnd															= nullptr;
-bool								DX8Wrapper::IsInitted									= false;
-bool								DX8Wrapper::_EnableTriangleDraw						= true;
-
-int								DX8Wrapper::CurRenderDevice							= -1;
-int								DX8Wrapper::ResolutionWidth							= DEFAULT_RESOLUTION_WIDTH;
-int								DX8Wrapper::ResolutionHeight							= DEFAULT_RESOLUTION_HEIGHT;
-int								DX8Wrapper::BitDepth										= DEFAULT_BIT_DEPTH;
-int								DX8Wrapper::TextureBitDepth							= DEFAULT_TEXTURE_BIT_DEPTH;
-bool								DX8Wrapper::IsWindowed									= false;
-D3DFORMAT					DX8Wrapper::DisplayFormat	= D3DFMT_UNKNOWN;
-D3DMULTISAMPLE_TYPE DX8Wrapper::MultiSampleAntiAliasing	= DEFAULT_MSAA;
-
-// shader system additions KJM v
-DWORD								DX8Wrapper::Vertex_Shader								= 0;
-DWORD								DX8Wrapper::Pixel_Shader								= 0;
-
-Vector4							DX8Wrapper::Vertex_Shader_Constants[MAX_VERTEX_SHADER_CONSTANTS];
-Vector4							DX8Wrapper::Pixel_Shader_Constants[MAX_PIXEL_SHADER_CONSTANTS];
-
-LightEnvironmentClass*		DX8Wrapper::Light_Environment							= nullptr;
-
-DWORD								DX8Wrapper::Vertex_Processing_Behavior				= 0;
-ZTextureClass*					DX8Wrapper::Shadow_Map[MAX_SHADOW_MAPS];
-
-Vector3							DX8Wrapper::Ambient_Color;
-// shader system additions KJM ^
-
-bool								DX8Wrapper::world_identity;
-unsigned							DX8Wrapper::RenderStates[256];
-unsigned							DX8Wrapper::TextureStageStates[MAX_TEXTURE_STAGES][32];
-IDirect3DBaseTexture8 *		DX8Wrapper::Textures[MAX_TEXTURE_STAGES];
-RenderStateStruct				DX8Wrapper::render_state;
-unsigned							DX8Wrapper::render_state_changed;
-
-bool								DX8Wrapper::FogEnable									= false;
-D3DCOLOR							DX8Wrapper::FogColor										= 0;
-
-IDirect3D8 *					DX8Wrapper::D3DInterface								= nullptr;
-IDirect3DDevice8 *			DX8Wrapper::D3DDevice									= nullptr;
-IDirect3DSurface8 *			DX8Wrapper::CurrentRenderTarget						= nullptr;
-IDirect3DSurface8 *			DX8Wrapper::CurrentDepthBuffer						= nullptr;
-IDirect3DSurface8 *			DX8Wrapper::DefaultRenderTarget						= nullptr;
-IDirect3DSurface8 *			DX8Wrapper::DefaultDepthBuffer						= nullptr;
-bool								DX8Wrapper::IsRenderToTexture							= false;
-
-unsigned							DX8Wrapper::_MainThreadID								= 0;
-bool								DX8Wrapper::CurrentDX8LightEnables[4];
-bool								DX8Wrapper::IsDeviceLost;
-int								DX8Wrapper::ZBias;
-float								DX8Wrapper::ZNear;
-float								DX8Wrapper::ZFar;
-D3DMATRIX						DX8Wrapper::ProjectionMatrix;
-D3DMATRIX						DX8Wrapper::DX8Transforms[D3DTS_WORLD+1];
-
-DX8Caps*							DX8Wrapper::CurrentCaps = nullptr;
-
-// Hack test... this disables rendering of batches of too few polygons.
-unsigned							DX8Wrapper::DrawPolygonLowBoundLimit=0;
-
-D3DADAPTER_IDENTIFIER8		DX8Wrapper::CurrentAdapterIdentifier;
-
-unsigned long DX8Wrapper::FrameCount = 0;
-
-bool								_DX8SingleThreaded										= false;
 
 static D3DPRESENT_PARAMETERS								_PresentParameters;
 static DynamicVectorClass<StringClass>					_RenderDeviceNameTable;
@@ -183,31 +117,11 @@ typedef IDirect3D8* (WINAPI *Direct3DCreate8Type) (UINT SDKVersion);
 Direct3DCreate8Type	Direct3DCreate8Ptr = nullptr;
 HINSTANCE D3D8Lib = nullptr;
 
-DX8_CleanupHook	 *DX8Wrapper::m_pCleanupHook=nullptr;
-#ifdef EXTENDED_STATS
-DX8_Stats	 DX8Wrapper::stats;
-#endif
 /***********************************************************************************
 **
 ** DX8Wrapper Implementation
 **
 ***********************************************************************************/
-
-void Log_DX8_ErrorCode(unsigned res)
-{
-	char tmp[256]="";
-
-	HRESULT new_res=D3DXGetErrorStringA(
-		res,
-		tmp,
-		sizeof(tmp));
-
-	if (new_res==D3D_OK) {
-		WWDEBUG_SAY((tmp));
-	}
-
-	WWASSERT(0);
-}
 
 void Non_Fatal_Log_DX8_ErrorCode(unsigned res,const char * file,int line)
 {
