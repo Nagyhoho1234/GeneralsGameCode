@@ -226,7 +226,12 @@ public:
 	virtual HRESULT BeginScene();
 	virtual HRESULT EndScene();
 	virtual HRESULT Clear(DWORD Count, CONST D3DRECT* pRects, DWORD Flags, D3DCOLOR Color, float Z, DWORD Stencil);
-	virtual HRESULT SetTransform(D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX* pMatrix) { return D3D_OK; }
+	// Defined out-of-line in dx8wrapper_gl.cpp (native port plan Phase 5(a)
+	// Milestone 3, finding 4) - unlike this header's usual accept-stubs,
+	// DrawIndexedPrimitive's MVP composition actually depends on this
+	// storing real WORLD/VIEW/PROJECTION state, same precedent as
+	// GetDeviceCaps/CheckDeviceFormat.
+	virtual HRESULT SetTransform(D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX* pMatrix);
 	virtual HRESULT GetTransform(D3DTRANSFORMSTATETYPE State, D3DMATRIX* pMatrix) { return D3D_OK; }
 	virtual HRESULT MultiplyTransform(D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX* pMatrix) { return D3D_OK; }
 	virtual HRESULT SetViewport(CONST D3DVIEWPORT8* pViewport);

@@ -66,6 +66,71 @@ namespace
 	IDirect3DBaseTexture8* g_CurrentTexture0 = nullptr;
 	GLuint g_VAO = 0;
 
+	// 1x1 opaque-white fallback texture (Milestone 3 step 7, finding 5(i)):
+	// bound at stage 0 whenever no real texture is set, so untextured draws
+	// (the norm this milestone - real textures are Milestone 4) resolve the
+	// stage-0 MODULATE(TEXTURE,DIFFUSE) shader to the vertex diffuse color
+	// instead of GL's unbound-sampler black.
+	GLuint g_WhiteFallbackTex = 0;
+
+	// Real SetTransform storage (Milestone 3 step 7, finding 4). Defaults to
+	// identity so a draw that only ever sets, say, VIEW still composes
+	// correctly against an untransformed WORLD/PROJECTION. g_TransformsEverSet
+	// is the compatibility-rule flag: DrawIndexedPrimitive only recomputes
+	// the MVP uniform if SetTransform has ever been called, so Milestone 2's
+	// Set_Fixed_Function_MVP-driven harness keeps working bit-for-bit.
+	D3DMATRIX Identity_D3DMATRIX()
+	{
+		D3DMATRIX m;
+		memset(&m, 0, sizeof(m));
+		m.m[0][0] = m.m[1][1] = m.m[2][2] = m.m[3][3] = 1.0f;
+		return m;
+	}
+
+	D3DMATRIX g_WorldMatrix = Identity_D3DMATRIX();
+	D3DMATRIX g_ViewMatrix = Identity_D3DMATRIX();
+	D3DMATRIX g_ProjectionMatrix = Identity_D3DMATRIX();
+	bool g_TransformsEverSet = false;
+
+	// Standard row-by-column D3DMATRIX product (D3D convention) - same
+	// literal-translation approach as sortingrenderer.cpp's portable D3DX
+	// replacement (Milestone 3 step 5), internal linkage so the two don't
+	// collide as duplicate symbols.
+	D3DMATRIX Multiply_D3DMATRIX(const D3DMATRIX& a, const D3DMATRIX& b)
+	{
+		D3DMATRIX out;
+		for (int i = 0; i < 4; ++i) {
+			for (int j = 0; j < 4; ++j) {
+				out.m[i][j] = a.m[i][0]*b.m[0][j] + a.m[i][1]*b.m[1][j] + a.m[i][2]*b.m[2][j] + a.m[i][3]*b.m[3][j];
+			}
+		}
+		return out;
+	}
+
+	// D3DBLEND -> GLenum (Milestone 3 step 7, finding 5(ii)). Index 0 unused
+	// - D3DBLEND_* values start at 1.
+	GLenum Translate_D3DBLEND_To_GL(DWORD value)
+	{
+		static const GLenum D3D_BLEND_TO_GL[] = {
+			0,
+			GL_ZERO, GL_ONE, GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR,
+			GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_DST_ALPHA, GL_ONE_MINUS_DST_ALPHA,
+			GL_DST_COLOR, GL_ONE_MINUS_DST_COLOR, GL_SRC_ALPHA_SATURATE,
+		};
+		// D3DBLEND_BOTHSRCALPHA/BOTHINVSRCALPHA (12,13) have no direct GL
+		// equivalent (dual-source blend factors) and are not exercised by
+		// ShaderClass's preset vocabulary - fall back to GL_ONE rather than
+		// index out of bounds.
+		if (value >= 1 && value <= 11) return D3D_BLEND_TO_GL[value];
+		return GL_ONE;
+	}
+
+	// Current blend factors, tracked so D3DRS_SRCBLEND and D3DRS_DESTBLEND
+	// can arrive in either order (real D3D8 draw calls set both) without one
+	// overwriting the other's glBlendFunc call with a stale default.
+	GLenum g_SrcBlend = GL_ONE;
+	GLenum g_DestBlend = GL_ZERO;
+
 	void Destroy_Framebuffer()
 	{
 		if (g_FBO) { gl_DeleteFramebuffers(1, &g_FBO); g_FBO = 0; }
@@ -600,14 +665,34 @@ HRESULT IDirect3DDevice8::SetTexture(DWORD Stage, IDirect3DBaseTexture8* pTextur
 	return D3D_OK;
 }
 
+// Real transform storage (Milestone 3 step 7, finding 4) - stores exactly
+// what real D3D8 stores (a D3DMATRIX per transform slot), touching nothing
+// GL-side until DrawIndexedPrimitive composes the MVP uniform. Only WORLD/
+// VIEW/PROJECTION are tracked; the other D3DTRANSFORMSTATETYPE slots (texture
+// transforms, extra world matrices for vertex blending) are non-goals and
+// silently accepted, matching this file's usual accept-stub tolerance.
+HRESULT IDirect3DDevice8::SetTransform(D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX* pMatrix)
+{
+	switch (State)
+	{
+	case D3DTS_WORLD:      g_WorldMatrix = *pMatrix; break;
+	case D3DTS_VIEW:       g_ViewMatrix = *pMatrix; break;
+	case D3DTS_PROJECTION: g_ProjectionMatrix = *pMatrix; break;
+	default: return D3D_OK;
+	}
+	g_TransformsEverSet = true;
+	return D3D_OK;
+}
+
 HRESULT IDirect3DDevice8::SetRenderState(D3DRENDERSTATETYPE State, DWORD Value)
 {
 	// Only the render states Step 7's verification plan actually exercises
-	// (cull-mode and depth-test plumbing) get real bodies. Everything else
-	// this milestone's fixed-function shader has no use for (lighting, fog,
-	// alpha test/blend, texture-stage states, ...) is silently accepted,
-	// matching real D3D8's tolerance of state a given draw call simply
-	// never observes - not a gap, since nothing in this milestone reads it.
+	// (cull-mode, depth-test, and alpha-blend plumbing) get real bodies.
+	// Everything else this milestone's fixed-function shader has no use for
+	// (lighting, fog, alpha test, texture-stage states, ...) is silently
+	// accepted, matching real D3D8's tolerance of state a given draw call
+	// simply never observes - not a gap, since nothing in this milestone
+	// reads it.
 	switch (State)
 	{
 	case D3DRS_CULLMODE:
@@ -651,6 +736,27 @@ HRESULT IDirect3DDevice8::SetRenderState(D3DRENDERSTATETYPE State, DWORD Value)
 		if (Value >= 1 && Value <= 8) glDepthFunc(D3D_CMP_TO_GL[Value]);
 		break;
 	}
+
+	// Alpha-blend plumbing (Milestone 3 step 7, finding 5(ii)) - the first
+	// time real shader.cpp code (ShaderClass::Apply's opaque/additive/
+	// alpha-blend presets, portable since step 5) drives visible GL state.
+	// SRCBLEND/DESTBLEND only take effect once ALPHABLENDENABLE has turned
+	// blending on, matching real D3D8 - glBlendFunc is stateless to call
+	// early, but there's no observable difference either way since nothing
+	// samples blend factors while GL_BLEND is disabled.
+	case D3DRS_ALPHABLENDENABLE:
+		if (Value) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+		break;
+
+	case D3DRS_SRCBLEND:
+		g_SrcBlend = Translate_D3DBLEND_To_GL(Value);
+		glBlendFunc(g_SrcBlend, g_DestBlend);
+		break;
+
+	case D3DRS_DESTBLEND:
+		g_DestBlend = Translate_D3DBLEND_To_GL(Value);
+		glBlendFunc(g_SrcBlend, g_DestBlend);
+		break;
 
 	default:
 		break;
@@ -743,11 +849,31 @@ HRESULT IDirect3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, U
 		gl_DisableVertexAttribArray(GL_ATTRIB_TEXCOORD0);
 	}
 
+	gl_ActiveTexture(GL_TEXTURE0);
 	if (g_CurrentTexture0)
 	{
 		GLTexture8* tex = static_cast<GLTexture8*>(g_CurrentTexture0);
-		gl_ActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, tex->Get_GL_Texture());
+	}
+	else
+	{
+		// 1x1 white fallback (finding 5(i)): resolves stage-0 MODULATE
+		// (TEXTURE,DIFFUSE) to the vertex diffuse color instead of GL's
+		// unbound-sampler black.
+		glBindTexture(GL_TEXTURE_2D, g_WhiteFallbackTex);
+	}
+
+	// MVP composition (Milestone 3 step 7, finding 4) - only once any
+	// SetTransform has ever been seen, so Milestone 2's harness (which
+	// drives the fixed-function MVP uniform directly via
+	// Set_Fixed_Function_MVP, never calling SetTransform at all) keeps
+	// getting bit-identical results.
+	if (g_TransformsEverSet)
+	{
+		D3DMATRIX wvp = Multiply_D3DMATRIX(Multiply_D3DMATRIX(g_WorldMatrix, g_ViewMatrix), g_ProjectionMatrix);
+		float mvp_gl[16];
+		Convert_D3D_Projection_To_GL(reinterpret_cast<const float*>(&wvp), mvp_gl);
+		Set_Fixed_Function_MVP(mvp_gl);
 	}
 
 	GLIndexBuffer8* ib = static_cast<GLIndexBuffer8*>(g_CurrentIndexBuffer);
@@ -991,6 +1117,16 @@ bool DX8Wrapper::Create_Device()
 	// reconfigures per draw call (see g_VAO's declaration above).
 	gl_GenVertexArrays(1, &g_VAO);
 
+	// 1x1 opaque-white fallback texture (Milestone 3 step 7, finding 5(i)).
+	{
+		const unsigned char white_pixel[4] = { 255, 255, 255, 255 };
+		glGenTextures(1, &g_WhiteFallbackTex);
+		glBindTexture(GL_TEXTURE_2D, g_WhiteFallbackTex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, white_pixel);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	}
+
 	// Trap 1 (native-port-plan.md, Phase 5(a) Milestone 1): deliberately
 	// does NOT call Do_Onetime_Device_Dependent_Inits() - that pulls in
 	// real texture creation and a background TextureLoader thread, both
@@ -1051,9 +1187,16 @@ void DX8Wrapper::Release_Device()
 	CurrentCaps = nullptr;
 
 	if (g_VAO) { gl_DeleteVertexArrays(1, &g_VAO); g_VAO = 0; }
+	if (g_WhiteFallbackTex) { glDeleteTextures(1, &g_WhiteFallbackTex); g_WhiteFallbackTex = 0; }
 	g_CurrentVertexBuffer = nullptr;
 	g_CurrentIndexBuffer = nullptr;
 	g_CurrentTexture0 = nullptr;
+	g_WorldMatrix = Identity_D3DMATRIX();
+	g_ViewMatrix = Identity_D3DMATRIX();
+	g_ProjectionMatrix = Identity_D3DMATRIX();
+	g_TransformsEverSet = false;
+	g_SrcBlend = GL_ONE;
+	g_DestBlend = GL_ZERO;
 
 	Destroy_Framebuffer();
 
