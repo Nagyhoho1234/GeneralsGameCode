@@ -44,8 +44,8 @@
 #include <assert.h>
 
 #include "WWLib/win.h"
-#ifdef _WIN32
 #include <d3d8types.h>
+#ifdef _WIN32
 #include <d3dx8math.h>
 #endif
 
@@ -202,7 +202,6 @@ int operator != (const Matrix4x4 & a, const Matrix4x4 & b)
 }
 
 
-#ifdef _WIN32
 void To_D3DMATRIX(_D3DMATRIX& dxm, const Matrix4x4& m)
 {
 	dxm.m[0][0] = m[0][0];
@@ -233,12 +232,14 @@ _D3DMATRIX To_D3DMATRIX(const Matrix4x4& m)
 	return dxm;
 }
 
+#ifdef _WIN32
 D3DXMATRIX To_D3DXMATRIX(const Matrix4x4& m)
 {
 	D3DXMATRIX dxm;
 	To_D3DMATRIX(dxm, m);
 	return dxm;
 }
+#endif // _WIN32
 
 void To_Matrix4x4(Matrix4x4& m, const _D3DMATRIX& dxm)
 {
@@ -269,4 +270,3 @@ Matrix4x4 To_Matrix4x4(const _D3DMATRIX& dxm)
 	To_Matrix4x4(m, dxm);
 	return m;
 }
-#endif // _WIN32

@@ -21,6 +21,10 @@ target_include_directories(core_wwcommon INTERFACE
     WWLib
     WWMath
     WWSaveLoad
+    # Stand-in <d3d8.h>/<d3d8types.h>/<d3d8caps.h> for non-Windows (native
+    # port plan Phase 5(a)) - real D3D8 SDK headers take precedence on
+    # Windows via d3d8lib, so this is additive there, not a conflict.
+    $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/WW3D2/PortableD3D8>
 )
 
 add_subdirectory(WW3D2)
@@ -44,6 +48,7 @@ target_include_directories(core_wwvegas INTERFACE
     WWLib
     WWMath
     WWSaveLoad
+    $<$<NOT:$<BOOL:${WIN32}>>:${CMAKE_CURRENT_SOURCE_DIR}/WW3D2/PortableD3D8>
 )
 
 target_link_libraries(core_wwvegas INTERFACE

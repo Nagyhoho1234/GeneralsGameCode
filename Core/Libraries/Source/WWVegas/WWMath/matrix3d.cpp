@@ -66,8 +66,8 @@
 #include "quat.h"
 
 #include "WWLib/win.h"
-#ifdef _WIN32
 #include <d3d8types.h>
+#ifdef _WIN32
 #include <d3dx8math.h>
 #endif
 
@@ -1294,7 +1294,6 @@ bool Matrix3D::Solve_Linear_System(Matrix3D & system)
 }
 
 
-#ifdef _WIN32
 void To_D3DMATRIX(_D3DMATRIX& dxm, const Matrix3D& m)
 {
 	dxm.m[0][0] = m[0][0];
@@ -1325,6 +1324,7 @@ _D3DMATRIX To_D3DMATRIX(const Matrix3D& m)
 	return dxm;
 }
 
+#ifdef _WIN32
 D3DXMATRIX To_D3DXMATRIX(const Matrix3D& m)
 {
 	D3DXMATRIX dxm;

@@ -1817,14 +1817,16 @@ public:
 // Reason being, D3DMATRIX is row-major, and Matrix3D is column-major and therefore copying one matrix to the
 // other will always require a transpose.
 //
-// D3D8-specific despite living in this otherwise-portable math library - gated behind _WIN32 since their only
-// callers (dx8wrapper.h, W3DVolumetricShadow.cpp) are themselves Windows-only D3D8 rendering code (native
-// port plan Phase 1/5).
-#ifdef _WIN32
+// D3D8-specific despite living in this otherwise-portable math library. The _D3DMATRIX conversions are plain
+// field copies (no D3DX math calls) so they're available on every platform - dx8wrapper.h needs them on the
+// PortableD3D8 backend too (native port plan Phase 5(a)). To_D3DXMATRIX genuinely needs the real D3DX math
+// library and stays Windows-only (its only other caller, W3DVolumetricShadow.cpp, is Windows-only too).
 struct _D3DMATRIX;
-struct D3DXMATRIX;
 
 extern void To_D3DMATRIX(_D3DMATRIX& dxm, const Matrix3D& m);
 extern _D3DMATRIX To_D3DMATRIX(const Matrix3D& m);
+
+#ifdef _WIN32
+struct D3DXMATRIX;
 extern D3DXMATRIX To_D3DXMATRIX(const Matrix3D& m);
 #endif

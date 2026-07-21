@@ -37,6 +37,8 @@
 
 #pragma once
 
+#define WWLIB_BITTYPE_H
+
 typedef unsigned char	uint8;
 typedef unsigned short	uint16;
 typedef unsigned long	uint32;
@@ -50,14 +52,19 @@ typedef signed int      sint;
 typedef float				float32;
 typedef double				float64;
 
+// DWORD/WORD/BYTE/BOOL/UINT/ULONG also get typedef'd by Utility/win32_compat.h
+// (added for the Phase 5 native port, see PortableD3D8/) - whichever header
+// is included first wins so the two never fight over the same names.
+#ifndef WIN32_COMPAT_H
 typedef unsigned long   DWORD;
 typedef unsigned short	WORD;
 typedef unsigned char   BYTE;
 typedef int             BOOL;
-typedef unsigned short	USHORT;
-typedef const char *		LPCSTR;
 typedef unsigned int    UINT;
 typedef unsigned long   ULONG;
+#endif
+typedef unsigned short	USHORT;
+typedef const char *		LPCSTR;
 
 #if defined(_MSC_VER) && _MSC_VER < 1300
 #ifndef _WCHAR_T_DEFINED
