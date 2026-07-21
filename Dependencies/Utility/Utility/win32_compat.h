@@ -43,6 +43,7 @@ typedef int32_t BOOL;
 typedef uint32_t ULONG;
 #endif
 typedef int32_t LONG;
+typedef int32_t INT;
 typedef long HRESULT;
 
 #ifndef TRUE
