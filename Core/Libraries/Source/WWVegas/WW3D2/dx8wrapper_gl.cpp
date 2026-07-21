@@ -295,6 +295,131 @@ namespace
 		out_layout->Stride = offset;
 		return true;
 	}
+
+	// Fixed GL vertex-attribute location contract shared between Step 3's
+	// layout (offsets only, no location numbers) and this step's shader
+	// (which must declare matching layout(location=N) inputs) and Step 6's
+	// VAO setup (which binds each present FVF component to these numbers).
+	enum GLAttribLocation
+	{
+		GL_ATTRIB_POSITION  = 0,
+		GL_ATTRIB_NORMAL    = 1,
+		GL_ATTRIB_DIFFUSE   = 2,
+		GL_ATTRIB_TEXCOORD0 = 3,
+		GL_ATTRIB_TEXCOORD1 = 4,
+	};
+
+	// One small always-on GLSL program emulating exactly D3D's default
+	// stage-0 D3DTOP_MODULATE(D3DTA_TEXTURE, D3DTA_DIFFUSE) - not general
+	// texture-stage-combiner emulation (Milestone 2 non-goal). Whether the
+	// vertex-diffuse D3DCOLOR bytes need an R/B swizzle to read correctly as
+	// this shader's vec4 is deliberately NOT resolved here - Step 7's test
+	// harness includes an explicit R/B byte-order canary check for exactly
+	// this question (see docs/native-port-plan.md Draft 18); this shader
+	// just consumes the 4 unsigned bytes GL_UNSIGNED_BYTE/normalized gives
+	// it in memory order, unmodified.
+	GLuint Compile_Shader(GLenum type, const char* src)
+	{
+		GLuint shader = gl_CreateShader(type);
+		gl_ShaderSource(shader, 1, &src, nullptr);
+		gl_CompileShader(shader);
+		GLint ok = 0;
+		gl_GetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+		if (!ok)
+		{
+			char log[2048];
+			gl_GetShaderInfoLog(shader, sizeof(log), nullptr, log);
+			WWDEBUG_SAY(("GL shader compile failed: %s", log));
+			gl_DeleteShader(shader);
+			return 0;
+		}
+		return shader;
+	}
+
+	GLuint Build_Fixed_Function_Program()
+	{
+		const char* vs_src =
+			"#version 330 core\n"
+			"layout(location=0) in vec3 aPosition;\n"
+			"layout(location=2) in vec4 aDiffuse;\n"
+			"layout(location=3) in vec2 aTexCoord0;\n"
+			"uniform mat4 uMVP;\n"
+			"out vec4 vDiffuse;\n"
+			"out vec2 vTexCoord0;\n"
+			"void main() {\n"
+			"    gl_Position = uMVP * vec4(aPosition, 1.0);\n"
+			"    vDiffuse = aDiffuse;\n"
+			"    vTexCoord0 = aTexCoord0;\n"
+			"}\n";
+
+		const char* fs_src =
+			"#version 330 core\n"
+			"in vec4 vDiffuse;\n"
+			"in vec2 vTexCoord0;\n"
+			"out vec4 FragColor;\n"
+			"uniform sampler2D uTex;\n"
+			"void main() {\n"
+			"    FragColor = texture(uTex, vTexCoord0) * vDiffuse;\n"
+			"}\n";
+
+		GLuint vs = Compile_Shader(GL_VERTEX_SHADER, vs_src);
+		if (!vs) return 0;
+		GLuint fs = Compile_Shader(GL_FRAGMENT_SHADER, fs_src);
+		if (!fs) { gl_DeleteShader(vs); return 0; }
+
+		GLuint program = gl_CreateProgram();
+		gl_AttachShader(program, vs);
+		gl_AttachShader(program, fs);
+		gl_LinkProgram(program);
+
+		GLint linked = 0;
+		gl_GetProgramiv(program, GL_LINK_STATUS, &linked);
+
+		gl_DeleteShader(vs);
+		gl_DeleteShader(fs);
+
+		if (!linked)
+		{
+			char log[2048];
+			gl_GetProgramInfoLog(program, sizeof(log), nullptr, log);
+			WWDEBUG_SAY(("GL fixed-function program link failed: %s", log));
+			gl_DeleteProgram(program);
+			return 0;
+		}
+
+		return program;
+	}
+
+	// Lazily builds and caches the one program instance this milestone ever
+	// uses - never rebuilt, never a per-material variant (general shader-
+	// program management is out of scope, see Draft 18's non-goals).
+	// Returns 0 if compilation/linking ever failed (logged above).
+	GLuint Get_Fixed_Function_Program()
+	{
+		static GLuint s_Program = Build_Fixed_Function_Program();
+		return s_Program;
+	}
+
+	// Standard D3D-clip-space-to-GL-clip-space row remap, validated
+	// numerically in native-port-spike/main.cpp's
+	// validate_clip_space_conversion(): GL wants z' in [-w, w] where D3D
+	// produces z in [0, w], i.e. z_gl = 2*z_d3d - w_d3d as a matrix
+	// operation: row_z_gl = 2*row_z_d3d - row_w_d3d. Both matrices are
+	// plain column-major float[16] (GL uniform layout), not D3DMATRIX -
+	// callers (Step 7's test harness) build their own hardcoded D3D-style
+	// projection in that layout and convert it here; this milestone does
+	// not wire DX8Wrapper::SetTransform/D3DTS_PROJECTION (still a stub,
+	// unchanged - out of scope, see Draft 18's non-goals).
+	void Convert_D3D_Projection_To_GL(const float d3d[16], float out_gl[16])
+	{
+		for (int col = 0; col < 4; ++col)
+		{
+			float z_row = d3d[col * 4 + 2];
+			float w_row = d3d[col * 4 + 3];
+			for (int row = 0; row < 4; ++row) out_gl[col * 4 + row] = d3d[col * 4 + row];
+			out_gl[col * 4 + 2] = 2.0f * z_row - w_row;
+		}
+	}
 }
 
 HRESULT IDirect3DDevice8::CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer8** ppVertexBuffer)
