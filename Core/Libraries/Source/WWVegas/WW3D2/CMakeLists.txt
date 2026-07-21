@@ -267,8 +267,10 @@ set(WW3D2_SRC_PORTABLE
     vertmaterial.cpp
     vertmaterial.h
     dx8wrapper_common.cpp
+    dx8wrapper_draw.cpp
     formconv.cpp
     formconv.h
+    texture_common.cpp
     ww3d.cpp
     ww3d.h
     ww3d_common.cpp

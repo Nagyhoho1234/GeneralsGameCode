@@ -381,15 +381,9 @@ unsigned TextureBaseClass::Get_Reduction() const
 
 
 
-//**********************************************************************************************
-//! Apply null texture state
-/*!
-*/
-void TextureBaseClass::Apply_Null(unsigned int stage)
-{
-	// This function sets the render states for a "null" texture
-	DX8Wrapper::Set_DX8_Texture(stage, nullptr);
-}
+// TextureBaseClass::Apply_Null moved to texture_common.cpp (native port
+// plan Phase 5(a) Milestone 3, finding 2) - a direct symbol reference from
+// the now-portable dx8wrapper_draw.cpp, hosted in its own subsystem's TU.
 
 // ----------------------------------------------------------------------------
 // Setting HSV_Shift value is always relative to the original texture. This function invalidates the
