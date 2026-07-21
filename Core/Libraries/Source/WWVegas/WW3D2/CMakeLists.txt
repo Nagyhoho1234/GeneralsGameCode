@@ -255,6 +255,7 @@ set(WW3D2_SRC_PORTABLE
     formconv.h
     ww3d.cpp
     ww3d.h
+    ww3d_common.cpp
 )
 
 if(WIN32)
