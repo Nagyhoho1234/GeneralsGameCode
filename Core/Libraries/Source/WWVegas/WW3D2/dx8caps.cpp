@@ -41,9 +41,11 @@
 #include "dx8caps.h"
 #include "dx8wrapper.h"
 #include "formconv.h"
+#ifdef _WIN32
 #pragma warning (disable : 4201)		// nonstandard extension - nameless struct
 #include <windows.h>
 #include <mmsystem.h>
+#endif
 
 static StringClass CapsWorkString;
 
@@ -546,10 +548,21 @@ void DX8Caps::Compute_Caps(WW3DFormat display_format, const D3DADAPTER_IDENTIFIE
 	DXLOG(("Driver: %s\r\n",adapter_id.Driver));
 
 	DriverDLL=adapter_id.Driver;
+	// PortableD3D8's D3DADAPTER_IDENTIFIER8 flattens the real LARGE_INTEGER
+	// DriverVersion into DriverVersionHighPart/DriverVersionLowPart (native
+	// port plan Phase 5(a) Milestone 3, finding 3) - same four sub-fields,
+	// no LARGE_INTEGER available/needed here.
+#ifdef _WIN32
 	int Product = HIWORD(adapter_id.DriverVersion.HighPart);
 	int Version = LOWORD(adapter_id.DriverVersion.HighPart);
 	int SubVersion = HIWORD(adapter_id.DriverVersion.LowPart);
 	DriverBuildVersion = LOWORD(adapter_id.DriverVersion.LowPart);
+#else
+	int Product = HIWORD(adapter_id.DriverVersionHighPart);
+	int Version = LOWORD(adapter_id.DriverVersionHighPart);
+	int SubVersion = HIWORD(adapter_id.DriverVersionLowPart);
+	DriverBuildVersion = LOWORD(adapter_id.DriverVersionLowPart);
+#endif
 
 	DXLOG(("Product=%d, Version=%d, SubVersion=%d, Build=%d\r\n",Product, Version, SubVersion, DriverBuildVersion));
 

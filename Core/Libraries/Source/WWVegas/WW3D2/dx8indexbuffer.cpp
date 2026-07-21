@@ -308,6 +308,7 @@ DX8IndexBufferClass::DX8IndexBufferClass(unsigned short index_count_,UsageType u
 		return;
 	}
 
+#ifdef _WIN32
 	WWDEBUG_SAY(("Index buffer creation failed, trying to release assets..."));
 
 	// Index buffer creation failed, so try releasing least used textures and flushing the mesh cache.
@@ -329,8 +330,12 @@ DX8IndexBufferClass::DX8IndexBufferClass(unsigned short index_count_,UsageType u
 	if (SUCCEEDED(ret)) {
 		WWDEBUG_SAY(("...Index buffer creation successful"));
 	}
+#endif // _WIN32
 
-	// If it still fails it is fatal
+	// This "release D3D-pool assets and retry" dance (above) is D3D
+	// resource-manager memory management with no GL analog (native port
+	// plan Phase 5(a) Milestone 3, finding 2) - on !_WIN32 first failure
+	// is fatal, same as it is here on _WIN32 if the retry also fails.
 	DX8_ErrorCode(ret);
 }
 

@@ -95,6 +95,9 @@ inline bool operator!=(const GUID& a, const GUID& b)
 	return !(a == b);
 }
 
+#define LOWORD(l) ((WORD)((uint32_t)(l) & 0xffff))
+#define HIWORD(l) ((WORD)((uint32_t)(l) >> 16))
+
 #define S_OK ((HRESULT)0L)
 #define S_FALSE ((HRESULT)1L)
 #define E_FAIL ((HRESULT)0x80004005L)

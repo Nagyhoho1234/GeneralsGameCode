@@ -66,8 +66,23 @@ namespace Debug_Statistics
 };
 
 #define ADD_STATISTICS_VERTEX_PROCESSOR_PUSH Debug_Statistics::Add_Vertex_Processor()
+
+// DX8_RECORD_TEXTURE pulls TextureBaseClass::Get_Texture_Memory_Usage via
+// statistics.cpp, which drags the whole texture subsystem into any TU that
+// records - not ported until textures are (native port plan Phase 5(a)
+// Milestone 3, finding 2; Milestone 4 revisits this). Diagnostics-only,
+// zero rendering behavior either way - same category as the MEMORYSTATUS
+// precedent.
+#ifdef _WIN32
 #define DX8_RECORD_TEXTURE(t) Debug_Statistics::Record_Texture(t)
 #define DX8_RECORD_TEXTURE_ARRAY(t,c) Debug_Statistics::Record_Texture_Array(t,c)
 #define DX8_RECORD_RENDER(polys,verts,shader) Debug_Statistics::Record_DX8_Polys_And_Vertices(polys,verts,shader)
 #define DX8_RECORD_SORTING_RENDER(polys,verts) Debug_Statistics::Record_Sorting_Polys_And_Vertices(polys,verts)
 #define DX8_RECORD_SKIN_RENDER(polys,verts) Debug_Statistics::Record_DX8_Skin_Polys_And_Vertices(polys,verts)
+#else
+#define DX8_RECORD_TEXTURE(t)
+#define DX8_RECORD_TEXTURE_ARRAY(t,c)
+#define DX8_RECORD_RENDER(polys,verts,shader)
+#define DX8_RECORD_SORTING_RENDER(polys,verts)
+#define DX8_RECORD_SKIN_RENDER(polys,verts)
+#endif

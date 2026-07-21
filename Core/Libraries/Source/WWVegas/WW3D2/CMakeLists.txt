@@ -47,10 +47,10 @@ set(WW3D2_SRC
     distlod.cpp
     distlod.h
     dllist.h
-    dx8caps.cpp
-    dx8caps.h
-    dx8fvf.cpp
-    dx8fvf.h
+    #dx8caps.cpp
+    #dx8caps.h
+    #dx8fvf.cpp
+    #dx8fvf.h
     dx8indexbuffer.cpp
     dx8indexbuffer.h
     dx8list.h
@@ -249,6 +249,10 @@ endif() # WIN32
 set(WW3D2_SRC_PORTABLE
     camera.cpp
     camera.h
+    dx8caps.cpp
+    dx8caps.h
+    dx8fvf.cpp
+    dx8fvf.h
     dx8wrapper.h
     dx8wrapper_common.cpp
     formconv.cpp

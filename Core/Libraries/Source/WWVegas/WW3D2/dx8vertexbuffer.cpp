@@ -45,7 +45,9 @@
 #include "dx8caps.h"
 #include "thread.h"
 #include "wwmemlog.h"
+#ifdef _WIN32
 #include <d3dx8core.h>
+#endif
 
 #define DEFAULT_VB_SIZE 5000
 
@@ -452,6 +454,7 @@ void DX8VertexBufferClass::Create_Vertex_Buffer(UsageType usage)
 		return;
 	}
 
+#ifdef _WIN32
 	WWDEBUG_SAY(("Vertex buffer creation failed, trying to release assets..."));
 
 	// Vertex buffer creation failed, so try releasing least used textures and flushing the mesh cache.
@@ -476,8 +479,12 @@ void DX8VertexBufferClass::Create_Vertex_Buffer(UsageType usage)
 	if (SUCCEEDED(ret)) {
 		WWDEBUG_SAY(("...Vertex buffer creation successful"));
 	}
+#endif // _WIN32
 
-	// If it still fails it is fatal
+	// This "release D3D-pool assets and retry" dance (above) is D3D
+	// resource-manager memory management with no GL analog (native port
+	// plan Phase 5(a) Milestone 3, finding 2) - on !_WIN32 first failure
+	// is fatal, same as it is here on _WIN32 if the retry also fails.
 	DX8_ErrorCode(ret);
 
 	/* Old Code
