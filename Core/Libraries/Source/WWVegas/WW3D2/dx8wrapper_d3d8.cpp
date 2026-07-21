@@ -87,13 +87,16 @@
 
 #include "shdlib.h"
 
-// DX8Wrapper's static member variable definitions, _DX8SingleThreaded, and
-// Log_DX8_ErrorCode now live in dx8wrapper_common.cpp, compiled on every
-// platform - see that file for why. Only genuinely Windows/D3D8-only
-// file-local state remains here. DEFAULT_* are plain internal-linkage file
-// consts (not extern), so redeclaring the same literals here alongside
-// dx8wrapper_common.cpp's copies is not an ODR conflict - Init() below
-// still references them by name in this file.
+// DX8Wrapper's static member variable definitions and _DX8SingleThreaded
+// now live in dx8wrapper_common.cpp, compiled on every platform - see that
+// file for why. Log_DX8_ErrorCode stays here: it decodes real D3DX error
+// strings (D3DXGetErrorStringA, below), which only exists on Windows -
+// dx8wrapper_common.cpp's copy is guarded #ifndef _WIN32 so the two never
+// collide as duplicate definitions. Everything else genuinely Windows/
+// D3D8-only file-local state remains here too. DEFAULT_* are plain
+// internal-linkage file consts (not extern), so redeclaring the same
+// literals here alongside dx8wrapper_common.cpp's copies is not an ODR
+// conflict - Init() below still references them by name in this file.
 const int DEFAULT_RESOLUTION_WIDTH = 640;
 const int DEFAULT_RESOLUTION_HEIGHT = 480;
 const int DEFAULT_BIT_DEPTH = 32;
@@ -122,6 +125,22 @@ HINSTANCE D3D8Lib = nullptr;
 ** DX8Wrapper Implementation
 **
 ***********************************************************************************/
+
+void Log_DX8_ErrorCode(unsigned res)
+{
+	char tmp[256]="";
+
+	HRESULT new_res=D3DXGetErrorStringA(
+		res,
+		tmp,
+		sizeof(tmp));
+
+	if (new_res==D3D_OK) {
+		WWDEBUG_SAY((tmp));
+	}
+
+	WWASSERT(0);
+}
 
 void Non_Fatal_Log_DX8_ErrorCode(unsigned res,const char * file,int line)
 {

@@ -259,9 +259,12 @@ if(WIN32)
         zi_always
     )
 else()
-    # corei_ww3d2 contributes zero sources on non-Windows (native port plan
-    # Phase 1) - INTERFACE instead of STATIC since a STATIC library needs at
-    # least one source file even when everything it links is empty.
+    # corei_ww3d2 contributes only the portable WW3D2_SRC_PORTABLE subset on
+    # non-Windows (native port plan Phase 5(a)) via its own INTERFACE
+    # target_sources - none of THIS file's WW3D2_SRC list (all WIN32-gated
+    # above). z_ww3d2 stays INTERFACE rather than STATIC since it has no
+    # sources of its own either way; the portable sources still reach the
+    # final linked binary by propagating through corei_ww3d2's INTERFACE.
     add_library(z_ww3d2 INTERFACE)
     target_link_libraries(z_ww3d2 INTERFACE
         core_wwdebug

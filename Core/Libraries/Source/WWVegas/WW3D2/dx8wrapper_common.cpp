@@ -102,12 +102,15 @@ DX8_Stats DX8Wrapper::stats;
 
 bool _DX8SingleThreaded = false;
 
-// Portable fallback: the real D3DXGetErrorStringA (Windows D3DX-only) isn't
-// available here, so this just logs the raw HRESULT. dx8wrapper_d3d8.cpp
-// keeps its own richer Windows implementation of the same declared function
-// (only one of the two is ever compiled into a given build).
+// Non-Windows fallback: the real D3DXGetErrorStringA (Windows D3DX-only)
+// isn't available here, so this just logs the raw HRESULT. Windows keeps
+// its own richer implementation of the same declared function in
+// dx8wrapper_d3d8.cpp (real D3DX-decoded error strings) - guarded out here
+// so the two never collide as duplicate definitions in the same build.
+#ifndef _WIN32
 void Log_DX8_ErrorCode(unsigned res)
 {
 	WWDEBUG_SAY(("DX8 Error: 0x%08x", res));
 	WWASSERT(0);
 }
+#endif
