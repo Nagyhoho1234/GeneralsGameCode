@@ -51,8 +51,8 @@ set(WW3D2_SRC
     #dx8caps.h
     #dx8fvf.cpp
     #dx8fvf.h
-    dx8indexbuffer.cpp
-    dx8indexbuffer.h
+    #dx8indexbuffer.cpp
+    #dx8indexbuffer.h
     dx8list.h
     dx8polygonrenderer.cpp
     dx8polygonrenderer.h
@@ -62,8 +62,8 @@ set(WW3D2_SRC
     dx8rendererdebugger.h
     dx8texman.cpp
     dx8texman.h
-    dx8vertexbuffer.cpp
-    dx8vertexbuffer.h
+    #dx8vertexbuffer.cpp
+    #dx8vertexbuffer.h
     dx8webbrowser.cpp
     dx8webbrowser.h
     #dx8wrapper_d3d8.cpp
@@ -253,6 +253,10 @@ set(WW3D2_SRC_PORTABLE
     dx8caps.h
     dx8fvf.cpp
     dx8fvf.h
+    dx8indexbuffer.cpp
+    dx8indexbuffer.h
+    dx8vertexbuffer.cpp
+    dx8vertexbuffer.h
     dx8wrapper.h
     dx8wrapper_common.cpp
     formconv.cpp
