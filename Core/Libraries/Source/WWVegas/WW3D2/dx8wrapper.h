@@ -705,6 +705,10 @@ protected:
 	friend class WW3D;
 	friend class DX8IndexBufferClass;
 	friend class DX8VertexBufferClass;
+	// Tests/RenderDeviceInit (native port plan Phase 5(a) Milestone 1) calls
+	// Set_Render_Device/Create_Device directly rather than through WW3D:: -
+	// see that harness's main.cpp for why.
+	friend int main();
 };
 
 // shader system updates KJM v

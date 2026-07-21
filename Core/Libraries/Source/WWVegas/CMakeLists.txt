@@ -7,10 +7,20 @@ target_compile_definitions(core_wwcommon INTERFACE
 )
 
 target_link_libraries(core_wwcommon INTERFACE
-    d3d8lib
-    milesstub
     stlport
 )
+
+if(WIN32)
+    # d3d8lib/milesstub only exist on the Windows 32-bit path (cmake/dx8.cmake,
+    # cmake/miles.cmake) - linking them unconditionally never mattered before
+    # since nothing on non-Windows fully linked a real executable through this
+    # interface library until the Phase 5(a) Milestone 1 RenderDeviceInit test
+    # harness (Tests/RenderDeviceInit/) did.
+    target_link_libraries(core_wwcommon INTERFACE
+        d3d8lib
+        milesstub
+    )
+endif()
 
 target_include_directories(core_wwcommon INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}

@@ -73,8 +73,8 @@ set(WW3D2_SRC
     dynamesh.h
     font3d.cpp
     font3d.h
-    formconv.cpp
-    formconv.h
+    #formconv.cpp
+    #formconv.h
     FramGrab.cpp
     framgrab.h
     hanim.cpp
@@ -251,6 +251,8 @@ set(WW3D2_SRC_PORTABLE
     camera.h
     dx8wrapper.h
     dx8wrapper_common.cpp
+    formconv.cpp
+    formconv.h
     ww3d.cpp
     ww3d.h
 )

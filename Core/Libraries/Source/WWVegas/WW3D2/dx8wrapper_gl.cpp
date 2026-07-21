@@ -178,6 +178,12 @@ HRESULT IDirect3D8::GetAdapterDisplayMode(UINT Adapter, D3DDISPLAYMODE* pMode)
 	return EnumAdapterModes(Adapter, 0, pMode);
 }
 
+HRESULT IDirect3D8::GetDeviceCaps(UINT Adapter, D3DDEVTYPE DeviceType, D3DCAPS8* pCaps)
+{
+	memset(pCaps, 0, sizeof(D3DCAPS8));
+	return D3D_OK;
+}
+
 HRESULT IDirect3D8::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, IDirect3DDevice8** ppReturnedDeviceInterface)
 {
 	*ppReturnedDeviceInterface = new IDirect3DDevice8();

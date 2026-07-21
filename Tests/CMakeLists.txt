@@ -25,3 +25,9 @@ target_link_libraries(core_tests PRIVATE
 target_compile_features(core_tests PRIVATE cxx_std_17)
 
 add_test(NAME core_tests COMMAND core_tests)
+
+# Phase 5(a) Milestone 1 (native port plan) - GL device-init verification,
+# non-Windows only. See RenderDeviceInit/CMakeLists.txt.
+if(NOT WIN32)
+    add_subdirectory(RenderDeviceInit)
+endif()
