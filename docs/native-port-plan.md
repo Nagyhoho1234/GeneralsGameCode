@@ -2554,3 +2554,208 @@ from real game data. After Milestone 3, the remaining ladder to "the game
 renders on Linux" is: textures (M4) -> meshes + dx8renderer (M5) ->
 `W3DDisplay`/scene/camera wiring + windowing (Phase 4/5(e) convergence).
 Each rung stands on this one; none skips it.
+
+## Draft 21: Milestone 3 review (commits `c74701eb4`..`42de6aa88`)
+
+Independent re-verification of the 8-commit Milestone 3 implementation
+(the real engine draw path - buffer classes, `Apply_Render_State_Changes`,
+transforms - through DX8Wrapper's high-level API) against the actual
+delivered code, Draft 20's plan, and both platforms' builds, using Draft
+19's methodology: from-scratch rebuild, live re-run of all three
+harnesses, and mutation testing of the headline verification claims.
+
+**Verdict: zero bugs in the delivered code. One substantive
+plan-vs-delivery gap: Draft 20's step 8 called for the dynamic-buffer
+draw to exercise *nonzero* `VertexBufferOffset`/`IndexBufferOffset` and
+the `NOOVERWRITE` lock path, and the delivered harness quietly does not -
+mutation-proven below, check 6 cannot detect a broken base-vertex path.**
+That is a verification gap (the code it fails to discriminate is
+believed correct by inspection), not a code bug, but the step 8 commit
+message's "proving the VertexBufferOffset/IndexBufferOffset ->
+glDrawElementsBaseVertex plumbing" claim is overstated and the gap
+should be closed with a one-quad harness addition before Milestone 5
+starts relying on that plumbing.
+
+Confirmed correct (each independently re-derived or re-run, not taken on
+trust):
+
+- **Rebuilt and re-ran everything.** Clean-first MSVC win32 rebuild of
+  `g_ww3d2`/`z_ww3d2`/`g_gameenginedevice`/`z_gameenginedevice`
+  (1853-step full rebuild, not incremental): 0 errors, all four `.lib`s
+  link. WSL2 linux-x64 `-k 0` full-error-count builds of both
+  `g_gameenginedevice` and `z_gameenginedevice`: exactly 17 errors each,
+  and the per-file breakdown matches the pre-catalogued Windows-only
+  deferred set precisely (atlbase 6, winsock 4, imagehlp 3,
+  d3dx8math/BezierSegment 3, mbstring 1) - no WW3D2 file among them.
+  All three harnesses rebuilt and RE-RUN under WSLg `DISPLAY=:0`:
+  `RENDERDEVICEINIT_OK`, `RENDERTEXTUREDTRIANGLE_OK` (all 6 checks, bit-
+  identical values to Draft 19's run - the step 7 dirty-flag
+  compatibility rule holds in practice), `RENDERENGINEDRAWPATH_OK`
+  (all 6 checks), every exit code 0.
+- **The step 6 move is verbatim, no-loss, no-duplicate - proven by
+  multiset comparison**, which is stronger than the commit's own check:
+  sorted-line multiset diff of pre-move `dx8wrapper_d3d8.cpp` (4363
+  lines) against post-move `dx8wrapper_d3d8.cpp` + `dx8wrapper_draw.cpp`
+  (3254 + 1180) shows exactly ONE code line changed - `unsigned long
+  passes=0;` -> `DWORD passes=0;` (`dx8wrapper_draw.cpp:268`, the
+  declared LP64 `ValidateDevice(DWORD*)` fix, correct) - and every other
+  new line is file-header boilerplate, includes, or comments. Grep
+  confirms `dx8wrapper_d3d8.cpp` retains only call sites of the moved
+  names, zero definitions; `Set_Light(unsigned, const LightClass&)` and
+  the texture-creation family stayed behind as planned. Caveat on the
+  commit message: its "would be LNK2005 if any moved function still
+  existed in both files" argument is structurally invalid - all four
+  MSVC targets are STATIC LIBRARIES, and a librarian never diagnoses
+  duplicate symbols (that only surfaces when an exe pulls both objects,
+  which nothing in this build does). The grep check was the real
+  verification; the conclusion holds, the stated mechanism doesn't.
+- **The `mapper.cpp` link stub is sound** (`mapper.cpp:1115-1131`):
+  `#ifndef _WIN32` means it cannot exist in any Windows object file, so
+  no collision with the real per-tree `mesh.cpp` definition is possible;
+  `MeshClass::Make_Unique(bool)` is non-virtual (`mesh.h:155/160` both
+  trees), so defining it emits no vtable and cannot drag MeshClass's
+  other virtuals into the link; and - decisive for the "silently masking
+  a real call site" worry - `Reset_All_Texture_Mappers` has ZERO call
+  sites anywhere in the repository (both trees, all targets; only its
+  own recursion and its `mapper.h:568` declaration). The stub is
+  reachable only through a function nothing calls, on either platform.
+  The link chain the commit describes is real: `vertmaterial.cpp`'s
+  `Parse_Mapping_Args` (`vertmaterial.cpp:546`, constructing mapper
+  subclasses at `:771-796`) pulls `mapper.cpp.o`'s vtables, whose TU
+  contains the dead `Reset_All_Texture_Mappers` ->
+  `MeshClass::Make_Unique` reference the linker must still resolve. If
+  Milestone 5 makes `mesh.cpp` portable and forgets the stub, the result
+  is a loud duplicate-symbol link error, not silent misbehavior -
+  self-correcting.
+- **`core_wwstub` is the right link fix, verified at the object level**:
+  `nm` on the harness's objects shows `main.cpp.o`/
+  `dx8vertexbuffer.cpp.o` (via the headers' `W3DMPO_GLUE`) reference
+  `createW3DMemPool`/`allocateFromW3DMemPool`/`freeFromW3DMemPool`,
+  which is exactly `WWStub/wwallocstub.cpp`'s malloc-backed export set -
+  the same pre-existing "avoid linking GameEngine" library the W3DView/
+  wdump tools already use, nothing new pulled in. The other two
+  harnesses genuinely don't need it (none of their objects reference
+  those symbols, and both link and run green without it).
+- **The additive-blend expectation fix is correct arithmetic, and the
+  bug was in the test, not the engine.** Re-derived by hand: `Clear`'s
+  0.5 gray stores as 127 (observed) or 128 (both within the +-2
+  tolerance); the two additive draws touch DIFFERENT channels, so each
+  channel receives exactly one addition: R = 127+64 = 191, G = 127+64 =
+  191, B = 127+0+0 = 127 -> `(191,191,127)` exactly as check 4 expects
+  (`main.cpp:369-372`). Summing onto the framebuffer's existing content
+  - including the clear color - is precisely what D3D8's
+  `ONE`/`ONE` blend does; the original `(128,128,0)` expectation
+  (which ignored the background and would have saturated R and G at
+  127+128+... and left B expecting 0 against an actual 127) was wrong on
+  every channel. Lowering the intensities to 64 to stay out of
+  saturation preserves the "did it actually add" signal.
+- **Mutation test (transform chain): caught loudly.** Reversing the MVP
+  composition order in `dx8wrapper_gl.cpp`'s `DrawIndexedPrimitive`
+  (`W*V*P` -> `P*V*W`), rebuild, re-run: checks 2-6 all fail (every quad
+  vanishes to background), exit code 1. Check 2's independent CPU-side
+  `Predict_Ndc` (`main.cpp:118-123`, genuinely separately-derived math -
+  it never calls the engine's matrix code) is a real discriminator of
+  the whole `Set_Transform` -> `Apply_Render_State_Changes` -> GL
+  composition chain. Restored bit-identically afterwards (cmp against
+  the committed blob) and re-ran all three harnesses green.
+- **Transform/blend/fallback GL work checks out by inspection**: the
+  no-transpose reinterpretation argument is the same one finding 4
+  validated; `g_TransformsEverSet` plus full state reset in
+  `Release_Device` (`dx8wrapper_gl.cpp:1183-1199`, including the new
+  white-fallback texture and blend factors) fixes for the new state what
+  Draft 19's watch item 3 flagged for the old; the `D3DBLEND`->GL table
+  (`:101-116`) is value-correct for 1-11 with a documented, preset-
+  unreachable fallback for the dual-source pair (12/13); the blend-
+  factor pair tracking (`g_SrcBlend`/`g_DestBlend`) correctly survives
+  either arrival order. All new `d3d8types.h` vocabulary spot-checked
+  against the real SDK, including re-deriving all ten new `D3DERR_*`
+  codes from `0x88760000|code` (2072..2086 - every one matches) and the
+  quirky `D3DFVF_TEXTUREFORMAT` encoding (F2=0/F3=1/F4=2/F1=3, already
+  correct pre-existing) that `dx8fvf.cpp`'s portable
+  `Get_FVF_Vertex_Size` depends on; that function's per-FVF sizes match
+  `D3DXGetFVFVertexSize` for every case including the `LASTBETA_UBYTE4`
+  variants.
+- **The harness genuinely drives what Draft 20 specified** (with the one
+  exception below): real `DX8VertexBufferClass`/`DX8IndexBufferClass`
+  filled through real `WriteLockClass` objects (`main.cpp:201-211`),
+  `Set_Vertex_Buffer`/`Set_Index_Buffer`/`Draw_Triangles`, real
+  `_PresetOpaqueShader`/`_PresetAdditiveShader`, real
+  `VertexMaterialClass` AND the null-material path, real
+  `Set_Transform(WORLD/VIEW)` + a real `D3DXMatrixPerspectiveFovLH`-
+  formula projection round-tripped through `To_Matrix4x4`/
+  `To_D3DMATRIX`, and a `DynamicVBAccessClass`/`DynamicIBAccessClass`
+  draw. Check 5's depth sample point verified inside both quads'
+  screen-space overlap (near y-range [-0.867,-0.357], far
+  [-0.833,-0.343], sample -0.6). No shortcut substitutes for engine
+  code anywhere - `Set_Fixed_Function_MVP` is never called directly.
+- **No scope creep into M4/M5**: `texture_common.cpp` is the planned
+  single `Apply_Null` function; no texture loading, no mesh work, no
+  `dx8renderer`; `CheckDeviceFormat`'s honest answers
+  (`dx8wrapper_gl.cpp:953-959`) report only what Milestone 2 actually
+  implemented. Draft 19's urgent watch item 1 (`uint32`/`sint32` LP64
+  width) was fixed before this milestone started (`6ebd9394d`), as
+  required. CI wiring landed and also fixed the pre-existing gap that
+  the Milestone 2 harness was never in `linux-native.yml`.
+
+**The finding - check 6 does not test what its name says
+(mutation-proven):**
+
+- The harness's dynamic draw is the process's FIRST dynamic-buffer use,
+  so `Allocate_DX8_Dynamic_Buffer` creates the shared buffer fresh and
+  hands out `VertexBufferOffset = 0` (`dx8vertexbuffer.cpp:793-806`);
+  the dynamic index buffer likewise starts at offset 0, and the
+  `WriteLockClass` therefore locks with `D3DLOCK_DISCARD` (the
+  `NOOVERWRITE` branch requires a nonzero offset, i.e. a SECOND dynamic
+  draw - the offsets only advance in the accessors' destructors,
+  `dx8vertexbuffer.cpp:744`). So `SetIndices`' `BaseVertexIndex`
+  (`render_state.index_base_offset + render_state.vba_offset`,
+  `dx8wrapper_draw.cpp:563-565`) is 0 for every draw in the suite - the
+  Milestone 2 harness also only ever calls `SetIndices(ib, 0)`.
+- Mutation A: hard-wire `glDrawElementsBaseVertex`'s basevertex argument
+  to 0 in `dx8wrapper_gl.cpp:903` (i.e. break the base-vertex plumbing
+  completely), rebuild, re-run: **both the Milestone 2 and Milestone 3
+  harnesses still pass, all checks green, exit 0.** The
+  `VertexBufferOffset -> glDrawElementsBaseVertex` path has never been
+  pixel-verified with a nonzero value by anything; Draft 19's
+  endorsement of it was code inspection, and that remains all there is.
+  (File restored bit-identically afterwards; suite re-run green.)
+- Severity: verification gap + overstated commit claim, not a code bug -
+  the plumbing itself (`dx8wrapper_gl.cpp:891-903`) still looks correct
+  by inspection, and the dynamic-buffer machinery (allocation, DISCARD
+  lock, `dynamic_fvf_type` layout, draw) IS genuinely exercised.
+  Suggested fix, cheap and self-contained: draw a second dynamic quad at
+  a distinct location within the same frame - the second accessor pair
+  gets `VertexBufferOffset=4`/`IndexBufferOffset=6` and a `NOOVERWRITE`
+  lock through the untouched real code - and pixel-check both quads.
+  Mutation A then fails check 6b instead of passing. Do this before
+  Milestone 5, whose mesh rendering leans on these offsets constantly.
+
+Not independently verified: the per-step intermediate builds and
+harness re-runs (only the HEAD state is reproducible; same caveat as
+Draft 19), and the Windows *runtime* behavior of the moved draw path
+(no D3D8 execution in this review - the byte-fidelity proof above makes
+regression there structurally impossible short of a compiler bug).
+
+Watch items / nits (no action required this milestone):
+
+1. `Tests/RenderEngineDrawPath/main.cpp:74`'s `Fail()` helper is dead
+   code - every failure path uses `fprintf` + `g_AnyFailure` directly.
+   Cosmetic.
+2. Check 1's expected background is written `(128,128,128)` while check
+   4's comment derives from `(127,127,127)`; llvmpipe actually produces
+   127 and both are inside the +-2 tolerance, but the two comments
+   disagree about the same framebuffer. Cosmetic.
+3. `D3DBLEND_BOTHSRCALPHA`/`BOTHINVSRCALPHA` fall back to `GL_ONE` for
+   the single queried factor; a faithful emulation would set BOTH
+   factors (src=SRCALPHA,dst=INVSRCALPHA / inverse). Unreachable from
+   `ShaderClass`'s preset vocabulary today, correctly documented at the
+   table - revisit only if a real caller ever appears.
+4. The `mapper.cpp` stub's `WWASSERT_PRINT` compiles away in release
+   builds, so a hypothetical future caller would silently no-op rather
+   than fail loudly there - acceptable because the only path to it is
+   provably dead code (above) and Milestone 5 replaces it with a
+   duplicate-symbol-guarded real definition.
+5. Draft 19's other watch items (partial-viewport Y origin, `LockRect`
+   `pRect`, device-recreation staleness for the fixed-function program,
+   check 2/3 sample margins in the M2 harness) remain open and
+   unchanged, still correctly deferred.
