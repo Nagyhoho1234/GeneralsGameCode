@@ -36,6 +36,7 @@
 #include "PortableD3D8/gl_core33.h"
 
 #include <GLFW/glfw3.h>
+#include <cstdlib>
 
 namespace
 {
@@ -145,6 +146,90 @@ HRESULT IDirect3DDevice8::Clear(DWORD Count, CONST D3DRECT* pRects, DWORD Flags,
 HRESULT IDirect3DDevice8::SetViewport(CONST D3DVIEWPORT8* pViewport)
 {
 	glViewport(pViewport->X, pViewport->Y, pViewport->Width, pViewport->Height);
+	return D3D_OK;
+}
+
+namespace
+{
+	// GL-backed IDirect3DVertexBuffer8/IDirect3DIndexBuffer8 (Milestone 2,
+	// Step 2). File-local: only CreateVertexBuffer/CreateIndexBuffer below
+	// ever construct these, and nothing outside this TU needs to name the
+	// concrete type - see the design note in PortableD3D8/d3d8.h.
+	//
+	// Lock/Unlock keep a malloc'd CPU shadow copy as the single source of
+	// truth (never glMapBufferRange), per Draft 18's design decision: it
+	// gives whole-buffer locks (SizeToLock==0), byte-offset region locks,
+	// and reads of previously-written bytes within a lock "for free" -
+	// all legal in D3D, the last one UB under a write-only GL mapping.
+	// D3DLOCK_DISCARD vs D3DLOCK_NOOVERWRITE are both no-ops here beyond
+	// that: with a full shadow copy as ground truth, the orphan-vs-append
+	// distinction is a pure GL-driver performance hint with no effect on
+	// correctness, so this milestone does not need to honor it specially.
+	// Unlock() re-uploads exactly the locked byte range to the GL buffer
+	// via glBufferSubData.
+	template <typename Base, GLenum GLTarget>
+	class GLShadowBuffer8 : public Base
+	{
+	public:
+		GLShadowBuffer8(UINT length, DWORD usage) :
+			m_Length(length),
+			m_ShadowData(static_cast<BYTE*>(malloc(length))),
+			m_GLBuffer(0),
+			m_LockOffset(0),
+			m_LockSize(0)
+		{
+			gl_GenBuffers(1, &m_GLBuffer);
+			gl_BindBuffer(GLTarget, m_GLBuffer);
+			gl_BufferData(GLTarget, length, nullptr, (usage & D3DUSAGE_DYNAMIC) ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW);
+		}
+
+		virtual ~GLShadowBuffer8() override
+		{
+			if (m_GLBuffer) gl_DeleteBuffers(1, &m_GLBuffer);
+			free(m_ShadowData);
+		}
+
+		virtual HRESULT Lock(UINT OffsetToLock, UINT SizeToLock, BYTE** ppbData, DWORD Flags) override
+		{
+			m_LockOffset = OffsetToLock;
+			m_LockSize = (SizeToLock == 0) ? (m_Length - OffsetToLock) : SizeToLock;
+			*ppbData = m_ShadowData + OffsetToLock;
+			return D3D_OK;
+		}
+
+		virtual HRESULT Unlock() override
+		{
+			if (m_LockSize > 0)
+			{
+				gl_BindBuffer(GLTarget, m_GLBuffer);
+				gl_BufferSubData(GLTarget, m_LockOffset, m_LockSize, m_ShadowData + m_LockOffset);
+			}
+			return D3D_OK;
+		}
+
+		GLuint Get_GL_Buffer() const { return m_GLBuffer; }
+
+	private:
+		UINT   m_Length;
+		BYTE*  m_ShadowData;
+		GLuint m_GLBuffer;
+		UINT   m_LockOffset;
+		UINT   m_LockSize;
+	};
+
+	using GLVertexBuffer8 = GLShadowBuffer8<IDirect3DVertexBuffer8, GL_ARRAY_BUFFER>;
+	using GLIndexBuffer8 = GLShadowBuffer8<IDirect3DIndexBuffer8, GL_ELEMENT_ARRAY_BUFFER>;
+}
+
+HRESULT IDirect3DDevice8::CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer8** ppVertexBuffer)
+{
+	*ppVertexBuffer = new GLVertexBuffer8(Length, Usage);
+	return D3D_OK;
+}
+
+HRESULT IDirect3DDevice8::CreateIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DIndexBuffer8** ppIndexBuffer)
+{
+	*ppIndexBuffer = new GLIndexBuffer8(Length, Usage);
 	return D3D_OK;
 }
 

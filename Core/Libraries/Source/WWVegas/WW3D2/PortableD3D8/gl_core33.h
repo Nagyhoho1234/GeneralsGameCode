@@ -57,6 +57,9 @@
 #ifndef GL_STATIC_DRAW
 #define GL_STATIC_DRAW                   0x88E4
 #endif
+#ifndef GL_DYNAMIC_DRAW
+#define GL_DYNAMIC_DRAW                  0x88E8
+#endif
 #ifndef GL_FRAGMENT_SHADER
 #define GL_FRAGMENT_SHADER               0x8B30
 #endif
@@ -110,6 +113,7 @@ typedef void      (APIENTRY* PFNGLDELETEVERTEXARRAYSPROC)(GLsizei, const GLuint*
 typedef void      (APIENTRY* PFNGLGENBUFFERSPROC)(GLsizei, GLuint*);
 typedef void      (APIENTRY* PFNGLBINDBUFFERPROC)(GLenum, GLuint);
 typedef void      (APIENTRY* PFNGLBUFFERDATAPROC)(GLenum, GLsizeiptr, const void*, GLenum);
+typedef void      (APIENTRY* PFNGLBUFFERSUBDATAPROC)(GLenum, GLintptr, GLsizeiptr, const void*);
 typedef void      (APIENTRY* PFNGLDELETEBUFFERSPROC)(GLsizei, const GLuint*);
 typedef void      (APIENTRY* PFNGLVERTEXATTRIBPOINTERPROC)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
 typedef void      (APIENTRY* PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint);
@@ -149,6 +153,7 @@ extern PFNGLDELETEVERTEXARRAYSPROC gl_DeleteVertexArrays;
 extern PFNGLGENBUFFERSPROC gl_GenBuffers;
 extern PFNGLBINDBUFFERPROC gl_BindBuffer;
 extern PFNGLBUFFERDATAPROC gl_BufferData;
+extern PFNGLBUFFERSUBDATAPROC gl_BufferSubData;
 extern PFNGLDELETEBUFFERSPROC gl_DeleteBuffers;
 extern PFNGLVERTEXATTRIBPOINTERPROC gl_VertexAttribPointer;
 extern PFNGLENABLEVERTEXATTRIBARRAYPROC gl_EnableVertexAttribArray;

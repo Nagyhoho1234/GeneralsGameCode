@@ -6,6 +6,7 @@ PFNGLDELETEVERTEXARRAYSPROC gl_DeleteVertexArrays;
 PFNGLGENBUFFERSPROC gl_GenBuffers;
 PFNGLBINDBUFFERPROC gl_BindBuffer;
 PFNGLBUFFERDATAPROC gl_BufferData;
+PFNGLBUFFERSUBDATAPROC gl_BufferSubData;
 PFNGLDELETEBUFFERSPROC gl_DeleteBuffers;
 PFNGLVERTEXATTRIBPOINTERPROC gl_VertexAttribPointer;
 PFNGLENABLEVERTEXATTRIBARRAYPROC gl_EnableVertexAttribArray;
@@ -51,6 +52,7 @@ bool gl_core33_load(void* (*get_proc_address)(const char*))
     LOAD("glGenBuffers", PFNGLGENBUFFERSPROC, gl_GenBuffers);
     LOAD("glBindBuffer", PFNGLBINDBUFFERPROC, gl_BindBuffer);
     LOAD("glBufferData", PFNGLBUFFERDATAPROC, gl_BufferData);
+    LOAD("glBufferSubData", PFNGLBUFFERSUBDATAPROC, gl_BufferSubData);
     LOAD("glDeleteBuffers", PFNGLDELETEBUFFERSPROC, gl_DeleteBuffers);
     LOAD("glVertexAttribPointer", PFNGLVERTEXATTRIBPOINTERPROC, gl_VertexAttribPointer);
     LOAD("glEnableVertexAttribArray", PFNGLENABLEVERTEXATTRIBARRAYPROC, gl_EnableVertexAttribArray);

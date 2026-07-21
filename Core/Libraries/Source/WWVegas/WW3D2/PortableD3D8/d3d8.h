@@ -35,7 +35,12 @@
 // SetViewport, GetRenderTarget, GetDepthStencilSurface, and
 // IDirect3D8::CreateDevice) are declared only here; their real GL-backed
 // bodies are defined in dx8wrapper_gl.cpp (kept out of this header so it
-// doesn't have to include GLFW/GL).
+// doesn't have to include GLFW/GL). Milestone 2 adds CreateVertexBuffer/
+// CreateIndexBuffer to that list (declared only here, real bodies in
+// dx8wrapper_gl.cpp) - the concrete GL-backed IDirect3DVertexBuffer8/
+// IDirect3DIndexBuffer8 subclasses they construct are file-local to
+// dx8wrapper_gl.cpp and never named here, matching this header's role as
+// a pure vocabulary/vtable-shape stand-in.
 #pragma once
 
 #ifndef PORTABLE_D3D8_H
@@ -195,8 +200,8 @@ public:
 	virtual HRESULT CreateTexture(UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture8** ppTexture) { *ppTexture = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT CreateVolumeTexture(UINT Width, UINT Height, UINT Depth, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DVolumeTexture8** ppVolumeTexture) { *ppVolumeTexture = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT CreateCubeTexture(UINT EdgeLength, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DCubeTexture8** ppCubeTexture) { *ppCubeTexture = nullptr; return D3DERR_NOTAVAILABLE; }
-	virtual HRESULT CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer8** ppVertexBuffer) { *ppVertexBuffer = nullptr; return D3DERR_NOTAVAILABLE; }
-	virtual HRESULT CreateIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DIndexBuffer8** ppIndexBuffer) { *ppIndexBuffer = nullptr; return D3DERR_NOTAVAILABLE; }
+	virtual HRESULT CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer8** ppVertexBuffer);
+	virtual HRESULT CreateIndexBuffer(UINT Length, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DIndexBuffer8** ppIndexBuffer);
 	virtual HRESULT CreateRenderTarget(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, BOOL Lockable, IDirect3DSurface8** ppSurface) { *ppSurface = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT CreateDepthStencilSurface(UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, IDirect3DSurface8** ppSurface) { *ppSurface = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT CreateImageSurface(UINT Width, UINT Height, D3DFORMAT Format, IDirect3DSurface8** ppSurface) { *ppSurface = nullptr; return D3DERR_NOTAVAILABLE; }
