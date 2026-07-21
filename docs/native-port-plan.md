@@ -1849,10 +1849,111 @@ shared header.
 
 **Explicit non-goals, still deferred** (unchanged from the Milestone 1
 plan, not silently expanded): mesh rendering (`mesh.cpp`/
-`meshgeometry.cpp`/`hlod.cpp`), the other still-duplicated WW3D2 files
-(`render2d.cpp`/`scene.cpp`/`animobj.cpp`/`motchan.cpp`/`dazzle.cpp`),
-texture loading, the `shader.cpp`/`mapper.cpp` GLSL pipeline,
-`W3DDisplay.cpp`/`Win32GameEngine`/`WinMain.cpp` (Phase 4 windowing),
-`DX8WebBrowser`/COM-ATL (Phase 7), `DX8Caps`/`Compute_Caps`. Each remains a
-natural follow-up milestone within Phase 5(a) or a later phase, not part
-of this one.
+`meshgeometry.cpp`/`hlod.cpp`), texture loading, the `shader.cpp`/
+`mapper.cpp` GLSL pipeline, `W3DDisplay.cpp`/`Win32GameEngine`/
+`WinMain.cpp` (Phase 4 windowing), `DX8WebBrowser`/COM-ATL (Phase 7),
+`DX8Caps`/`Compute_Caps`. Each remains a natural follow-up milestone
+within Phase 5(a) or a later phase, not part of this one.
+
+## Draft 17: unified render2d/motchan/scene/animobj/dazzle into Core/
+(commit `eacd89cb2`), continuing the same "diff before unify" work, then
+scoped Milestone 2 (commit at time of writing: `eacd89cb2`), working
+unattended per standing explicit user request ("use multiple agents full
+throttle").
+
+Following Milestone 1's closure, dispatched three parallel research
+agents (per the "use multiple agents full throttle" instruction) to scope
+the next unify-before-porting candidates and the next rendering
+milestone:
+
+1. Diff `mesh.h`/`.cpp`, `meshgeometry.h`/`.cpp`, `hlod.cpp` between
+   `Generals/`/`GeneralsMD/`.
+2. Diff `render2d.cpp`/`.h`, `scene.cpp`, `animobj.cpp`, `motchan.cpp`/
+   `.h`, `dazzle.cpp`/`.h` between the same two trees.
+3. Catalog exactly which `DX8Wrapper`/`IDirect3DDevice8` methods a
+   hypothetical "draw one textured triangle" Milestone 2 would need real
+   GL bodies for, given what mesh/texture/buffer code actually calls.
+
+**Findings 1 & 2 (both agents independently confirmed, then manually
+re-verified against the real diffs before acting)**: every single file
+pair across both sets resolves to "GeneralsMD wins, no Generals-only
+logic worth preserving" - GeneralsMD is consistently the later, more-
+refined revision, carrying real bugfixes: `MeshGeometryClass::operator=`
+previously shallow-shared a `CullTree` between mesh copies via
+`REF_PTR_SET`, corrupting the tree's back-pointer for whichever mesh last
+touched it (fixed to deep-clone); a raycast bug where `SurfaceType` got
+overwritten by every subsequently-tested triangle regardless of whether
+it actually hit; stale `CullTree` bounds after `Scale()`; an out-of-bounds
+bone-index guard in `hlod.cpp`'s bone-attach path; `motchan.cpp`'s
+`Load_W3D` over-read trailing garbage bytes a buggy W3D exporter used to
+write (fixed to derive size from `(LastFrame-FirstFrame+1)*VectorLen`);
+`animobj.cpp`'s `Get_Bone_Transform` returning the whole-object transform
+instead of the actual bone transform for `NONE`/`BASE_POSE` motion modes;
+and `dazzle.cpp`'s `WWMath::Clamp(dazzle_intensity)` discarding `Clamp`'s
+return value (`Clamp` doesn't mutate in place - a genuine "dazzle
+intensity was never actually clamped" bug) plus a dazzle refcounting leak
+in `Set_Layer`/`Clear_Visible_List` (missing `Add_Ref`/`Release_Ref`).
+
+**Acted on finding 2 immediately**: unified `render2d.cpp`/`.h`,
+`motchan.cpp`/`.h`, `scene.cpp`, `animobj.cpp`, `dazzle.cpp`/`.h` into
+`Core/`, taking GeneralsMD's version for all five pairs after manually
+re-diffing each one (not just trusting the research agents' summaries -
+this port's established "verify claims against actual code" discipline).
+Dropped two unused `dazzle.h` INI fields (`halo_size_pow`/`halo_area`)
+after confirming zero other callers repo-wide. One knock-on breakage
+found during Windows verification: Generals's own (still per-tree, not
+yet unified) `hrawanim.cpp` directly accessed
+`MotionChannelClass::PivotIdx` via a `friend class HRawAnimClass;`
+declaration that GeneralsMD's `motchan.h` (now the Core version) had
+already removed in favor of a public `Set_Pivot()` accessor -
+GeneralsMD's own `hrawanim.cpp` had made this exact same fix already;
+applied it identically to Generals's copy. Verified: `g_ww3d2`/`z_ww3d2`/
+`g_gameenginedevice`/`z_gameenginedevice` all build and link cleanly on
+real MSVC.
+
+**Deliberately deferred finding 1** (`mesh.cpp`/`meshgeometry.cpp`/
+`hlod.cpp`): dispatched a fourth research agent specifically to resolve
+whether `meshgeometry.h`'s `TriIndex` typedef choice (`Vector3i16`, 16-bit,
+GeneralsMD's active choice vs `Vector3i`, 32-bit, Generals's) is safe to
+standardize on for both games - this is a real in-memory triangle-index
+width decision (max 65535 unique vertices per mesh under 16-bit), not a
+style pick, and unifying meshgeometry.h with GeneralsMD's typedef would
+force it onto Generals too. **Result: genuinely unresolved, not safe to
+assume.** The on-disk W3D format itself imposes no 16-bit cap
+(`W3dTriStruct::Vindex[3]` is `uint32[3]`), no vertex-count limit exists
+anywhere in the exporter (`Core/Tools/WW3D/max2w3d`) or `MeshBuilderClass`,
+and the load path (`MeshGeometryClass::read_triangles()`) silently
+narrows/wraps with no assert if a triangle index exceeds 65535 - real
+`.w3d` game assets aren't present in this source repo to audit
+empirically. Left unmerged as its own follow-up requiring either an
+offline audit of real Generals assets' actual vertex counts, or an
+explicit `WWASSERT(VertexCount <= 65535)` added to the load path first so
+any violation fails loudly instead of corrupting geometry silently.
+
+**Finding 3 (Milestone 2 scoping)**: realized "draw one textured triangle"
+does *not* require unifying/porting `mesh.cpp`/`meshgeometry.cpp`/
+`hlod.cpp` at all - a synthetic hardcoded triangle exercised purely
+through `DX8Wrapper`'s buffer/texture/draw-call API (matching
+`native-port-spike/`'s own approach) is sufficient to prove the plumbing,
+deferring real W3D mesh loading (and its `TriIndex` risk) to a later
+milestone. Cataloged the ranked, currently-stub `DX8Wrapper`/
+`IDirect3DDevice8` methods Milestone 2 will need real GL bodies for:
+`CreateVertexBuffer`+`IDirect3DVertexBuffer8::Lock`/`Unlock` (real GL VBO
++ Lock/Unlock semantics), `CreateIndexBuffer`+`IDirect3DIndexBuffer8::Lock`/
+`Unlock` (GL EBO, same pattern), `SetStreamSource`/`SetIndices` (trivial
+state tracking once the above exist), `DrawIndexedPrimitive` (the
+centerpiece - needs an FVF-to-`glVertexAttribPointer` translation layer
+that doesn't exist yet), `SetVertexShader` (trivial - just stashes the FVF
+code, real programmable vertex shaders are out of scope), `SetTransform`
+(trivial state tracking now, but the values must eventually feed a small
+always-on GLSL program emulating the fixed-function transform pipeline,
+since core GL 3.3 has none), `CreateTexture`+
+`IDirect3DTexture8::LockRect`/`UnlockRect`/`GetSurfaceLevel` (real GL
+texture object + format translation), `SetTexture` (texture-unit binding),
+and a small subset of `SetRenderState`/`SetTextureStageState` (just
+ZENABLE/CULLMODE/ALPHABLENDENABLE for a first pass - full texture-stage
+combiner emulation is a bigger GLSL-uniform-driven undertaking, deferred).
+Confirmed out of scope for Milestone 2: shader constants (real
+programmable-shader path), lighting, `CreateAdditionalSwapChain`, and the
+render-target/surface family (screenshot/backbuffer capture, not
+rendering).
