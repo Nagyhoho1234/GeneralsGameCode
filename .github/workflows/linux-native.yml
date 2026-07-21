@@ -35,7 +35,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build cmake g++ \
-            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev mesa-utils
+            libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev mesa-utils xvfb
 
       - name: Show toolchain versions
         run: |
@@ -67,7 +67,12 @@ jobs:
       - name: Run RenderDeviceInitTest (headless Mesa software rendering)
         id: run-renderdeviceinit
         if: steps.build-renderdeviceinit.outcome == 'success'
-        run: LIBGL_ALWAYS_SOFTWARE=1 ./build/linux-x64/Tests/RenderDeviceInit/RenderDeviceInitTest 2>&1 | tee -a configure-log.txt
+        # GLFW's X11 backend connects to a display at glfwInit() time even
+        # for a hidden window - bare GitHub-hosted runners have no X server
+        # at all (unlike WSL2, which has one via WSLg), so xvfb-run supplies
+        # a virtual one. Rendering itself still goes to an offscreen FBO via
+        # Mesa software rendering, never to a visible window.
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./build/linux-x64/Tests/RenderDeviceInit/RenderDeviceInitTest 2>&1 | tee -a configure-log.txt
         continue-on-error: true
 
       - name: Upload configure/build log
