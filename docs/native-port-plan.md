@@ -1677,3 +1677,182 @@ category.
   weaker signal than it looks for this specific check, appropriate for
   an advisory workflow but worth remembering if this ever gets
   promoted to a required merge gate.
+
+## Draft 16: Phase 5(a) Milestone 1 achieved - real GL device init +
+clear-to-color, verified on real CI (commits `008ffceca` through
+`dbbbca75a`), working unattended per explicit user request.
+
+Executed the approved Phase 5(a) Milestone 1 plan (device init + basic
+clear-to-color on Linux) step by step, verifying Windows unregressed and
+re-running real compiles after every change rather than reasoning about
+dependencies by hand:
+
+1. **Unified `ww3d.cpp`/`camera.cpp` into `Core/`** (prerequisite for
+   everything else - the GL backend needed to be written against one file,
+   not two soon-to-merge copies). Diffed both file pairs and found two
+   genuine non-cosmetic differences before merging (`SHD_FLUSH` - currently
+   a no-op, confirmed no `USE_WWSHADE`-defining `.cpp` exists anywhere; and
+   GeneralsMD's `Set_Projection_Transform_With_Z_Bias` - a real
+   already-shared-in-Core improvement over Generals' uncorrected version).
+   Verified `g_ww3d2`/`z_ww3d2` build unregressed on real MSVC before
+   proceeding.
+
+2. **Added `PortableD3D8/{d3d8.h,d3d8types.h,d3d8caps.h}`**: non-COM plain
+   C++ stand-ins for the real D3D8 SDK headers, non-Windows only. Enum
+   values/struct layouts copied verbatim from the real min-dx8-sdk headers
+   already fetched locally via `cmake/dx8.cmake`, for numeric fidelity with
+   the shared `dx8wrapper.h` state-cache tables. New
+   `Dependencies/Utility/Utility/win32_compat.h` supplies generic Win32
+   basic types (`HWND`, `DWORD`, `RECT`, `GUID`, `HRESULT`, `HKEY`,
+   `BITMAPFILEHEADER`/`BITMAPINFOHEADER`, ...) that had simply never existed
+   on non-Windows before - included from `WWLib/always.h` (same
+   umbrella-header convention as `Utility/compat.h`) so they're available
+   everywhere without per-file includes. Guarded against `WWLib/bittype.h`'s
+   own pre-existing `DWORD`/`ULONG` typedefs (differently-sized on 64-bit
+   Linux) with matching `#ifndef`s in both headers, whichever loads first
+   wins. Building the real target chain (not just isolated syntax checks)
+   surfaced and fixed three more portability gaps this exposed:
+   `matrix3d.h`/`.cpp` and `matrix4.h`/`.cpp`'s `To_D3DMATRIX`/`To_Matrix4x4`
+   were needlessly gated behind `_WIN32` even though they're plain field
+   copies with no D3DX dependency (relaxed to every platform;
+   `To_D3DXMATRIX`, which genuinely needs the real D3DX math library, stays
+   Windows-only); `Core/Libraries/Source/WWVegas/CMakeLists.txt` needed
+   `PortableD3D8/` added to `core_wwcommon`/`core_wwvegas`'s non-Windows
+   include path. Verified: `core_wwmath`/`core_wwlib`/`core_wwdebug` build
+   clean on `linux-x64`, and the full `g_gameenginedevice`/
+   `z_gameenginedevice` build still produces exactly the established
+   34-error baseline (zero regression); `g_ww3d2`/`z_ww3d2`/
+   `g_gameenginedevice`/`z_gameenginedevice` unregressed on real MSVC.
+
+3. **Renamed `dx8wrapper.cpp` to `dx8wrapper_d3d8.cpp`** (mechanical - its
+   entire content was already Windows-only D3D8 code). Verified identical
+   on real MSVC.
+
+4. **Wrote `dx8wrapper_gl.cpp`**: real GL-backed bodies for
+   `IDirect3DDevice8`/`IDirect3D8`'s constructor/destructor/`Release`/
+   `TestCooperativeLevel`/`GetDisplayMode`/`Reset`/`Present`/
+   `GetRenderTarget`/`GetDepthStencilSurface`/`BeginScene`/`EndScene`/
+   `Clear`/`SetViewport`/`GetAdapterIdentifier`/`EnumAdapterModes`/
+   `GetAdapterDisplayMode`/`GetDeviceCaps`/`CreateDevice`, plus
+   `DX8Wrapper::Init`/`Shutdown`/`Enumerate_Devices`/`Set_Render_Device`/
+   `Create_Device`/`Release_Device`/`Begin_Scene`/`End_Scene`/`Clear`/
+   `Reset_Statistics`/`Begin_Statistics`/`End_Statistics`. Reused the Phase
+   3 spike's `gl_core33.h`/`.cpp` GL 3.3 core loader and GLFW hidden-window
+   + offscreen-FBO pattern verbatim. Structurally honors both traps the
+   Milestone 1 plan called out: `Create_Device()` never calls
+   `Do_Onetime_Device_Dependent_Inits()` (Trap 1 - texture loading/
+   background thread, out of scope), and `Begin_Scene()`/`End_Scene()`
+   never reference `DX8WebBrowser` (Trap 2, sidestepped by construction,
+   not patched). Writing this file surfaced that `DX8Wrapper`'s static
+   member variable *definitions* had been bundled into the Windows-only
+   file all along - extracted into new `dx8wrapper_common.cpp` (compiled on
+   every platform) since `dx8wrapper_gl.cpp`, a separate mutually-exclusive
+   translation unit, needed them too.
+
+5. **CMake wiring**: new `cmake/opengl.cmake` (mirrors `cmake/dx8.cmake`'s
+   FetchContent pattern) pulls in GLFW 3.4 (X11 only - Wayland needs
+   `wayland-scanner`, not reliably present on CI/WSL2 images, and this
+   milestone's harness runs headless anyway) plus `find_package(OpenGL)`,
+   non-Windows only. `WW3D2/CMakeLists.txt` carves a `WW3D2_SRC_PORTABLE`
+   list (`camera.cpp`, `ww3d.cpp`, `formconv.cpp`, `dx8wrapper.h`,
+   `dx8wrapper_common.cpp`, plus `dx8wrapper_d3d8.cpp` on Windows /
+   `dx8wrapper_gl.cpp` + `PortableD3D8/*` elsewhere) out of the blanket
+   `WIN32`-gated source list. Building the real `linux-x64` target chain
+   surfaced three more gaps in files `ww3d.cpp` transitively pulls in:
+   `framgrab.h`'s `FrameGrabClass` (AVI movie capture via Video for
+   Windows) had no non-Windows path at all - gated the real class behind
+   `_WIN32`, added a portable stand-in exposing the same 5 methods
+   `WW3D::Movie` actually calls as no-ops (movie capture has no portable
+   equivalent yet - same "same public surface, empty body" pattern used
+   throughout this port for not-yet-ported Windows-only features);
+   `D3DFILLMODE` was missing from `PortableD3D8/d3d8types.h` (plain
+   omission, added with the real SDK's values); `registry.h`'s `HKEY` and
+   `WW3D::Make_Screen_Shot`'s `BITMAPFILEHEADER`/`BITMAPINFOHEADER`/
+   `BI_RGB` (pure file-format structs, no GDI API calls - portable once the
+   layout exists) needed the generic Win32 types added to
+   `win32_compat.h`. Verified: real `linux-x64` build of
+   `z_gameenginedevice` compiles `ww3d.cpp`/`camera.cpp`/
+   `dx8wrapper_gl.cpp`/`dx8wrapper_common.cpp` successfully with zero new
+   errors (still exactly 17/target); Windows unregressed on real MSVC.
+
+6. **`Tests/RenderDeviceInit/` harness**: a standalone executable
+   (`RTS_BUILD_TESTS AND NOT WIN32`), following the Phase 3 spike's
+   verification bar (offscreen FBO + `glReadPixels` + per-pixel assertion,
+   not just "did it crash"). Drives `DX8Wrapper::Init` -> `Set_Render_Device`
+   -> `Create_Device` -> `Begin_Scene`/`Clear`/`End_Scene` **directly**
+   rather than through `WW3D::` - `ww3d.cpp` is one monolithic translation
+   unit whose *other* functions reference dozens of still-per-tree/
+   Windows-only WW3D2 subsystems (mesh rendering, W3D memory pools,
+   texture filtering, box render objects, ...), and every symbol
+   referenced anywhere in that object file must resolve at link time
+   regardless of which functions are actually called - discovered the hard
+   way via a long tail of undefined-reference link errors before switching
+   to calling `DX8Wrapper::` directly. Added a scoped `friend int main();`
+   to `DX8Wrapper` (next to the existing `WW3D`/`DX8IndexBufferClass`/
+   `DX8VertexBufferClass` friends) since `Set_Render_Device`/
+   `Create_Device` are `protected`, `WW3D`-only by original design.
+
+   Building this standalone target surfaced two more real, pre-existing
+   CMake gaps, invisible until something this small tried to fully link:
+   `core_wwsaveload`'s `definition.cpp` uses WWLib's `ChunkSaveClass`/
+   `ChunkLoadClass` (`chunkio.cpp`) but never declared a link dependency on
+   `core_wwlib` at all - harmless as long as every previous consumer
+   happened to link `core_wwlib` in an order GNU ld's single left-to-right
+   archive pass tolerated. Fixed at the source (`WWSaveLoad/CMakeLists.txt`,
+   `PUBLIC` so it propagates) rather than worked around per-consumer, per
+   this port's established preference for root-cause fixes.
+   `core_wwcommon`'s unconditional `d3d8lib`/`milesstub` linkage (only
+   exist on the Windows 32-bit path) was gated behind `WIN32` - same class
+   of latent gap. Also found and fixed one plain omission of my own:
+   `IDirect3D8::GetDeviceCaps` was declared in `PortableD3D8/d3d8.h` but
+   never defined in `dx8wrapper_gl.cpp` - only surfaced as a vtable-emission
+   link error once something instantiated `IDirect3D8` outside the larger
+   `z_gameenginedevice` binary.
+
+   **Result, verified locally under WSL2**
+   (`LIBGL_ALWAYS_SOFTWARE=1`, headless Mesa):
+   `RENDERDEVICEINIT_OK: device init + GL clear-to-color verified (256x256)`.
+   Every pixel of the offscreen framebuffer matched the requested clear
+   color after a real `DX8Wrapper::Init`/`Set_Render_Device`/
+   `Create_Device`/`Begin_Scene`/`Clear`/`End_Scene`/`Shutdown` cycle.
+   Windows (`g_ww3d2`/`z_ww3d2`/`g_gameenginedevice`/`z_gameenginedevice`,
+   real MSVC) confirmed bit-for-bit unregressed by every change.
+
+7. **Wired into `linux-native.yml` CI**: build+run steps for
+   `RenderDeviceInitTest` added after the existing build-attempt steps,
+   same advisory posture (`continue-on-error: true` throughout, manually
+   triggered only). New runner dependencies: `libgl1-mesa-dev` + GLFW's X11
+   dev headers + `xvfb`. **First real CI run built successfully but failed
+   at runtime** (`RENDERDEVICEINIT_FAIL: DX8Wrapper::Init failed`) - GLFW's
+   X11 backend connects to a display at `glfwInit()` time even for a
+   hidden window, and bare GitHub-hosted `ubuntu-latest` runners have no X
+   server at all, unlike WSL2 (which has one via WSLg by default, masking
+   this locally). Fixed by running under `xvfb-run` to supply a virtual
+   display; actual rendering still goes through the offscreen FBO via Mesa
+   software rendering, never a visible window. **Second real CI run
+   passed completely**, confirming the exact same
+   `RENDERDEVICEINIT_OK: device init + GL clear-to-color verified (256x256)`
+   result on real GitHub Actions infrastructure, not just WSL2 - consistent
+   with this port's established practice of not trusting a fix until real
+   CI (not just local testing) confirms it.
+
+**Phase 5(a) Milestone 1 is achieved**: a real OpenGL 3.3 core-profile
+device backend exists behind `DX8Wrapper`'s unchanged D3D8-vocabulary API,
+is created through the exact same entry points
+(`Init`/`Set_Render_Device`/`Create_Device`/`Begin_Scene`/`Clear`/
+`End_Scene`) the Windows/D3D8 path uses, and can be cleared to an arbitrary
+color with the result verified pixel-by-pixel - on both WSL2 and real
+GitHub Actions CI. `dx8wrapper.h` itself remains byte-identical on every
+platform, exactly as the plan's design called for: the platform split
+lives at the D3D8 vocabulary/vtable seam (`PortableD3D8/`), not around the
+shared header.
+
+**Explicit non-goals, still deferred** (unchanged from the Milestone 1
+plan, not silently expanded): mesh rendering (`mesh.cpp`/
+`meshgeometry.cpp`/`hlod.cpp`), the other still-duplicated WW3D2 files
+(`render2d.cpp`/`scene.cpp`/`animobj.cpp`/`motchan.cpp`/`dazzle.cpp`),
+texture loading, the `shader.cpp`/`mapper.cpp` GLSL pipeline,
+`W3DDisplay.cpp`/`Win32GameEngine`/`WinMain.cpp` (Phase 4 windowing),
+`DX8WebBrowser`/COM-ATL (Phase 7), `DX8Caps`/`Compute_Caps`. Each remains a
+natural follow-up milestone within Phase 5(a) or a later phase, not part
+of this one.
