@@ -1863,9 +1863,14 @@ WW3DErrorType MeshGeometryClass::read_triangles(ChunkLoadClass & cload)
 		}
 
 		// set the vertex indices
-		vi[i].I = tri.Vindex[0];
-		vi[i].J = tri.Vindex[1];
-		vi[i].K = tri.Vindex[2];
+		// TheSuperHackers @info native port: TriIndex is Vector3i16 (16-bit) in this
+		// tree - the W3D file format itself stores these as uint32 with no cap, so
+		// assert loudly on truncation instead of silently corrupting geometry from
+		// a mesh with more than 65535 vertices.
+		WWASSERT(tri.Vindex[0] <= 0xFFFF && tri.Vindex[1] <= 0xFFFF && tri.Vindex[2] <= 0xFFFF);
+		vi[i].I = (unsigned short)tri.Vindex[0];
+		vi[i].J = (unsigned short)tri.Vindex[1];
+		vi[i].K = (unsigned short)tri.Vindex[2];
 
 		// set the normal
 		peq[i].X = tri.Normal.X;
