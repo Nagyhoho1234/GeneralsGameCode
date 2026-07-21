@@ -267,6 +267,7 @@ else()
         PortableD3D8/d3d8caps.h
         PortableD3D8/gl_core33.h
         PortableD3D8/gl_core33.cpp
+        PortableD3D8/gl_fixed_function.h
     )
 endif()
 

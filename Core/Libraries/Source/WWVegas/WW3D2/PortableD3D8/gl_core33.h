@@ -120,6 +120,8 @@ typedef void      (APIENTRY* PFNGLBUFFERSUBDATAPROC)(GLenum, GLintptr, GLsizeipt
 typedef void      (APIENTRY* PFNGLDELETEBUFFERSPROC)(GLsizei, const GLuint*);
 typedef void      (APIENTRY* PFNGLVERTEXATTRIBPOINTERPROC)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
 typedef void      (APIENTRY* PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint);
+typedef void      (APIENTRY* PFNGLDISABLEVERTEXATTRIBARRAYPROC)(GLuint);
+typedef void      (APIENTRY* PFNGLDRAWELEMENTSBASEVERTEXPROC)(GLenum, GLsizei, GLenum, const void*, GLint);
 typedef GLuint    (APIENTRY* PFNGLCREATESHADERPROC)(GLenum);
 typedef void      (APIENTRY* PFNGLSHADERSOURCEPROC)(GLuint, GLsizei, const GLchar* const*, const GLint*);
 typedef void      (APIENTRY* PFNGLCOMPILESHADERPROC)(GLuint);
@@ -160,6 +162,8 @@ extern PFNGLBUFFERSUBDATAPROC gl_BufferSubData;
 extern PFNGLDELETEBUFFERSPROC gl_DeleteBuffers;
 extern PFNGLVERTEXATTRIBPOINTERPROC gl_VertexAttribPointer;
 extern PFNGLENABLEVERTEXATTRIBARRAYPROC gl_EnableVertexAttribArray;
+extern PFNGLDISABLEVERTEXATTRIBARRAYPROC gl_DisableVertexAttribArray;
+extern PFNGLDRAWELEMENTSBASEVERTEXPROC gl_DrawElementsBaseVertex;
 extern PFNGLCREATESHADERPROC gl_CreateShader;
 extern PFNGLSHADERSOURCEPROC gl_ShaderSource;
 extern PFNGLCOMPILESHADERPROC gl_CompileShader;

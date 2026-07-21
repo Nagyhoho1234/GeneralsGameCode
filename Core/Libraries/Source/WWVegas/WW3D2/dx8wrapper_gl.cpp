@@ -34,9 +34,11 @@
 // - Trap 2: Begin_Scene()/End_Scene() below never reference DX8WebBrowser.
 #include "dx8wrapper.h"
 #include "PortableD3D8/gl_core33.h"
+#include "PortableD3D8/gl_fixed_function.h"
 
 #include <GLFW/glfw3.h>
 #include <cstdlib>
+#include <cstdint>
 
 namespace
 {
@@ -48,6 +50,20 @@ namespace
 	int g_FBHeight = 0;
 
 	DX8FrameStatistics g_LastFrameStatistics;
+
+	// Draw-call plumbing device state (Milestone 2, Step 6). Fixed-function
+	// pipeline only (programmable vertex/pixel shaders are a non-goal), a
+	// single vertex stream (multiple streams are a non-goal), and a single
+	// persistent VAO reconfigured per draw call to match whatever FVF is
+	// current - simpler than a VAO-per-FVF cache and sufficient for this
+	// milestone's one-draw-call test harness.
+	DWORD g_CurrentFVF = 0;
+	IDirect3DVertexBuffer8* g_CurrentVertexBuffer = nullptr;
+	UINT g_CurrentVertexStride = 0;
+	IDirect3DIndexBuffer8* g_CurrentIndexBuffer = nullptr;
+	UINT g_CurrentBaseVertexIndex = 0;
+	IDirect3DBaseTexture8* g_CurrentTexture0 = nullptr;
+	GLuint g_VAO = 0;
 
 	void Destroy_Framebuffer()
 	{
@@ -403,8 +419,16 @@ namespace
 		return shader;
 	}
 
-	GLuint Build_Fixed_Function_Program()
+	struct FixedFunctionProgram
 	{
+		GLuint Program;
+		GLint LocMVP;
+	};
+
+	FixedFunctionProgram Build_Fixed_Function_Program()
+	{
+		FixedFunctionProgram result{ 0, -1 };
+
 		const char* vs_src =
 			"#version 330 core\n"
 			"layout(location=0) in vec3 aPosition;\n"
@@ -430,9 +454,9 @@ namespace
 			"}\n";
 
 		GLuint vs = Compile_Shader(GL_VERTEX_SHADER, vs_src);
-		if (!vs) return 0;
+		if (!vs) return result;
 		GLuint fs = Compile_Shader(GL_FRAGMENT_SHADER, fs_src);
-		if (!fs) { gl_DeleteShader(vs); return 0; }
+		if (!fs) { gl_DeleteShader(vs); return result; }
 
 		GLuint program = gl_CreateProgram();
 		gl_AttachShader(program, vs);
@@ -451,42 +475,72 @@ namespace
 			gl_GetProgramInfoLog(program, sizeof(log), nullptr, log);
 			WWDEBUG_SAY(("GL fixed-function program link failed: %s", log));
 			gl_DeleteProgram(program);
-			return 0;
+			return result;
 		}
 
-		return program;
+		result.Program = program;
+		result.LocMVP = gl_GetUniformLocation(program, "uMVP");
+
+		// uTex is permanently bound to texture unit 0 (the only stage this
+		// shader reads) - set once here rather than every draw call, since a
+		// sampler uniform's texture-unit assignment does not need per-draw
+		// updates.
+		gl_UseProgram(program);
+		gl_Uniform1i(gl_GetUniformLocation(program, "uTex"), 0);
+
+		return result;
 	}
 
 	// Lazily builds and caches the one program instance this milestone ever
 	// uses - never rebuilt, never a per-material variant (general shader-
 	// program management is out of scope, see Draft 18's non-goals).
-	// Returns 0 if compilation/linking ever failed (logged above).
-	GLuint Get_Fixed_Function_Program()
+	// Program==0 if compilation/linking ever failed (logged above).
+	const FixedFunctionProgram& Get_Fixed_Function_Program()
 	{
-		static GLuint s_Program = Build_Fixed_Function_Program();
+		static FixedFunctionProgram s_Program = Build_Fixed_Function_Program();
 		return s_Program;
 	}
 
-	// Standard D3D-clip-space-to-GL-clip-space row remap, validated
-	// numerically in native-port-spike/main.cpp's
-	// validate_clip_space_conversion(): GL wants z' in [-w, w] where D3D
-	// produces z in [0, w], i.e. z_gl = 2*z_d3d - w_d3d as a matrix
-	// operation: row_z_gl = 2*row_z_d3d - row_w_d3d. Both matrices are
-	// plain column-major float[16] (GL uniform layout), not D3DMATRIX -
-	// callers (Step 7's test harness) build their own hardcoded D3D-style
-	// projection in that layout and convert it here; this milestone does
-	// not wire DX8Wrapper::SetTransform/D3DTS_PROJECTION (still a stub,
-	// unchanged - out of scope, see Draft 18's non-goals).
-	void Convert_D3D_Projection_To_GL(const float d3d[16], float out_gl[16])
+}
+
+// Standard D3D-clip-space-to-GL-clip-space row remap, validated numerically
+// in native-port-spike/main.cpp's validate_clip_space_conversion(): GL wants
+// z' in [-w, w] where D3D produces z in [0, w], i.e. z_gl = 2*z_d3d - w_d3d
+// as a matrix operation: row_z_gl = 2*row_z_d3d - row_w_d3d. Both matrices
+// are plain column-major float[16] (GL uniform layout), not D3DMATRIX -
+// external linkage (declared in PortableD3D8/gl_fixed_function.h) because
+// Step 7's test harness (a separate CMake target, Tests/
+// RenderTexturedTriangle) builds its own hardcoded D3D-style projection in
+// that layout and needs to convert it here; this milestone does not wire
+// DX8Wrapper::SetTransform/D3DTS_PROJECTION (still a stub, unchanged - out
+// of scope, see Draft 18's non-goals).
+void Convert_D3D_Projection_To_GL(const float d3d[16], float out_gl[16])
+{
+	for (int col = 0; col < 4; ++col)
 	{
-		for (int col = 0; col < 4; ++col)
-		{
-			float z_row = d3d[col * 4 + 2];
-			float w_row = d3d[col * 4 + 3];
-			for (int row = 0; row < 4; ++row) out_gl[col * 4 + row] = d3d[col * 4 + row];
-			out_gl[col * 4 + 2] = 2.0f * z_row - w_row;
-		}
+		float z_row = d3d[col * 4 + 2];
+		float w_row = d3d[col * 4 + 3];
+		for (int row = 0; row < 4; ++row) out_gl[col * 4 + row] = d3d[col * 4 + row];
+		out_gl[col * 4 + 2] = 2.0f * z_row - w_row;
 	}
+}
+
+// External entry point (same header) letting Step 7's test harness set the
+// fixed-function program's MVP uniform directly, sidestepping the row-
+// major/row-vector (D3D) vs column-major/column-vector (GL) matrix-
+// convention conversion a real DX8Wrapper::SetTransform(D3DTS_WORLD/VIEW/
+// PROJECTION, ...) implementation would need to handle generically - out of
+// scope for this milestone's one hardcoded triangle (see Draft 18's
+// non-goals; SetTransform itself stays the existing trivial stub).
+// mvp_gl must already be in GL column-major layout, e.g. composed from
+// Convert_D3D_Projection_To_GL's output the same way native-port-spike/
+// main.cpp's Mat4 helpers compose projection*view*model.
+void Set_Fixed_Function_MVP(const float mvp_gl[16])
+{
+	const FixedFunctionProgram& ffp = Get_Fixed_Function_Program();
+	if (!ffp.Program) return;
+	gl_UseProgram(ffp.Program);
+	gl_UniformMatrix4fv(ffp.LocMVP, 1, GL_FALSE, mvp_gl);
 }
 
 HRESULT IDirect3DDevice8::CreateVertexBuffer(UINT Length, DWORD Usage, DWORD FVF, D3DPOOL Pool, IDirect3DVertexBuffer8** ppVertexBuffer)
@@ -506,6 +560,211 @@ HRESULT IDirect3DDevice8::CreateTexture(UINT Width, UINT Height, UINT Levels, DW
 	WWASSERT_PRINT(Levels == 1, "CreateTexture: only Levels==1 supported (mipmaps are a Milestone 2 non-goal)");
 	WWASSERT_PRINT(Format == D3DFMT_A8R8G8B8, "CreateTexture: only D3DFMT_A8R8G8B8 supported this milestone");
 	*ppTexture = new GLTexture8(Width, Height);
+	return D3D_OK;
+}
+
+// --- Draw-call plumbing (Milestone 2, Step 6) -------------------------------
+
+HRESULT IDirect3DDevice8::SetVertexShader(DWORD Handle)
+{
+	// Fixed-function-pipeline convention, mirroring real D3D8 semantics
+	// (DX8Wrapper::Set_Vertex_Shader passes DX8_FVF_XYZ.../dynamic_fvf_type
+	// values straight through to this same call): a vertex-shader handle
+	// with no high bit set IS the FVF. Programmable vertex shaders are a
+	// non-goal, so no other interpretation of Handle is needed.
+	g_CurrentFVF = Handle;
+	return D3D_OK;
+}
+
+HRESULT IDirect3DDevice8::SetStreamSource(UINT StreamNumber, IDirect3DVertexBuffer8* pStreamData, UINT Stride)
+{
+	if (StreamNumber != 0) return D3D_OK; // multiple vertex streams are a non-goal
+	g_CurrentVertexBuffer = pStreamData;
+	g_CurrentVertexStride = Stride;
+	return D3D_OK;
+}
+
+HRESULT IDirect3DDevice8::SetIndices(IDirect3DIndexBuffer8* pIndexData, UINT BaseVertexIndex)
+{
+	g_CurrentIndexBuffer = pIndexData;
+	g_CurrentBaseVertexIndex = BaseVertexIndex;
+	return D3D_OK;
+}
+
+HRESULT IDirect3DDevice8::SetTexture(DWORD Stage, IDirect3DBaseTexture8* pTexture)
+{
+	if (Stage != 0) return D3D_OK; // only stage 0 feeds this milestone's MODULATE(TEXTURE,DIFFUSE) shader
+	g_CurrentTexture0 = pTexture;
+	return D3D_OK;
+}
+
+HRESULT IDirect3DDevice8::SetRenderState(D3DRENDERSTATETYPE State, DWORD Value)
+{
+	// Only the render states Step 7's verification plan actually exercises
+	// (cull-mode and depth-test plumbing) get real bodies. Everything else
+	// this milestone's fixed-function shader has no use for (lighting, fog,
+	// alpha test/blend, texture-stage states, ...) is silently accepted,
+	// matching real D3D8's tolerance of state a given draw call simply
+	// never observes - not a gap, since nothing in this milestone reads it.
+	switch (State)
+	{
+	case D3DRS_CULLMODE:
+		switch (static_cast<D3DCULL>(Value))
+		{
+		case D3DCULL_NONE:
+			glDisable(GL_CULL_FACE);
+			break;
+		case D3DCULL_CW:
+			// D3DCULL_CW: cull clockwise-wound faces -> the surviving
+			// (front) faces are counter-clockwise, GL's own default
+			// front-face winding.
+			glEnable(GL_CULL_FACE);
+			glCullFace(GL_BACK);
+			glFrontFace(GL_CCW);
+			break;
+		case D3DCULL_CCW:
+			glEnable(GL_CULL_FACE);
+			glCullFace(GL_BACK);
+			glFrontFace(GL_CW);
+			break;
+		default:
+			break;
+		}
+		break;
+
+	case D3DRS_ZENABLE:
+		if (Value) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+		break;
+
+	case D3DRS_ZWRITEENABLE:
+		glDepthMask(Value ? GL_TRUE : GL_FALSE);
+		break;
+
+	case D3DRS_ZFUNC:
+	{
+		// Index 0 unused - D3DCMP_* values start at 1 (D3DCMP_NEVER).
+		static const GLenum D3D_CMP_TO_GL[] = {
+			0, GL_NEVER, GL_LESS, GL_EQUAL, GL_LEQUAL, GL_GREATER, GL_NOTEQUAL, GL_GEQUAL, GL_ALWAYS,
+		};
+		if (Value >= 1 && Value <= 8) glDepthFunc(D3D_CMP_TO_GL[Value]);
+		break;
+	}
+
+	default:
+		break;
+	}
+
+	return D3D_OK;
+}
+
+namespace
+{
+	GLenum Translate_D3D_Primitive_To_GL(D3DPRIMITIVETYPE type, UINT prim_count, UINT& out_index_count)
+	{
+		switch (type)
+		{
+		case D3DPT_POINTLIST:     out_index_count = prim_count;     return GL_POINTS;
+		case D3DPT_LINELIST:      out_index_count = prim_count * 2; return GL_LINES;
+		case D3DPT_LINESTRIP:     out_index_count = prim_count + 1; return GL_LINE_STRIP;
+		case D3DPT_TRIANGLELIST:  out_index_count = prim_count * 3; return GL_TRIANGLES;
+		case D3DPT_TRIANGLESTRIP: out_index_count = prim_count + 2; return GL_TRIANGLE_STRIP;
+		case D3DPT_TRIANGLEFAN:   out_index_count = prim_count + 2; return GL_TRIANGLE_FAN;
+		default:
+			out_index_count = 0;
+			return GL_TRIANGLES;
+		}
+	}
+}
+
+HRESULT IDirect3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT minIndex, UINT NumVertices, UINT startIndex, UINT primCount)
+{
+	if (!g_CurrentVertexBuffer || !g_CurrentIndexBuffer) return D3DERR_INVALIDCALL;
+
+	GLVertexLayout layout;
+	if (!Translate_FVF_To_GL_Layout(g_CurrentFVF, &layout)) return D3DERR_INVALIDCALL;
+
+	const FixedFunctionProgram& ffp = Get_Fixed_Function_Program();
+	if (!ffp.Program) return D3DERR_INVALIDCALL;
+	gl_UseProgram(ffp.Program);
+
+	gl_BindVertexArray(g_VAO);
+
+	// static_cast, not dynamic_cast: every IDirect3DVertexBuffer8/
+	// IDirect3DIndexBuffer8/IDirect3DBaseTexture8 this backend ever hands
+	// out IS the matching GL* subclass (CreateVertexBuffer/CreateIndexBuffer/
+	// CreateTexture above are the only factories), so this is safe without
+	// RTTI - same reasoning as everywhere else in this file.
+	GLVertexBuffer8* vb = static_cast<GLVertexBuffer8*>(g_CurrentVertexBuffer);
+	gl_BindBuffer(GL_ARRAY_BUFFER, vb->Get_GL_Buffer());
+
+	gl_EnableVertexAttribArray(GL_ATTRIB_POSITION);
+	gl_VertexAttribPointer(GL_ATTRIB_POSITION, 3, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(g_CurrentVertexStride),
+		reinterpret_cast<const void*>(static_cast<uintptr_t>(layout.PositionOffset)));
+
+	// Normal is deliberately never bound - the fixed-function shader (Step
+	// 4) has no "in" variable for it (no lighting this milestone), so
+	// binding it would be dead work.
+
+	if (layout.HasDiffuse)
+	{
+		gl_EnableVertexAttribArray(GL_ATTRIB_DIFFUSE);
+		gl_VertexAttribPointer(GL_ATTRIB_DIFFUSE, 4, GL_UNSIGNED_BYTE, GL_TRUE, static_cast<GLsizei>(g_CurrentVertexStride),
+			reinterpret_cast<const void*>(static_cast<uintptr_t>(layout.DiffuseOffset)));
+	}
+	else
+	{
+		// No per-vertex diffuse stream in this FVF: GL's generic-attribute
+		// default is (0,0,0,1), which would MODULATE the texture to black -
+		// a known deferred gap, not exercised by Step 7's harness (which
+		// always uses a diffuse-bearing FVF, per its R/B byte-order canary
+		// check).
+		gl_DisableVertexAttribArray(GL_ATTRIB_DIFFUSE);
+	}
+
+	if (layout.TexCoordCount >= 1)
+	{
+		gl_EnableVertexAttribArray(GL_ATTRIB_TEXCOORD0);
+		gl_VertexAttribPointer(GL_ATTRIB_TEXCOORD0, 2, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(g_CurrentVertexStride),
+			reinterpret_cast<const void*>(static_cast<uintptr_t>(layout.TexCoordOffset[0])));
+	}
+	else
+	{
+		gl_DisableVertexAttribArray(GL_ATTRIB_TEXCOORD0);
+	}
+
+	if (g_CurrentTexture0)
+	{
+		GLTexture8* tex = static_cast<GLTexture8*>(g_CurrentTexture0);
+		gl_ActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, tex->Get_GL_Texture());
+	}
+
+	GLIndexBuffer8* ib = static_cast<GLIndexBuffer8*>(g_CurrentIndexBuffer);
+	gl_BindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib->Get_GL_Buffer());
+
+	UINT index_count = 0;
+	GLenum gl_mode = Translate_D3D_Primitive_To_GL(PrimitiveType, primCount, index_count);
+
+	// Indices are always 16-bit in this codebase's real usage - every
+	// IndexBufferClass caller (dx8indexbuffer.h) exposes indices as
+	// unsigned short exclusively; D3DFMT_INDEX32 support is deferred as
+	// unneeded, not silently mishandled (nothing constructs a 32-bit index
+	// buffer anywhere in this engine to exercise it).
+	//
+	// glDrawElementsBaseVertex (not plain glDrawElements) is required for
+	// real D3D8 fidelity here: SetIndices' BaseVertexIndex and this call's
+	// startIndex are both routinely nonzero in real callers
+	// (dx8vertexbuffer.cpp/dx8indexbuffer.cpp) - basevertex is GL's exact
+	// equivalent of BaseVertexIndex, applied to every fetched index after
+	// the byte-offset (startIndex) has selected where in the index buffer
+	// to start reading.
+	gl_DrawElementsBaseVertex(
+		gl_mode,
+		static_cast<GLsizei>(index_count),
+		GL_UNSIGNED_SHORT,
+		reinterpret_cast<const void*>(static_cast<uintptr_t>(startIndex * sizeof(unsigned short))),
+		static_cast<GLint>(g_CurrentBaseVertexIndex));
+
 	return D3D_OK;
 }
 
@@ -698,6 +957,10 @@ bool DX8Wrapper::Create_Device()
 
 	glViewport(0, 0, g_FBWidth, g_FBHeight);
 
+	// Milestone 2, Step 6: the one persistent VAO DrawIndexedPrimitive
+	// reconfigures per draw call (see g_VAO's declaration above).
+	gl_GenVertexArrays(1, &g_VAO);
+
 	// Trap 1 (native-port-plan.md, Phase 5(a) Milestone 1): deliberately
 	// does NOT call Do_Onetime_Device_Dependent_Inits() - that pulls in
 	// real texture creation and a background TextureLoader thread, both
@@ -713,6 +976,11 @@ void DX8Wrapper::Release_Device()
 		D3DDevice->Release();
 		D3DDevice = nullptr;
 	}
+
+	if (g_VAO) { gl_DeleteVertexArrays(1, &g_VAO); g_VAO = 0; }
+	g_CurrentVertexBuffer = nullptr;
+	g_CurrentIndexBuffer = nullptr;
+	g_CurrentTexture0 = nullptr;
 
 	Destroy_Framebuffer();
 

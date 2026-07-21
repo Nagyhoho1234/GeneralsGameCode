@@ -47,6 +47,12 @@
 // declarations out-of-line would risk an unemitted-vtable link error for
 // no benefit (see the caution in the equivalent commit history for
 // IDirect3DVertexBuffer8/IDirect3DIndexBuffer8, Milestone 2 Step 2).
+// Step 6 (draw-call plumbing) adds SetVertexShader/SetStreamSource/
+// SetIndices/SetTexture/SetRenderState/DrawIndexedPrimitive to the
+// declared-only list - real bodies again in dx8wrapper_gl.cpp, which also
+// tracks the small amount of "current FVF/vertex buffer/index buffer/
+// texture" state these need as file-local statics (same pattern as
+// g_Window/g_FBO), not as members here.
 #pragma once
 
 #ifndef PORTABLE_D3D8_H
@@ -233,7 +239,7 @@ public:
 	virtual HRESULT GetLightEnable(DWORD Index, BOOL* pEnable) { *pEnable = FALSE; return D3D_OK; }
 	virtual HRESULT SetClipPlane(DWORD Index, CONST float* pPlane) { return D3D_OK; }
 	virtual HRESULT GetClipPlane(DWORD Index, float* pPlane) { return D3D_OK; }
-	virtual HRESULT SetRenderState(D3DRENDERSTATETYPE State, DWORD Value) { return D3D_OK; }
+	virtual HRESULT SetRenderState(D3DRENDERSTATETYPE State, DWORD Value);
 	virtual HRESULT GetRenderState(D3DRENDERSTATETYPE State, DWORD* pValue) { *pValue = 0; return D3D_OK; }
 	virtual HRESULT BeginStateBlock() { return D3D_OK; }
 	virtual HRESULT EndStateBlock(DWORD* pToken) { *pToken = 0; return D3D_OK; }
@@ -244,7 +250,7 @@ public:
 	virtual HRESULT SetClipStatus(CONST D3DCLIPSTATUS8* pClipStatus) { return D3D_OK; }
 	virtual HRESULT GetClipStatus(D3DCLIPSTATUS8* pClipStatus) { return D3D_OK; }
 	virtual HRESULT GetTexture(DWORD Stage, IDirect3DBaseTexture8** ppTexture) { *ppTexture = nullptr; return D3D_OK; }
-	virtual HRESULT SetTexture(DWORD Stage, IDirect3DBaseTexture8* pTexture) { return D3D_OK; }
+	virtual HRESULT SetTexture(DWORD Stage, IDirect3DBaseTexture8* pTexture);
 	virtual HRESULT GetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD* pValue) { *pValue = 0; return D3D_OK; }
 	virtual HRESULT SetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD Value) { return D3D_OK; }
 	virtual HRESULT ValidateDevice(DWORD* pNumPasses) { *pNumPasses = 1; return D3D_OK; }
@@ -254,21 +260,21 @@ public:
 	virtual HRESULT SetCurrentTexturePalette(UINT PaletteNumber) { return D3D_OK; }
 	virtual HRESULT GetCurrentTexturePalette(UINT* PaletteNumber) { *PaletteNumber = 0; return D3D_OK; }
 	virtual HRESULT DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount) { return D3D_OK; }
-	virtual HRESULT DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT minIndex, UINT NumVertices, UINT startIndex, UINT primCount) { return D3D_OK; }
+	virtual HRESULT DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT minIndex, UINT NumVertices, UINT startIndex, UINT primCount);
 	virtual HRESULT DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) { return D3D_OK; }
 	virtual HRESULT DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinVertexIndex, UINT NumVertexIndices, UINT PrimitiveCount, CONST void* pIndexData, D3DFORMAT IndexDataFormat, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) { return D3D_OK; }
 	virtual HRESULT ProcessVertices(UINT SrcStartIndex, UINT DestIndex, UINT VertexCount, IDirect3DVertexBuffer8* pDestBuffer, DWORD Flags) { return D3D_OK; }
 	virtual HRESULT CreateVertexShader(CONST DWORD* pDeclaration, CONST DWORD* pFunction, DWORD* pHandle, DWORD Usage) { *pHandle = 0; return D3DERR_NOTAVAILABLE; }
-	virtual HRESULT SetVertexShader(DWORD Handle) { return D3D_OK; }
+	virtual HRESULT SetVertexShader(DWORD Handle);
 	virtual HRESULT GetVertexShader(DWORD* pHandle) { *pHandle = 0; return D3D_OK; }
 	virtual HRESULT DeleteVertexShader(DWORD Handle) { return D3D_OK; }
 	virtual HRESULT SetVertexShaderConstant(DWORD Register, CONST void* pConstantData, DWORD ConstantCount) { return D3D_OK; }
 	virtual HRESULT GetVertexShaderConstant(DWORD Register, void* pConstantData, DWORD ConstantCount) { return D3D_OK; }
 	virtual HRESULT GetVertexShaderDeclaration(DWORD Handle, void* pData, DWORD* pSizeOfData) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT GetVertexShaderFunction(DWORD Handle, void* pData, DWORD* pSizeOfData) { return D3DERR_NOTAVAILABLE; }
-	virtual HRESULT SetStreamSource(UINT StreamNumber, IDirect3DVertexBuffer8* pStreamData, UINT Stride) { return D3D_OK; }
+	virtual HRESULT SetStreamSource(UINT StreamNumber, IDirect3DVertexBuffer8* pStreamData, UINT Stride);
 	virtual HRESULT GetStreamSource(UINT StreamNumber, IDirect3DVertexBuffer8** ppStreamData, UINT* pStride) { *ppStreamData = nullptr; *pStride = 0; return D3D_OK; }
-	virtual HRESULT SetIndices(IDirect3DIndexBuffer8* pIndexData, UINT BaseVertexIndex) { return D3D_OK; }
+	virtual HRESULT SetIndices(IDirect3DIndexBuffer8* pIndexData, UINT BaseVertexIndex);
 	virtual HRESULT GetIndices(IDirect3DIndexBuffer8** ppIndexData, UINT* pBaseVertexIndex) { *ppIndexData = nullptr; *pBaseVertexIndex = 0; return D3D_OK; }
 	virtual HRESULT CreatePixelShader(CONST DWORD* pFunction, DWORD* pHandle) { *pHandle = 0; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT SetPixelShader(DWORD Handle) { return D3D_OK; }
