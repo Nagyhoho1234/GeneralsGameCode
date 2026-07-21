@@ -618,15 +618,28 @@ commit in this batch. See "Draft 11" below for the root-cause analysis
 and fix plan for this newly-exposed layer.
 
 **Phase 2 - 64-bit, promoted from "non-goal" to prerequisite (macOS
-only, strongly recommended for Linux too).** Every game-capable preset
-today is 32-bit (`win32`, `mingw-w64-i686`, "Unix 32bit"), and the root
-CMakeLists hard-gates dx8/miles/bink on `CMAKE_SIZEOF_VOID_P EQUAL 4`.
-macOS has had no 32-bit userland since 10.15 (2019) - a native macOS
-build is impossible without this, full stop. 32-bit Linux userland
-(SDL2:i386, 32-bit vcpkg deps) is a practical dead end too. This isn't
-"VC6 removal" (modern MSVC/MinGW already work); it's specifically the
-32-bit-only assumption baked into the build. Do this before Phase 3,
-not deferred indefinitely.
+only, strongly recommended for Linux too). Closed for the currently-
+portable subset (Core/GameEngine + Core/GameEngineDevice's non-D3D8/
+non-Win32 sources, both Generals and GeneralsMD) - see "Draft 15"
+below for full detail.** Originally: every game-capable preset was
+32-bit (`win32`, `mingw-w64-i686`, "Unix 32bit"), and the root
+CMakeLists hard-gates dx8/miles/bink on `CMAKE_SIZEOF_VOID_P EQUAL 4`
+(though this specific gate turned out to be Windows-only and never
+the actual Linux/macOS blocker - see Draft 15). macOS has had no
+32-bit userland since 10.15 (2019) - a native macOS build is
+impossible without this, full stop. 32-bit Linux userland (SDL2:i386,
+32-bit vcpkg deps) is a practical dead end too. This isn't "VC6
+removal" (modern MSVC/MinGW already work); it's specifically the
+32-bit-only assumption baked into the build. **Resolution turned out
+to be smaller than expected**: every session-long WSL2 Linux build
+this whole port has already implicitly been a native 64-bit build
+(WSL2 Ubuntu is x86_64), so nearly all of Phase 2's real substance
+(pointer-width bugs) was already being caught and fixed as part of
+Phase 1's batches without being separately labeled "Phase 2" - what
+remained once Phase 1's tail closed was two genuine bugs (not pointer-
+width shims), real CMake presets, and a wave of macOS-specific gaps
+only real cross-compiler (Clang/libc++ vs GCC/libstdc++) CI could
+catch.
 
 **Phase 3 - Decide and prototype the graphics API approach** (per the
 revised "Open decision" above), using the render2d+textured-mesh spike,
@@ -1533,3 +1546,115 @@ category.
   un-unified `GameSpyGameInfo.cpp:97` SNMP duplicate (already flagged
   in the Batch 3 commit message) still needs the same rewrite whenever
   that older GameSpy code path is built/touched.
+- Draft 15 (this version): finalized Phase 1 and closed Phase 2 for
+  the currently-portable subset (commits `ffb6772e0` through
+  `cedf03b09`), working unattended per explicit user request.
+
+  **Phase 1 finalization**: fixed the two remaining "pointer-
+  truncation, Phase 2" items from Draft 14's triage after actually
+  reading the code (not just the compiler's one-line summary) -
+  both turned out to be genuine, platform-independent bugs, not
+  pointer-width issues at all. `LocalFile.cpp`'s `writeChar()` (both
+  overloads) returned the character pointer's own address instead of
+  "a copy of the character written" (its own doc comment's words) -
+  zero callers exist anywhere in this codebase, so fixed for real.
+  `FirewallHelper.cpp` had a `ntohl()` call whose return value was
+  entirely discarded (a complete no-op - the real byte-order handling
+  already happens correctly a few lines later) - removed the dead
+  statement. This is the second time this session a Draft's own
+  triage bucket assignment turned out to be wrong on closer reading
+  (the first was `TransportContain.cpp` in Draft 14) - a reminder that
+  "pointer-truncation, Phase 2, deferred" is a conclusion to verify
+  per-site, not a label to trust from the compiler's diagnostic class
+  alone.
+
+  Added real `linux-x64`/`linux-x64-debug` and `macos-arm64`/
+  `macos-arm64-debug`/`macos-x64` CMake presets (native compiler
+  toolchain, no vcpkg) - closing Phase 1's explicitly-flagged "real
+  (not 32-bit-only) CMake presets" gap. `linux-x64` was verified
+  locally to reproduce this session's ad-hoc WSL2 build exactly (same
+  17-unique-error-line result for both `g_gameenginedevice` and
+  `z_gameenginedevice`). Rewrote `macos-native.yml` (previously
+  "advisory, expected to fail until Phase 1-2 land," using the old
+  32-bit `unix` preset as a stand-in) to use `macos-arm64` and build
+  the actual currently-portable target set instead of a doomed
+  full-project attempt; added `linux-native.yml` as its Linux
+  counterpart with a regression-count guard.
+
+  **Real CI immediately paid for itself**: the first `macos-native.yml`
+  run (real `macos-latest` hardware) failed in 53 seconds on a bug
+  invisible from WSL2 alone - `MEMORYSTATUS`'s `GlobalMemoryStatus()`
+  shim unconditionally included `<sys/sysinfo.h>`, which is Linux
+  (glibc)-only and doesn't exist on macOS/BSD at all. Fixed with a
+  `__linux__`/`__APPLE__` split (macOS branch uses `sysctlbyname` for
+  physical RAM/swap totals - standard, verifiable sysctls -
+  and honestly stubs available/free RAM to 0 rather than guessing at
+  unverifiable Mach `host_statistics64()` API syntax; this whole
+  struct is diagnostics-only, zero behavioral risk either way).
+
+  The second CI run got to 1m7s and surfaced four more real macOS-only
+  gaps, all invisible from Linux testing alone: `wchar_compat.h`'s
+  `#define iswascii(...)` corrupted macOS/BSD libc's own real
+  `iswascii()` declaration by substituting into its own name - the
+  *identical* failure mode `__int64`-as-a-macro had with
+  `wwprofile.h` earlier this session (glibc lacks this BSD-ism, so the
+  macro is now `__APPLE__`-excluded); `FastAllocator.h` used
+  `<malloc.h>`, a Linux/Windows-only convenience header, for plain
+  malloc/free (swapped to `<cstdlib>`); `thread_compat.h`'s
+  `GetCurrentThreadId()` returned `pthread_self()` as `int` - fine on
+  Linux where `pthread_t` is an integer, but macOS's `pthread_t` is an
+  opaque pointer that cannot convert to `int` at all (fixed with
+  `pthread_mach_thread_np()`, macOS's actual small-integer thread ID);
+  `time_compat.h`'s `timeGetTime()` used `CLOCK_BOOTTIME`, which is
+  Linux-specific and undeclared on macOS (added a `CLOCK_MONOTONIC`
+  fallback). All four repeated across ~200 log lines but were
+  confirmed to be exactly these 4 root-cause locations via file:line
+  dedup - foundational compat headers included almost everywhere.
+
+  The third CI run got to 3m37s-4m36s (real compilation progress each
+  time) and found a final wave: `endian_compat.h`'s `__APPLE__` branch
+  used `UInt16`/`UInt32`/`UInt64` (old Mac Carbon types, never
+  included, so never declared) instead of the `uint16_t`/`uint32_t`/
+  `uint64_t` every other branch correctly uses - a genuine pre-existing
+  bug; `StackDump.h`/`.cpp` (both trees) had `EXCEPTION_POINTERS`
+  (Windows SEH) and `DWORD` in `DumpExceptionInfo()`/
+  `StackDumpFromContext()` even in the header's "disabled" stub
+  branch - confirmed zero non-Windows callers exist (the only callers,
+  `WinMain.cpp`/`WorldBuilder.cpp`, are themselves Windows-only/MFC-
+  tool code), gated both behind `_WIN32`. This one never surfaced on
+  Linux because `StackDump.cpp`'s own compile already failed earlier
+  in the same translation unit via the already-known `DbgHelpLoader.h`
+  gap, masking the second issue - macOS's Clang apparently produces
+  this specific diagnostic before that one, or continues further per
+  translation unit; either way, the lesson is that "0 new errors on
+  Linux" doesn't mean "0 new errors," just "0 new errors *visible*
+  before the first fatal error in each translation unit." Also fixed:
+  `ini.cpp`/`TARGA.cpp`/`GameMemoryNull.cpp`'s `<malloc.h>` (same
+  pattern as `FastAllocator.h`, swept proactively across the rest of
+  the reachable tree - `GameMemory.h`'s own copy and two others were
+  already correctly gated behind build options that default off, no
+  fix needed there); `StdLocalFileSystem.cpp`'s `for (auto& p : path)`
+  over a `std::filesystem::path` - libc++ (macOS/Clang) returns path
+  components by value from its iterator, which a non-const reference
+  cannot bind to, while libstdc++ (Linux/GCC) is more permissive
+  (changed to `const auto&`); `PeerThread.cpp`'s `socklen_t`, whose
+  declaration was reaching the file only transitively via some other
+  header on Linux and not at all on macOS (added an explicit
+  `<sys/socket.h>` include).
+
+  **Result: both `linux-native.yml` and `macos-native.yml` now pass
+  on real CI with exactly 17 errors per target (34 total) on each
+  platform - identical, and every single one is an already-catalogued,
+  deliberately deferred item** (`WebBrowser.h`/`ftp.h` real COM/ATL
+  work - Phase 7, `DbgHelpLoader.h`'s `imagehlp.h` - dead weight when
+  crash-dumps are off, `BezierSegment.h`'s `d3dx8math.h`,
+  `IMEManager.cpp`'s `mbstring.h` - Phase 4 IME). No pointer-width,
+  build-system, or platform-specific gap remains anywhere in the
+  currently-reachable subset of the codebase, verified on Windows (0
+  errors, every commit), Linux (real CI, not just WSL2), and macOS
+  (real CI) simultaneously - the first time this port has had all
+  three platforms green in the same session. WSL2 local testing alone
+  would not have caught 10 of these ~12 fixes in this draft; this is
+  the strongest evidence yet for why the macOS-CI-validation habit
+  (established back in the Phase 3 spike's GLFW investigation) matters
+  as a standing practice, not a one-off.
