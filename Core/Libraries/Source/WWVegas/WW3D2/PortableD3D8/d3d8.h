@@ -261,7 +261,12 @@ public:
 	virtual HRESULT GetTexture(DWORD Stage, IDirect3DBaseTexture8** ppTexture) { *ppTexture = nullptr; return D3D_OK; }
 	virtual HRESULT SetTexture(DWORD Stage, IDirect3DBaseTexture8* pTexture);
 	virtual HRESULT GetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD* pValue) { *pValue = 0; return D3D_OK; }
-	virtual HRESULT SetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD Value) { return D3D_OK; }
+	// Defined out-of-line in dx8wrapper_gl.cpp (native port plan Phase
+	// 5(a) Milestone 4, Draft 22 Step 3, finding 5) - TextureClass::Apply's
+	// Filter.Apply(stage) genuinely depends on MINFILTER/MAGFILTER/
+	// MIPFILTER/ADDRESSU/ADDRESSV reaching real GL sampler state, same
+	// precedent as SetTransform/CheckDeviceFormat above.
+	virtual HRESULT SetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD Value);
 	virtual HRESULT ValidateDevice(DWORD* pNumPasses) { *pNumPasses = 1; return D3D_OK; }
 	virtual HRESULT GetInfo(DWORD DevInfoID, void* pDevInfoStruct, DWORD DevInfoStructSize) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT SetPaletteEntries(UINT PaletteNumber, CONST PALETTEENTRY* pEntries) { return D3D_OK; }

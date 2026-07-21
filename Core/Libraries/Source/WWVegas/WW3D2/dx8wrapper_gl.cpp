@@ -74,6 +74,27 @@ namespace
 	// instead of GL's unbound-sampler black.
 	GLuint g_WhiteFallbackTex = 0;
 
+	// Real per-stage sampler state (Draft 22 Step 3, finding 5). D3D8
+	// texture-stage sampler state is per-*stage*, not per-texture-object -
+	// one GL sampler object per stage (GL 3.3 core's ARB_sampler_objects,
+	// promoted core) reproduces that exactly, unlike per-texture
+	// glTexParameteri which would be subtly wrong for a texture bound at
+	// two stages simultaneously. Sized to MaxSimultaneousTextures (2, set
+	// in Create_Device below) - real D3D8 default state per MSDN's
+	// texture-stage-state default table: MAGFILTER/MINFILTER=POINT,
+	// MIPFILTER=NONE, ADDRESSU/ADDRESSV=WRAP.
+	const UINT GL_TEXTURE_STAGE_COUNT = 2;
+	struct GLTextureStageState
+	{
+		D3DTEXTUREFILTERTYPE MinFilter;
+		D3DTEXTUREFILTERTYPE MagFilter;
+		D3DTEXTUREFILTERTYPE MipFilter;
+		D3DTEXTUREADDRESS    AddressU;
+		D3DTEXTUREADDRESS    AddressV;
+	};
+	GLTextureStageState g_TextureStageState[GL_TEXTURE_STAGE_COUNT];
+	GLuint g_Samplers[GL_TEXTURE_STAGE_COUNT] = { 0, 0 };
+
 	// Real SetTransform storage (Milestone 3 step 7, finding 4). Defaults to
 	// identity so a draw that only ever sets, say, VIEW still composes
 	// correctly against an untransformed WORLD/PROJECTION. g_TransformsEverSet
@@ -124,6 +145,57 @@ namespace
 		// index out of bounds.
 		if (value >= 1 && value <= 11) return D3D_BLEND_TO_GL[value];
 		return GL_ONE;
+	}
+
+	// D3DTEXTUREFILTERTYPE/D3DTEXTUREADDRESS -> GL sampler-parameter values
+	// (Draft 22 Step 3, finding 5). Anisotropic maps to plain LINEAR - the
+	// caps completion above (CurrentCaps' TextureFilterCaps) doesn't
+	// advertise ANISOTROPIC support, so TextureFilterClass::_Init_Filters
+	// never selects it through the normal path; this is just the fallback
+	// for a caller that sets it directly anyway, matching this file's
+	// "accept but don't half-implement silently wrong" convention.
+	GLint D3D_To_GL_Mag_Filter(D3DTEXTUREFILTERTYPE filter)
+	{
+		switch (filter)
+		{
+		case D3DTEXF_LINEAR:
+		case D3DTEXF_ANISOTROPIC: return GL_LINEAR;
+		case D3DTEXF_POINT:
+		default:                  return GL_NEAREST;
+		}
+	}
+
+	GLint D3D_To_GL_Min_Filter(D3DTEXTUREFILTERTYPE min_filter, D3DTEXTUREFILTERTYPE mip_filter)
+	{
+		bool linear_min = (min_filter == D3DTEXF_LINEAR || min_filter == D3DTEXF_ANISOTROPIC);
+		switch (mip_filter)
+		{
+		case D3DTEXF_POINT:  return linear_min ? GL_LINEAR_MIPMAP_NEAREST : GL_NEAREST_MIPMAP_NEAREST;
+		case D3DTEXF_LINEAR: return linear_min ? GL_LINEAR_MIPMAP_LINEAR  : GL_NEAREST_MIPMAP_LINEAR;
+		case D3DTEXF_NONE:
+		default:              return linear_min ? GL_LINEAR : GL_NEAREST;
+		}
+	}
+
+	// D3DTADDRESS_MIRRORONCE has no direct GL 3.3 core equivalent (would
+	// need GL_MIRROR_CLAMP_TO_EDGE, a later-core/extension feature) and no
+	// caller in this milestone's ported closure uses it (W3D texinfo's
+	// CLAMP_U/CLAMP_V only ever produce WRAP or CLAMP) - falls back to
+	// CLAMP_TO_EDGE loudly rather than silently, same convention as
+	// GLSurface8/GLTexture8's narrow-format WWASSERTs.
+	GLint D3D_To_GL_Address(D3DTEXTUREADDRESS address)
+	{
+		switch (address)
+		{
+		case D3DTADDRESS_WRAP:   return GL_REPEAT;
+		case D3DTADDRESS_MIRROR: return GL_MIRRORED_REPEAT;
+		case D3DTADDRESS_BORDER: return GL_CLAMP_TO_BORDER;
+		case D3DTADDRESS_CLAMP:
+			return GL_CLAMP_TO_EDGE;
+		default:
+			WWDEBUG_SAY(("D3D_To_GL_Address: D3DTADDRESS_MIRRORONCE has no GL 3.3 core equivalent, falling back to CLAMP_TO_EDGE"));
+			return GL_CLAMP_TO_EDGE;
+		}
 	}
 
 	// Current blend factors, tracked so D3DRS_SRCBLEND and D3DRS_DESTBLEND
@@ -890,6 +962,46 @@ HRESULT IDirect3DDevice8::SetTexture(DWORD Stage, IDirect3DBaseTexture8* pTextur
 	return D3D_OK;
 }
 
+// Real per-stage sampler state (Draft 22 Step 3, finding 5) - updates the
+// cached D3D value and immediately reflects it onto the matching GL sampler
+// object, so a stage's sampler is always current by the time
+// DrawIndexedPrimitive binds it (no draw-time recomputation needed). Stages
+// beyond MaxSimultaneousTextures are silently accepted, same convention as
+// the D3DTSS_COLOROP/ALPHAOP/BUMPENVMAT*/etc. combiner-stage-state default
+// case below (texture-combiner state, not sampler state - out of scope,
+// the fixed stage-0 MODULATE(TEXTURE,DIFFUSE) shader is hardcoded).
+HRESULT IDirect3DDevice8::SetTextureStageState(DWORD Stage, D3DTEXTURESTAGESTATETYPE Type, DWORD Value)
+{
+	if (Stage >= GL_TEXTURE_STAGE_COUNT) return D3D_OK;
+	GLTextureStageState& state = g_TextureStageState[Stage];
+	switch (Type)
+	{
+	case D3DTSS_MINFILTER:
+		state.MinFilter = static_cast<D3DTEXTUREFILTERTYPE>(Value);
+		gl_SamplerParameteri(g_Samplers[Stage], GL_TEXTURE_MIN_FILTER, D3D_To_GL_Min_Filter(state.MinFilter, state.MipFilter));
+		break;
+	case D3DTSS_MIPFILTER:
+		state.MipFilter = static_cast<D3DTEXTUREFILTERTYPE>(Value);
+		gl_SamplerParameteri(g_Samplers[Stage], GL_TEXTURE_MIN_FILTER, D3D_To_GL_Min_Filter(state.MinFilter, state.MipFilter));
+		break;
+	case D3DTSS_MAGFILTER:
+		state.MagFilter = static_cast<D3DTEXTUREFILTERTYPE>(Value);
+		gl_SamplerParameteri(g_Samplers[Stage], GL_TEXTURE_MAG_FILTER, D3D_To_GL_Mag_Filter(state.MagFilter));
+		break;
+	case D3DTSS_ADDRESSU:
+		state.AddressU = static_cast<D3DTEXTUREADDRESS>(Value);
+		gl_SamplerParameteri(g_Samplers[Stage], GL_TEXTURE_WRAP_S, D3D_To_GL_Address(state.AddressU));
+		break;
+	case D3DTSS_ADDRESSV:
+		state.AddressV = static_cast<D3DTEXTUREADDRESS>(Value);
+		gl_SamplerParameteri(g_Samplers[Stage], GL_TEXTURE_WRAP_T, D3D_To_GL_Address(state.AddressV));
+		break;
+	default:
+		break;
+	}
+	return D3D_OK;
+}
+
 // Real transform storage (Milestone 3 step 7, finding 4) - stores exactly
 // what real D3D8 stores (a D3DMATRIX per transform slot), touching nothing
 // GL-side until DrawIndexedPrimitive composes the MVP uniform. Only WORLD/
@@ -1087,6 +1199,14 @@ HRESULT IDirect3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, U
 		// unbound-sampler black.
 		glBindTexture(GL_TEXTURE_2D, g_WhiteFallbackTex);
 	}
+	// Real per-stage sampler state (Draft 22 Step 3, finding 5) - a bound
+	// sampler object's state overrides the texture object's own
+	// glTexParameteri state for this unit, so this is what makes
+	// SetTextureStageState's MINFILTER/MAGFILTER/MIPFILTER/ADDRESSU/
+	// ADDRESSV translations actually take effect. Only stage 0 is bound -
+	// SetTexture above only ever routes stage 0 to a real GL texture unit,
+	// same established scope boundary.
+	gl_BindSampler(0, g_Samplers[0]);
 
 	// MVP composition (Milestone 3 step 7, finding 4) - only once any
 	// SetTransform has ever been seen, so Milestone 2's harness (which
@@ -1352,6 +1472,26 @@ bool DX8Wrapper::Create_Device()
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	}
 
+	// One GL sampler object per texture stage (Draft 22 Step 3, finding 5),
+	// initialized to real D3D8's own default texture-stage-state values
+	// (MAGFILTER/MINFILTER=POINT, MIPFILTER=NONE, ADDRESSU/ADDRESSV=WRAP)
+	// so a draw that never calls SetTextureStageState still matches real
+	// D3D8 behavior exactly, not just this backend's old per-texture
+	// GL_NEAREST/GL_CLAMP_TO_EDGE guess.
+	gl_GenSamplers(GL_TEXTURE_STAGE_COUNT, g_Samplers);
+	for (UINT stage = 0; stage < GL_TEXTURE_STAGE_COUNT; ++stage)
+	{
+		g_TextureStageState[stage].MinFilter = D3DTEXF_POINT;
+		g_TextureStageState[stage].MagFilter = D3DTEXF_POINT;
+		g_TextureStageState[stage].MipFilter = D3DTEXF_NONE;
+		g_TextureStageState[stage].AddressU = D3DTADDRESS_WRAP;
+		g_TextureStageState[stage].AddressV = D3DTADDRESS_WRAP;
+		gl_SamplerParameteri(g_Samplers[stage], GL_TEXTURE_MIN_FILTER, D3D_To_GL_Min_Filter(D3DTEXF_POINT, D3DTEXF_NONE));
+		gl_SamplerParameteri(g_Samplers[stage], GL_TEXTURE_MAG_FILTER, D3D_To_GL_Mag_Filter(D3DTEXF_POINT));
+		gl_SamplerParameteri(g_Samplers[stage], GL_TEXTURE_WRAP_S, D3D_To_GL_Address(D3DTADDRESS_WRAP));
+		gl_SamplerParameteri(g_Samplers[stage], GL_TEXTURE_WRAP_T, D3D_To_GL_Address(D3DTADDRESS_WRAP));
+	}
+
 	// Trap 1 (native-port-plan.md, Phase 5(a) Milestone 1): deliberately
 	// does NOT call Do_Onetime_Device_Dependent_Inits() - that pulls in
 	// real texture creation and a background TextureLoader thread, both
@@ -1385,6 +1525,32 @@ bool DX8Wrapper::Create_Device()
 	caps.VertexShaderVersion = 0;
 	caps.PixelShaderVersion = 0;
 
+	// Honest caps completion (native port plan Phase 5(a) Milestone 4,
+	// Draft 22 Step 3, finding 4): these were the two live grenades - left
+	// at their memset-zero default, TextureLoader::Validate_Texture_Size
+	// clamps every real texture load's power-of-two size against
+	// MaxTextureWidth/MaxTextureHeight (textureloader.cpp:381-391),
+	// collapsing every load to 0x0 and dividing by zero in the
+	// aspect-ratio loop; TextureFilterCaps==0 silently degrades every
+	// TextureFilterClass::_Init_Filters mode to POINT
+	// (texturefilter.cpp:174-235). GL_MAX_TEXTURE_SIZE is the real GPU
+	// limit; MaxTextureAspectRatio=0 means "no limit" (the code path
+	// already handles that, textureloader.cpp:394). Point+linear min/mag/
+	// mip filtering is genuinely supported (GL_NEAREST/GL_LINEAR and their
+	// mipmap variants always are); anisotropic stays unset until Step 3's
+	// sampler layer (below) actually implements it - same "honest, not
+	// theater" argument as Milestone 3 finding 3's CheckDeviceFormat.
+	GLint maxTextureSize = 0;
+	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+	caps.MaxTextureWidth = static_cast<DWORD>(maxTextureSize);
+	caps.MaxTextureHeight = static_cast<DWORD>(maxTextureSize);
+	caps.MaxVolumeExtent = static_cast<DWORD>(maxTextureSize);
+	caps.MaxTextureAspectRatio = 0;
+	caps.TextureFilterCaps =
+		D3DPTFILTERCAPS_MINFPOINT | D3DPTFILTERCAPS_MINFLINEAR |
+		D3DPTFILTERCAPS_MAGFPOINT | D3DPTFILTERCAPS_MAGFLINEAR |
+		D3DPTFILTERCAPS_MIPFPOINT | D3DPTFILTERCAPS_MIPFLINEAR;
+
 	// Zeroed D3DADAPTER_IDENTIFIER8 -> VENDOR_UNKNOWN (Define_Vendor(0))
 	// makes every vendor-quirk path in DX8Caps::Compute_Caps correctly
 	// inert (finding 3); GetAdapterIdentifier fills in the Driver/
@@ -1413,6 +1579,8 @@ void DX8Wrapper::Release_Device()
 
 	if (g_VAO) { gl_DeleteVertexArrays(1, &g_VAO); g_VAO = 0; }
 	if (g_WhiteFallbackTex) { glDeleteTextures(1, &g_WhiteFallbackTex); g_WhiteFallbackTex = 0; }
+	gl_DeleteSamplers(GL_TEXTURE_STAGE_COUNT, g_Samplers);
+	for (UINT stage = 0; stage < GL_TEXTURE_STAGE_COUNT; ++stage) g_Samplers[stage] = 0;
 	g_CurrentVertexBuffer = nullptr;
 	g_CurrentIndexBuffer = nullptr;
 	g_CurrentTexture0 = nullptr;
@@ -1474,4 +1642,108 @@ void DX8Wrapper::End_Statistics()
 const DX8FrameStatistics& DX8Wrapper::Get_Last_Frame_Statistics()
 {
 	return g_LastFrameStatistics;
+}
+
+// GL bodies for the two _Create_DX8_Texture/_Create_DX8_Surface overloads
+// this milestone's closure actually calls (native port plan Phase 5(a)
+// Milestone 4, Draft 22 Step 3, finding 6). dx8wrapper_d3d8.cpp's
+// D3D-pool out-of-memory retry dance is Windows-only by construction -
+// this backend's CreateTexture/CreateImageSurface don't fail for memory
+// reasons this milestone exercises, so there is nothing to retry.
+// Render-target textures are an explicit Milestone 4 non-goal (the GL
+// device never wires an FBO-backed texture path) - gated loudly here
+// rather than silently handing back a plain texture that isn't actually
+// render-targetable, same "deferrals gated loudly" convention as the
+// cube/volume/Z-texture stubs.
+IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture
+(
+	unsigned int width,
+	unsigned int height,
+	WW3DFormat format,
+	MipCountType mip_level_count,
+	D3DPOOL pool,
+	bool rendertarget
+)
+{
+	// Inlined equivalent of DX8_Assert() rather than calling it directly:
+	// that free function lives only in dx8wrapper_draw.cpp, which
+	// RenderDeviceInit/RenderTexturedTriangle (Milestones 1-2's harnesses)
+	// deliberately don't link (dx8wrapper_draw.cpp's own header comment
+	// explains why) - and dx8wrapper_gl.cpp is one shared TU across every
+	// harness target, so a real (non-macro-gated) call here would be an
+	// undefined symbol for those two.
+	DX8_THREAD_ASSERT();
+	WWASSERT(DX8Wrapper::_Get_D3D8());
+	WWASSERT(format != WW3D_FORMAT_P8); // paletted textures not supported!
+
+	if (rendertarget)
+	{
+		WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_Texture: render targets are a Milestone 4 non-goal on GL"));
+		return nullptr;
+	}
+
+	IDirect3DTexture8 *texture = nullptr;
+	unsigned res;
+	DX8CALL_HRES(CreateTexture(width, height, static_cast<UINT>(mip_level_count), 0, WW3DFormat_To_D3DFormat(format), pool, &texture), res);
+	return texture;
+}
+
+IDirect3DSurface8 * DX8Wrapper::_Create_DX8_Surface(unsigned int width, unsigned int height, WW3DFormat format)
+{
+	// See _Create_DX8_Texture above for why this is an inlined equivalent
+	// of DX8_Assert() rather than a real call to it.
+	DX8_THREAD_ASSERT();
+	WWASSERT(DX8Wrapper::_Get_D3D8());
+	WWASSERT(format != WW3D_FORMAT_P8); // paletted surfaces not supported!
+
+	IDirect3DSurface8 *surface = nullptr;
+	DX8CALL(CreateImageSurface(width, height, WW3DFormat_To_D3DFormat(format), &surface));
+	return surface;
+}
+
+// Cube/volume/Z textures never get constructed at runtime by anything in
+// Generals (explicit Milestone 4 non-goal, finding 6) - their classes still
+// need to compile and link (textureloader.cpp's closure forces that), so
+// these stay real, callable, loudly-nullptr bodies rather than link-only
+// stubs.
+IDirect3DCubeTexture8* DX8Wrapper::_Create_DX8_Cube_Texture
+(
+	unsigned int width,
+	unsigned int height,
+	WW3DFormat format,
+	MipCountType mip_level_count,
+	D3DPOOL pool,
+	bool rendertarget
+)
+{
+	WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_Cube_Texture: cube textures are a Milestone 4 non-goal on GL"));
+	return nullptr;
+}
+
+IDirect3DTexture8* DX8Wrapper::_Create_DX8_ZTexture
+(
+	unsigned int width,
+	unsigned int height,
+	WW3DZFormat zformat,
+	MipCountType mip_level_count,
+	D3DPOOL pool
+)
+{
+	WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_ZTexture: Z-textures are a Milestone 4 non-goal on GL"));
+	return nullptr;
+}
+
+// The filename-based overload (D3DXCreateTextureFromFileExA on Windows)
+// has no caller in this milestone's ported closure (finding 6) - the real
+// loader path is textureloader.cpp, not this. Finding 6 calls for it to
+// eventually return the missing texture (MissingTexture::
+// _Get_Missing_Texture()) rather than nullptr, matching real D3D8's
+// "always returns something drawable" contract for this path - deferred
+// until missingtexture.cpp is actually part of the portable link (Step 5),
+// since referencing it now would add an undefined-symbol dependency this
+// step's three harnesses don't otherwise pull in. Loud nullptr until then.
+IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture(const char *filename, MipCountType mip_level_count)
+{
+	WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_Texture(filename): not wired on GL until missingtexture.cpp is portable (Draft 22 Step 5)"));
+	return nullptr;
 }

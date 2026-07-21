@@ -102,6 +102,15 @@
 #ifndef GL_BGRA
 #define GL_BGRA                          0x80E1
 #endif
+#ifndef GL_TEXTURE1
+#define GL_TEXTURE1                      0x84C1
+#endif
+#ifndef GL_CLAMP_TO_BORDER
+#define GL_CLAMP_TO_BORDER               0x812D
+#endif
+#ifndef GL_MIRRORED_REPEAT
+#define GL_MIRRORED_REPEAT               0x8370
+#endif
 
 #include <cstddef> // ptrdiff_t - MSVC pulls this in transitively via windows.h, GCC/Clang do not
 
@@ -151,6 +160,10 @@ typedef void      (APIENTRY* PFNGLRENDERBUFFERSTORAGEPROC)(GLenum, GLenum, GLsiz
 typedef void      (APIENTRY* PFNGLFRAMEBUFFERRENDERBUFFERPROC)(GLenum, GLenum, GLenum, GLuint);
 typedef void      (APIENTRY* PFNGLDELETERENDERBUFFERSPROC)(GLsizei, const GLuint*);
 typedef void      (APIENTRY* PFNGLACTIVETEXTUREPROC)(GLenum);
+typedef void      (APIENTRY* PFNGLGENSAMPLERSPROC)(GLsizei, GLuint*);
+typedef void      (APIENTRY* PFNGLDELETESAMPLERSPROC)(GLsizei, const GLuint*);
+typedef void      (APIENTRY* PFNGLBINDSAMPLERPROC)(GLuint, GLuint);
+typedef void      (APIENTRY* PFNGLSAMPLERPARAMETERIPROC)(GLuint, GLenum, GLint);
 
 extern PFNGLGENVERTEXARRAYSPROC gl_GenVertexArrays;
 extern PFNGLBINDVERTEXARRAYPROC gl_BindVertexArray;
@@ -193,6 +206,10 @@ extern PFNGLRENDERBUFFERSTORAGEPROC gl_RenderbufferStorage;
 extern PFNGLFRAMEBUFFERRENDERBUFFERPROC gl_FramebufferRenderbuffer;
 extern PFNGLDELETERENDERBUFFERSPROC gl_DeleteRenderbuffers;
 extern PFNGLACTIVETEXTUREPROC gl_ActiveTexture;
+extern PFNGLGENSAMPLERSPROC gl_GenSamplers;
+extern PFNGLDELETESAMPLERSPROC gl_DeleteSamplers;
+extern PFNGLBINDSAMPLERPROC gl_BindSampler;
+extern PFNGLSAMPLERPARAMETERIPROC gl_SamplerParameteri;
 
 // Resolves all of the above via the given loader (glfwGetProcAddress).
 // Returns false (and leaves an unresolved pointer null) on first failure.

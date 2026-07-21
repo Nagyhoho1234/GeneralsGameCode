@@ -41,6 +41,10 @@ PFNGLRENDERBUFFERSTORAGEPROC gl_RenderbufferStorage;
 PFNGLFRAMEBUFFERRENDERBUFFERPROC gl_FramebufferRenderbuffer;
 PFNGLDELETERENDERBUFFERSPROC gl_DeleteRenderbuffers;
 PFNGLACTIVETEXTUREPROC gl_ActiveTexture;
+PFNGLGENSAMPLERSPROC gl_GenSamplers;
+PFNGLDELETESAMPLERSPROC gl_DeleteSamplers;
+PFNGLBINDSAMPLERPROC gl_BindSampler;
+PFNGLSAMPLERPARAMETERIPROC gl_SamplerParameteri;
 
 #define LOAD(name, type, member) \
     member = reinterpret_cast<type>(get_proc_address(name)); \
@@ -89,5 +93,9 @@ bool gl_core33_load(void* (*get_proc_address)(const char*))
     LOAD("glFramebufferRenderbuffer", PFNGLFRAMEBUFFERRENDERBUFFERPROC, gl_FramebufferRenderbuffer);
     LOAD("glDeleteRenderbuffers", PFNGLDELETERENDERBUFFERSPROC, gl_DeleteRenderbuffers);
     LOAD("glActiveTexture", PFNGLACTIVETEXTUREPROC, gl_ActiveTexture);
+    LOAD("glGenSamplers", PFNGLGENSAMPLERSPROC, gl_GenSamplers);
+    LOAD("glDeleteSamplers", PFNGLDELETESAMPLERSPROC, gl_DeleteSamplers);
+    LOAD("glBindSampler", PFNGLBINDSAMPLERPROC, gl_BindSampler);
+    LOAD("glSamplerParameteri", PFNGLSAMPLERPARAMETERIPROC, gl_SamplerParameteri);
     return true;
 }
