@@ -27,7 +27,9 @@
 #include "ffactory.h"
 #include "RAWFILE.h"
 #include "wwprofile.h"
-#include <windows.h>
+// <windows.h> removed (native port plan Phase 5(a) Milestone 4, Draft 22
+// Step 5) - only ever used here for stricmp/_strlwr, both already portable
+// via always.h -> Utility/compat.h -> Utility/string_compat.h.
 
 static DLListClass<ThumbnailManagerClass> ThumbnailManagerList;
 static ThumbnailManagerClass* GlobalThumbnailManager;

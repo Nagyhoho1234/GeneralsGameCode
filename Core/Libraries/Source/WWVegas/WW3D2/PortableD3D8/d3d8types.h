@@ -579,6 +579,51 @@ typedef struct _D3DSURFACE_DESC
 	UINT                Height;
 } D3DSURFACE_DESC;
 
+// (native port plan Phase 5(a) Milestone 4, Draft 22 Step 5) Same reason as
+// D3DSURFACE_DESC above - VolumeTextureClass::Apply_New_Surface reads
+// GetLevelDesc's Width/Height/Depth off this real struct shape.
+typedef struct _D3DVOLUME_DESC
+{
+	D3DFORMAT       Format;
+	D3DRESOURCETYPE Type;
+	DWORD           Usage;
+	D3DPOOL         Pool;
+	UINT            Size;
+	UINT            Width;
+	UINT            Height;
+	UINT            Depth;
+} D3DVOLUME_DESC;
+
+// (Draft 22 Step 5) VolumeTextureLoadTaskClass::Lock_Surfaces reads
+// LockBox's RowPitch/SlicePitch/pBits off this real struct shape -
+// LockBox itself stays declared with a void* parameter (same
+// GetLevelDesc-dodge as before D3DSURFACE_DESC existed) since nothing
+// GL-side needs to construct one yet (no volume texture is ever
+// created at runtime this milestone, finding 6).
+typedef struct _D3DLOCKED_BOX
+{
+	INT   RowPitch;
+	INT   SlicePitch;
+	void* pBits;
+} D3DLOCKED_BOX;
+
+// (Draft 22 Step 5) CubeTextureLoadTaskClass::Lock_Surfaces/Unlock_Surfaces
+// cast a face index to this type before passing it to
+// IDirect3DCubeTexture8::LockRect/UnlockRect (which take a plain UINT
+// FaceType - PortableD3D8/d3d8.h - so only the enum itself needs to exist
+// for the cast to compile).
+typedef enum _D3DCUBEMAP_FACES
+{
+	D3DCUBEMAP_FACE_POSITIVE_X = 0,
+	D3DCUBEMAP_FACE_NEGATIVE_X = 1,
+	D3DCUBEMAP_FACE_POSITIVE_Y = 2,
+	D3DCUBEMAP_FACE_NEGATIVE_Y = 3,
+	D3DCUBEMAP_FACE_POSITIVE_Z = 4,
+	D3DCUBEMAP_FACE_NEGATIVE_Z = 5,
+
+	D3DCUBEMAP_FACE_FORCE_DWORD = 0x7fffffff
+} D3DCUBEMAP_FACES;
+
 typedef struct _D3DDISPLAYMODE
 {
 	UINT      Width;

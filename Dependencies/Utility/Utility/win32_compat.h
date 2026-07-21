@@ -99,6 +99,11 @@ inline bool operator!=(const GUID& a, const GUID& b)
 #define LOWORD(l) ((WORD)((uint32_t)(l) & 0xffff))
 #define HIWORD(l) ((WORD)((uint32_t)(l) >> 16))
 
+// winbase.h's ZeroMemory is a plain memset alias (native port plan Phase
+// 5(a) Milestone 4, Draft 22 Step 5) - texture.cpp/missingtexture.cpp/
+// surfaceclass.cpp zero D3DSURFACE_DESC/D3DLOCKED_RECT locals with it.
+#define ZeroMemory(p, s) memset((p), 0, (s))
+
 #define S_OK ((HRESULT)0L)
 #define S_FALSE ((HRESULT)1L)
 #define E_FAIL ((HRESULT)0x80004005L)

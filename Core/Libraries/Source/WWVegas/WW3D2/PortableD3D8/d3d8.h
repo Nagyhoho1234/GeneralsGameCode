@@ -123,6 +123,7 @@ class IDirect3DVolumeTexture8 : public IDirect3DBaseTexture8
 {
 public:
 	D3DRESOURCETYPE GetType() override { return D3DRTYPE_VOLUMETEXTURE; }
+	virtual HRESULT GetLevelDesc(UINT Level, D3DVOLUME_DESC* pDesc) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT LockBox(UINT Level, void* pLockedVolume, CONST void* pBox, DWORD Flags) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT UnlockBox(UINT Level) { return D3DERR_NOTAVAILABLE; }
 };
@@ -131,6 +132,7 @@ class IDirect3DCubeTexture8 : public IDirect3DBaseTexture8
 {
 public:
 	D3DRESOURCETYPE GetType() override { return D3DRTYPE_CUBETEXTURE; }
+	virtual HRESULT GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT GetCubeMapSurface(UINT FaceType, UINT Level, IDirect3DSurface8** ppCubeMapSurface) { *ppCubeMapSurface = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT LockRect(UINT FaceType, UINT Level, void* pLockedRect, CONST RECT* pRect, DWORD Flags) { return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT UnlockRect(UINT FaceType, UINT Level) { return D3DERR_NOTAVAILABLE; }

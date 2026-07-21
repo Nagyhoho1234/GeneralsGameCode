@@ -52,7 +52,8 @@
 #include "dx8caps.h"
 #include "missingtexture.h"
 #include "TARGA.h"
-#include <d3dx8tex.h>
+// <d3dx8tex.h> removed (native port plan Phase 5(a) Milestone 4, Draft 22
+// Step 5) - dead include, zero D3DX symbols used in this file.
 #include "wwmemlog.h"
 #include "formconv.h"
 #include "texturethumbnail.h"
@@ -833,11 +834,17 @@ void TextureLoader::Flush_Pending_Load_Tasks()
 
 
 // Nework update macro for texture loader.
+#ifdef _MSC_VER
 #pragma warning(disable:4201) // warning C4201: nonstandard extension used : nameless struct/union
-#include <mmsystem.h>
+#endif
+// <mmsystem.h> -> "systimer.h" + timeGetTime() -> TIMEGETTIME() (native
+// port plan Phase 5(a) Milestone 4, Draft 22 Step 5) - the exact
+// literal-symbol trap Draft 1 documented; TIMEGETTIME is the portable
+// macro (WWLib/systimer.h) this codebase already uses everywhere else.
+#include "systimer.h"
 #define UPDATE_NETWORK 											\
 	if (network_callback) {                            \
-		unsigned long time2 = timeGetTime();            \
+		unsigned long time2 = TIMEGETTIME();            \
 		if (time2 - time > 20) {                        \
 			network_callback();                          \
 			time = time2;                                \
@@ -857,7 +864,7 @@ void TextureLoader::Update(void (*network_callback)())
 	// modifying texture tasks.
 	FastCriticalSectionClass::LockClass lock(_ForegroundCriticalSection);
 
-	unsigned long time = timeGetTime();
+	unsigned long time = TIMEGETTIME();
 
 	// while we have tasks on the foreground queue
 	while (TextureLoadTaskClass *task = _ForegroundQueue.Pop_Front()) {

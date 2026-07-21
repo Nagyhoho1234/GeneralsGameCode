@@ -20,7 +20,12 @@
 #include "missingtexture.h"
 #include "texture.h"
 #include "dx8wrapper.h"
-#include <d3dx8core.h>
+// <d3dx8core.h> removed (native port plan Phase 5(a) Milestone 4, Draft 22
+// Step 5) - its one call site (D3DXLoadSurfaceFromSurface, 2:1 box-filtering
+// level 0 down through the mip chain) is replaced below by a direct
+// constant-fill loop: box-filtering a solid color is provably a no-op
+// since level 0 is itself hand-filled with the constant 0x7FFF00FF, so
+// every mip level can be filled with that same constant directly.
 
 static unsigned missing_image_width=128;
 static unsigned missing_image_height=128;
@@ -98,22 +103,24 @@ void MissingTexture::_Init()
 	DX8_ErrorCode(tex->UnlockRect(0));
 
 	for (unsigned i=1;i<tex->GetLevelCount();++i) {
-		IDirect3DSurface8 *src,*dst;
-		DX8_ErrorCode(tex->GetSurfaceLevel(i-1,&src));
-		DX8_ErrorCode(tex->GetSurfaceLevel(i,&dst));
+		D3DLOCKED_RECT level_locked_rect;
+		DX8_ErrorCode(tex->LockRect(i, &level_locked_rect, nullptr, 0));
 
-		DX8_ErrorCode(D3DXLoadSurfaceFromSurface(
-			dst,
-			nullptr,	// palette
-			nullptr,	// rect
-			src,
-			nullptr,	// palette
-			nullptr,	// rect
-			D3DX_FILTER_BOX,	// box is good for 2:1 filtering
-			0));
+		unsigned level_width = missing_image_width >> i;
+		unsigned level_height = missing_image_height >> i;
+		if (level_width == 0) level_width = 1;
+		if (level_height == 0) level_height = 1;
 
-		src->Release();
-		dst->Release();
+		unsigned char *row = (unsigned char *)level_locked_rect.pBits;
+		for (unsigned y=0; y<level_height; y++) {
+			unsigned *level_buffer = (unsigned*)row;
+			for (unsigned x=0; x<level_width; x++) {
+				*level_buffer++=0x7FFF00FF;
+			}
+			row += level_locked_rect.Pitch;
+		}
+
+		DX8_ErrorCode(tex->UnlockRect(i));
 	}
 
 	_MissingTexture=tex;

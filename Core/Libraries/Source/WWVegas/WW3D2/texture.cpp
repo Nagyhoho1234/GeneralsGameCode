@@ -42,7 +42,8 @@
 #include "texture.h"
 
 #include <d3d8.h>
-#include <d3dx8core.h>
+// <d3dx8core.h> removed (native port plan Phase 5(a) Milestone 4, Draft 22
+// Step 5) - dead include, zero D3DX symbols used in this file.
 #include "dx8wrapper.h"
 #include "TARGA.h"
 #include <nstrdup.h>

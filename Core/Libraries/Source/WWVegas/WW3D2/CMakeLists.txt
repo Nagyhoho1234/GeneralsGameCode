@@ -17,8 +17,8 @@ set(WW3D2_SRC
     assetmgr.h
     assetstatus.cpp
     assetstatus.h
-    bitmaphandler.cpp
-    bitmaphandler.h
+    #bitmaphandler.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
+    #bitmaphandler.h
     bmp2d.cpp
     bmp2d.h
     #boxrobj.cpp
@@ -38,8 +38,8 @@ set(WW3D2_SRC
     composite.h
     dazzle.cpp
     dazzle.h
-    ddsfile.cpp
-    ddsfile.h
+    #ddsfile.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
+    #ddsfile.h
     #decalmsh.cpp
     decalmsh.h
     decalsys.cpp
@@ -60,8 +60,8 @@ set(WW3D2_SRC
     dx8renderer.h
     dx8rendererdebugger.cpp
     dx8rendererdebugger.h
-    dx8texman.cpp
-    dx8texman.h
+    #dx8texman.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
+    #dx8texman.h
     #dx8vertexbuffer.cpp
     #dx8vertexbuffer.h
     dx8webbrowser.cpp
@@ -132,8 +132,8 @@ set(WW3D2_SRC
     #meshmdlio.cpp
     metalmap.cpp
     metalmap.h
-    missingtexture.cpp
-    missingtexture.h
+    #missingtexture.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
+    #missingtexture.h
     motchan.cpp
     motchan.h
     #nullrobj.cpp
@@ -203,20 +203,20 @@ set(WW3D2_SRC
     streakRender.h
     stripoptimizer.cpp
     stripoptimizer.h
-    surfaceclass.cpp
-    surfaceclass.h
+    #surfaceclass.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
+    #surfaceclass.h
     texproject.cpp
     texproject.h
     #textdraw.cpp # unused
     textdraw.h
-    texture.cpp
-    texture.h
-    texturefilter.cpp
-    texturefilter.h
-    textureloader.cpp
-    textureloader.h
-    texturethumbnail.cpp
-    texturethumbnail.h
+    #texture.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
+    #texture.h
+    #texturefilter.cpp
+    #texturefilter.h
+    #textureloader.cpp
+    #textureloader.h
+    #texturethumbnail.cpp
+    #texturethumbnail.h
     #vertmaterial.cpp
     #vertmaterial.h
     visrasterizer.cpp
@@ -277,6 +277,31 @@ set(WW3D2_SRC_PORTABLE
     ww3d_common.cpp
     ww3dformat.cpp
     ww3dformat.h
+
+    # Texture pipeline (native port plan Phase 5(a) Milestone 4, Draft 22
+    # Step 5) - portability sweep of all nine TUs the plan's scope
+    # statement calls out. See docs/native-port-plan.md's Draft 22 section
+    # for the per-file compile gates each of these needed (D3DX includes
+    # removed/Windows-gated, ZeroMemory, timeGetTime->TIMEGETTIME,
+    # D3DVOLUME_DESC/D3DLOCKED_BOX/D3DCUBEMAP_FACES added to PortableD3D8).
+    bitmaphandler.cpp
+    bitmaphandler.h
+    ddsfile.cpp
+    ddsfile.h
+    dx8texman.cpp
+    dx8texman.h
+    missingtexture.cpp
+    missingtexture.h
+    surfaceclass.cpp
+    surfaceclass.h
+    texture.cpp
+    texture.h
+    texturefilter.cpp
+    texturefilter.h
+    textureloader.cpp
+    textureloader.h
+    texturethumbnail.cpp
+    texturethumbnail.h
 )
 
 if(WIN32)

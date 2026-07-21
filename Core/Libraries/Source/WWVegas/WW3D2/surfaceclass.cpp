@@ -53,7 +53,17 @@
 #include "vector2i.h"
 #include "colorspace.h"
 #include "bound.h"
+// <d3dx8.h> only under _WIN32 now (native port plan Phase 5(a) Milestone 4,
+// Draft 22 Step 5) - its two call sites below (mismatched-format Copy,
+// Stretch_Copy) have no caller anywhere in this milestone's ported closure
+// (only bmp2d.cpp/font3d.cpp call either, both Milestone 5+), so they stay
+// real on Windows and get a loud non-Windows stub rather than a silently
+// wrong reimplementation - a naive memcpy would corrupt output whenever
+// formats differ, which D3DXLoadSurfaceFromSurface's format-converting
+// blit handles for real.
+#ifdef _WIN32
 #include <d3dx8.h>
+#endif
 
 void Convert_Pixel(Vector3 &rgb, const SurfaceClass::SurfaceDescription &sd, const unsigned char * pixel)
 {
@@ -474,7 +484,11 @@ void SurfaceClass::Copy(
 		if (dest.right>int(sd.Width)) dest.right=int(sd.Width);
 		if (dest.bottom>int(sd.Height)) dest.bottom=int(sd.Height);
 
+#ifdef _WIN32
 		DX8_ErrorCode(D3DXLoadSurfaceFromSurface(D3DSurface,nullptr,&dest,other->D3DSurface,nullptr,&src,D3DX_FILTER_NONE,0));
+#else
+		WWASSERT_PRINT(false, "SurfaceClass::Copy: mismatched-format/size path has no caller in the ported closure yet (Milestone 4 non-goal)");
+#endif
 	}
 }
 
@@ -516,7 +530,11 @@ void SurfaceClass::Stretch_Copy(
 	dest.top=dsty;
 	dest.bottom=dsty+dstheight;
 
+#ifdef _WIN32
 	DX8_ErrorCode(D3DXLoadSurfaceFromSurface(D3DSurface,nullptr,&dest,other->D3DSurface,nullptr,&src,D3DX_FILTER_TRIANGLE ,0));
+#else
+	WWASSERT_PRINT(false, "SurfaceClass::Stretch_Copy: no caller in the ported closure yet (Milestone 4 non-goal)");
+#endif
 }
 
 /***********************************************************************************************
@@ -575,7 +593,13 @@ void SurfaceClass::FindBB(Vector2i *min,Vector2i*max)
 		for (x = min->I; x < max->I; x++) {
 
 			// HY - this is not endian safe
-			unsigned char *alpha=(unsigned char*) ((unsigned int)lock_rect.pBits+(y-min->J)*lock_rect.Pitch+(x-min->I)*size);
+			// (native port plan Phase 5(a) Milestone 4, Draft 22 Step 5) was
+			// (unsigned int)lock_rect.pBits+... - a 64-bit pointer truncated
+			// through unsigned int, silently fine on 32-bit MSVC but a real
+			// precision-losing cast (hard error under GCC/Clang) once this
+			// file compiles for x86-64 Linux for the first time. Byte-pointer
+			// arithmetic is the same offset, no truncation, works on both.
+			unsigned char *alpha=(unsigned char*)lock_rect.pBits+(y-min->J)*lock_rect.Pitch+(x-min->I)*size;
 			unsigned char myalpha=alpha[size-1];
 			myalpha=(myalpha>>(8-alphabits)) & mask;
 			if (myalpha) {
@@ -649,7 +673,8 @@ bool SurfaceClass::Is_Transparent_Column(unsigned int column)
 	for (y = 0; y < (int) sd.Height; y++)
 	{
 		// HY - this is not endian safe
-		unsigned char *alpha=(unsigned char*) ((unsigned int)lock_rect.pBits+y*lock_rect.Pitch);
+		// (Draft 22 Step 5) same 64-bit-truncation fix as above.
+		unsigned char *alpha=(unsigned char*)lock_rect.pBits+y*lock_rect.Pitch;
 		unsigned char myalpha=alpha[size-1];
 		myalpha=(myalpha>>(8-alphabits)) & mask;
 		if (myalpha) {

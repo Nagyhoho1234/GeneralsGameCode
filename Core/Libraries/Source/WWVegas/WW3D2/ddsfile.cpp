@@ -25,7 +25,13 @@
 #include "dx8wrapper.h"
 #include "bitmaphandler.h"
 #include "colorspace.h"
-#include <ddraw.h>
+
+// <ddraw.h> replaced with these two constants directly (native port plan
+// Phase 5(a) Milestone 4, Draft 22 Step 5) - the only two symbols this file
+// ever used from it (standard DirectDraw values; no other DirectDraw
+// interface/constant is referenced anywhere in this TU).
+#define DDSCAPS2_CUBEMAP 0x00000200
+#define DDSCAPS2_VOLUME  0x00200000
 
 // ----------------------------------------------------------------------------
 
