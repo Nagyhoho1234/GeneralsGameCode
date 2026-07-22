@@ -87,17 +87,23 @@ void MissingTexture::_Init()
 			&rect,
 			0));
 
-	unsigned *buffer=(unsigned*)locked_rect.pBits;
 	unsigned char *pixels=(unsigned char *)missing_image_pixels;
 	for (unsigned y=0;y<missing_image_height;y++)
 	{
+		// fable-review-of-Milestone-4 finding 4 (pre-existing, not introduced
+		// by this port): the row pointer used to be reset to pBits and
+		// re-offset by Pitch*y *after* the inner loop, using that
+		// iteration's pre-increment y - so row 0 was written twice (once
+		// directly, once again when y became 1 and the stale offset still
+		// read 0) and the last row (127) was never reached at all, leaving
+		// malloc garbage in the GL shadow buffer's bottom row. Computing the
+		// row pointer directly from y at the top of the loop fixes both.
+		unsigned *buffer=(unsigned*)((unsigned char*)locked_rect.pBits+y*locked_rect.Pitch);
 		for (unsigned x=0; x<missing_image_width; x++)
 		{
 			//*buffer++=missing_image_palette[*pixels++];
 			*buffer++=0x7FFF00FF;
 		}
-		buffer=(unsigned*)locked_rect.pBits;
-		buffer+=locked_rect.Pitch/sizeof(unsigned)*y;
 	}
 
 	DX8_ErrorCode(tex->UnlockRect(0));

@@ -70,15 +70,21 @@
 //      modes (TextureFilterClass::Set_U_Addr_Mode, real W3D texinfo path)
 //      yields the two different, exactly-predicted texels with point
 //      magnification - proves Filter.Apply -> Set_DX8_Texture_Stage_State ->
-//      the real GL sampler objects (Milestone 4 Step 3) end-to-end.
+//      the real GL sampler objects (Milestone 4 Step 3) end-to-end (6a/6b,
+//      ADDRESSU). 6c/6d repeat the identical proof along V (a 1-wide/
+//      2-tall TGA, top texel != bottom texel, Set_V_Addr_Mode) - closing a
+//      fable-model review finding: a mutation test deleting the ADDRESSV
+//      case from SetTextureStageState still passed all of 1-6a/6b, since
+//      nothing exercised it before 6c/6d existed.
 //
 // Scope call: the plan's own finding 5 additionally mentions a point-vs-
 // linear magnification distinction as part of this same check; this harness
 // covers the WRAP-vs-CLAMP address-mode half only (still a real, complete
-// proof of the SetTextureStageState->sampler-object chain, since ADDRESSU/V
-// is one of the five D3DTSS_* values that chain translates) and treats the
-// filter-mode half as already covered by check 2/5's point-mip-filtering
-// requirement - kept to 6 checks total, matching every prior milestone.
+// proof of the SetTextureStageState->sampler-object chain, now covering both
+// ADDRESSU and ADDRESSV of the five D3DTSS_* values that chain translates)
+// and treats the filter-mode half as already covered by check 2/5's
+// point-mip-filtering requirement - kept to 6 checks total (6 now has four
+// sub-parts), matching every prior milestone.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -221,6 +227,51 @@ namespace
 	{
 		Vertex verts[4];
 		Make_Quad(local_x, local_y, local_z, half_size, diffuse, u_min, u_max, verts);
+
+		DX8VertexBufferClass* vb = new DX8VertexBufferClass(QUAD_FVF, 4);
+		{
+			VertexBufferClass::WriteLockClass lock(vb);
+			memcpy(lock.Get_Vertex_Array(), verts, sizeof(verts));
+		}
+
+		DX8IndexBufferClass* ib = new DX8IndexBufferClass(6);
+		{
+			IndexBufferClass::WriteLockClass lock(ib);
+			memcpy(lock.Get_Index_Array(), QUAD_INDICES, sizeof(QUAD_INDICES));
+		}
+
+		DX8Wrapper::Set_Vertex_Buffer(vb);
+		DX8Wrapper::Set_Index_Buffer(ib, 0);
+		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
+		DX8Wrapper::Set_Material(nullptr);
+		DX8Wrapper::Set_Texture(0, texture);
+		DX8Wrapper::Draw_Triangles(0, 2, 0, 4);
+
+		vb->Release_Ref();
+		ib->Release_Ref();
+	}
+
+	// fable-review-of-Milestone-4 finding 6: check 6 below only ever varied
+	// U (Make_Quad pins v to [0,1]), so a mutation test deleting the
+	// D3DTSS_ADDRESSV case from SetTextureStageState still passed all 6
+	// checks - a real, honest verification gap. This mirrors Make_Quad/
+	// Draw_Textured_Quad exactly, but with u pinned to [0,1] and v carrying
+	// the variable out-of-range range instead, to close it with a genuine
+	// pixel-sampling check (6c/6d below) rather than an assertion.
+	void Make_Quad_VRange(float local_x, float local_y, float local_z, float half_size,
+		DWORD diffuse, float v_min, float v_max, Vertex out[4])
+	{
+		out[0] = { local_x - half_size, local_y - half_size, local_z, diffuse, 0.0f, v_min };
+		out[1] = { local_x + half_size, local_y - half_size, local_z, diffuse, 1.0f, v_min };
+		out[2] = { local_x + half_size, local_y + half_size, local_z, diffuse, 1.0f, v_max };
+		out[3] = { local_x - half_size, local_y + half_size, local_z, diffuse, 0.0f, v_max };
+	}
+
+	void Draw_Textured_Quad_VRange(float local_x, float local_y, float local_z, float half_size,
+		DWORD diffuse, float v_min, float v_max, TextureBaseClass* texture)
+	{
+		Vertex verts[4];
+		Make_Quad_VRange(local_x, local_y, local_z, half_size, diffuse, v_min, v_max, verts);
 
 		DX8VertexBufferClass* vb = new DX8VertexBufferClass(QUAD_FVF, 4);
 		{
@@ -523,6 +574,41 @@ int main()
 	clamp_tex->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
 	Draw_Textured_Quad(3.0f, -3.5f, 0.0f, HALF, WHITE, 0.0f, U_MAX, clamp_tex);
 
+	// --- Check 6c/6d: sampler plumbing (WRAP vs CLAMP), ADDRESSV --------------
+	// Real ADDRESSV coverage closing the fable-review-of-Milestone-4 finding
+	// 6 gap above: a 1-wide/2-tall TGA (top texel != bottom texel), sampled
+	// at the same out-of-[0,1] V value under WRAP vs CLAMP, mirroring 6a/6b's
+	// math exactly but along V instead of U.
+	//
+	// Row-to-V mapping: verified against this harness's own rendered output,
+	// not assumed from reading TARGA.cpp in isolation - Targa::Open()'s
+	// YFlip() (called here since ImageDescriptor's TGAIDF_YORIGIN bit is
+	// set, declaring top-origin data on disk) suggested a reversal, but the
+	// net effect actually observed end-to-end through BitmapHandlerClass/
+	// GLTexture8's upload is a direct mapping with no net flip, same as the
+	// unflipped X axis above: the row written FIRST below lands at V near 0,
+	// the row written LAST lands at V near 1.
+	unsigned char v_two_col[1 * 2 * 4] = {
+		220, 140, 30, 255,	// row written first (top_color): BGRA -> RGB(30,140,220) sky-blue, lands at V~0
+		0, 180, 220, 255,	// row written last (bottom_color): BGRA -> RGB(220,180,0) gold, lands at V~1
+	};
+	std::string vaddr_path = Temp_Path("vaddrwrapclamp.tga");
+	Write_TGA(vaddr_path, 1, 2, v_two_col);
+
+	const float V_MAX = 2.0f;
+	const float V_SAMPLE = 1.3f;
+	const float SAMPLE_LOCAL_Y = HALF * (2.0f * V_SAMPLE / V_MAX - 1.0f);
+
+	TextureClass* vwrap_tex = new TextureClass(vaddr_path.c_str(), nullptr, MIP_LEVELS_1);
+	vwrap_tex->Init(); // default address mode is TEXTURE_ADDRESS_REPEAT (WRAP)
+	Draw_Textured_Quad_VRange(0.0f, 3.5f, 0.0f, HALF, WHITE, 0.0f, V_MAX, vwrap_tex);
+
+	TextureClass* vclamp_tex = new TextureClass(vaddr_path.c_str(), nullptr, MIP_LEVELS_1);
+	vclamp_tex->Init();
+	vclamp_tex->Get_Filter().Set_U_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
+	vclamp_tex->Get_Filter().Set_V_Addr_Mode(TextureFilterClass::TEXTURE_ADDRESS_CLAMP);
+	Draw_Textured_Quad_VRange(0.0f, 0.0f, 0.0f, HALF, WHITE, 0.0f, V_MAX, vclamp_tex);
+
 	DX8Wrapper::End_Scene(false);
 
 	unsigned char* pixels = static_cast<unsigned char*>(malloc(4 * W * H));
@@ -566,6 +652,14 @@ int main()
 	Ndc_To_Pixel_TopDown(ndc_x, ndc_y, &px, &py);
 	Check_Pixel(topdown, px, py, 220, 140, 0, "6b. sampler plumbing: CLAMP");
 
+	Predict_Ndc(0.0f, 3.5f + SAMPLE_LOCAL_Y, 0.0f, &ndc_x, &ndc_y);
+	Ndc_To_Pixel_TopDown(ndc_x, ndc_y, &px, &py);
+	Check_Pixel(topdown, px, py, 30, 140, 220, "6c. sampler plumbing: ADDRESSV WRAP");
+
+	Predict_Ndc(0.0f, 0.0f + SAMPLE_LOCAL_Y, 0.0f, &ndc_x, &ndc_y);
+	Ndc_To_Pixel_TopDown(ndc_x, ndc_y, &px, &py);
+	Check_Pixel(topdown, px, py, 220, 180, 0, "6d. sampler plumbing: ADDRESSV CLAMP");
+
 	free(topdown);
 
 	DX8Wrapper::Set_Vertex_Buffer(nullptr);
@@ -580,6 +674,8 @@ int main()
 	bg_tex->Release_Ref();
 	wrap_tex->Release_Ref();
 	clamp_tex->Release_Ref();
+	vwrap_tex->Release_Ref();
+	vclamp_tex->Release_Ref();
 
 	TextureLoader::Deinit();
 	MissingTexture::_Deinit();
@@ -591,6 +687,7 @@ int main()
 	unlink(dds_path.c_str());
 	unlink(checker2_path.c_str());
 	unlink(wrap_path.c_str());
+	unlink(vaddr_path.c_str());
 
 	if (g_AnyFailure)
 	{

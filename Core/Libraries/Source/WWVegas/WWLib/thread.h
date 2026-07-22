@@ -104,5 +104,13 @@ private:
 	int thread_priority;
 #ifdef _UNIX
 	pthread_t posix_thread;
+	// fable-review-of-Milestone-4 finding 5: tracks whether posix_thread
+	// currently holds a created-but-not-yet-joined thread, independent of
+	// `handle` - which the worker thread clears itself from inside
+	// Internal_Thread_Function with no synchronization against Stop()'s
+	// read of it, letting Stop() observe handle==0 and skip pthread_join
+	// entirely. Only Execute()/Stop() (the owning thread) touch this flag,
+	// never the worker, so it isn't racy the same way.
+	bool posix_thread_joinable;
 #endif
 };

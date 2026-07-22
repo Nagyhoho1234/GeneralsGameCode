@@ -44,6 +44,9 @@ ThreadClass::ThreadClass(const char *thread_name, ExceptionHandlerType exception
 	}
 
 	ExceptionHandler = exception_handler;
+#ifdef _UNIX
+	posix_thread_joinable = false;
+#endif
 }
 
 ThreadClass::~ThreadClass()
@@ -102,6 +105,7 @@ void ThreadClass::Execute()
 	#ifdef _UNIX
 		int res = pthread_create(&posix_thread, nullptr, &Posix_Thread_Trampoline, this);
 		WWASSERT(res == 0);
+		posix_thread_joinable = true;
 		handle = 1;	// POSIX has no D3D-style handle value; nonzero just means "a thread is running"
 		WWDEBUG_SAY(("ThreadClass::Execute: Started thread %s", ThreadName));
 	#else
@@ -129,10 +133,23 @@ void ThreadClass::Stop(unsigned ms)
 		// No portable timed-join; the loader thread polls "running" every
 		// iteration and exits promptly, so a plain join converges. The
 		// TerminateThread watchdog below is a Windows-only last resort.
-		if (handle) {
+		//
+		// fable-review-of-Milestone-4 finding 5: this used to gate the join
+		// on `if (handle)`, but `handle` is cleared by the worker thread
+		// itself (Internal_Thread_Function, right before it returns) with
+		// no synchronization against this read. If that clear lands before
+		// this check, pthread_join is silently skipped - leaking the now-
+		// finished but never-reaped joinable thread, and never establishing
+		// the happens-before edge pthread_join provides, leaving a narrow
+		// window where this object could be destroyed while the C library
+		// is still unwinding that thread's stack. posix_thread_joinable is
+		// only ever written by Execute()/Stop() (the owning thread), never
+		// by the worker, so gating on it instead is race-free.
+		if (posix_thread_joinable) {
 			pthread_join(posix_thread, nullptr);
-			handle=0;
+			posix_thread_joinable=false;
 		}
+		handle=0;
 	#else
 		running=false;
 		unsigned time=TIMEGETTIME();

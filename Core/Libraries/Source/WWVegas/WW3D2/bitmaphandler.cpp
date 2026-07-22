@@ -68,6 +68,58 @@ void BitmapHandlerClass::Copy_Image_Generate_Mipmap(
 		dest_pitch/=4;
 		src_pitch/=4;
 		mip_pitch/=4;
+
+		// fable-review-of-Milestone-4 finding 3: unlike Copy_Image's
+		// same-format fast path (which has dest_surface_width==1 and
+		// dest_surface_height==1 special cases), this function had no
+		// row/column-of-1 case at all - a 1xN or Nx1 level (reachable
+		// via TextureLoader::Load_Thumbnail for any non-square
+		// thumbnail) made both /2 loop bounds below integer-divide to 0,
+		// silently leaving dest_surface *and* mip_surface as shadow-
+		// buffer garbage for every level of a narrow mip chain.
+		if (width==1 && height==1) {
+			unsigned b8g8r8a8=*(unsigned*)src_surface;
+			if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
+			*(unsigned*)dest_surface=b8g8r8a8;
+			*(unsigned*)mip_surface=b8g8r8a8;
+			return;
+		}
+		if (width==1) {
+			// Vertical-only pairing: no second column exists, so each
+			// mip pixel is the average of the column's own two rows.
+			unsigned* dest_ptr=(unsigned*)dest_surface;
+			unsigned* src_ptr=(unsigned*)src_surface;
+			unsigned* mip_ptr=(unsigned*)mip_surface;
+			for (unsigned y=0;y<height/2;++y) {
+				unsigned b8g8r8a8_00=*src_ptr;
+				unsigned b8g8r8a8_10=src_ptr[src_pitch];
+				*dest_ptr=b8g8r8a8_00;
+				dest_ptr[dest_pitch]=b8g8r8a8_10;
+				src_ptr+=2*src_pitch;
+				dest_ptr+=2*dest_pitch;
+				unsigned b8g8r8a8=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_00,b8g8r8a8_10,b8g8r8a8_10);
+				if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
+				*mip_ptr++=b8g8r8a8;
+			}
+			return;
+		}
+		if (height==1) {
+			// Horizontal-only pairing sibling of the width==1 case above.
+			unsigned* dest_ptr=(unsigned*)dest_surface;
+			unsigned* src_ptr=(unsigned*)src_surface;
+			unsigned* mip_ptr=(unsigned*)mip_surface;
+			for (unsigned x=0;x<width/2;++x) {
+				unsigned b8g8r8a8_00=*src_ptr++;
+				unsigned b8g8r8a8_01=*src_ptr++;
+				*dest_ptr++=b8g8r8a8_00;
+				*dest_ptr++=b8g8r8a8_01;
+				unsigned b8g8r8a8=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_01,b8g8r8a8_00,b8g8r8a8_01);
+				if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
+				*mip_ptr++=b8g8r8a8;
+			}
+			return;
+		}
+
 		for (unsigned y=0;y<height/2;++y) {
 			unsigned* dest_ptr=(unsigned*)dest_surface;
 			dest_ptr+=2*y*dest_pitch;
@@ -103,6 +155,51 @@ void BitmapHandlerClass::Copy_Image_Generate_Mipmap(
 	WWASSERT(src_format!=WW3D_FORMAT_P8);		// This function doesn't support paletted formats
 	unsigned src_bpp=Get_Bytes_Per_Pixel(src_format);
 	unsigned dest_bpp=Get_Bytes_Per_Pixel(dest_format);
+
+	// Same row/column-of-1 hole as the optimized path above (finding 3),
+	// mirrored here for the mismatched-format case.
+	if (width==1 && height==1) {
+		unsigned b8g8r8a8;
+		Read_B8G8R8A8(b8g8r8a8,src_surface,src_format,nullptr,0);
+		if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
+		Write_B8G8R8A8(dest_surface,dest_format,b8g8r8a8);
+		Write_B8G8R8A8(mip_surface,dest_format,b8g8r8a8);
+		return;
+	}
+	if (width==1) {
+		unsigned char* dest_ptr=dest_surface;
+		unsigned char* src_ptr=src_surface;
+		unsigned char* mip_ptr=mip_surface;
+		for (unsigned y=0;y<height/2;++y,dest_ptr+=dest_pitch*2,src_ptr+=src_pitch*2,mip_ptr+=dest_bpp) {
+			unsigned b8g8r8a8_00;
+			unsigned b8g8r8a8_10;
+			Read_B8G8R8A8(b8g8r8a8_00,src_ptr,src_format,nullptr,0);
+			Read_B8G8R8A8(b8g8r8a8_10,src_ptr+src_pitch,src_format,nullptr,0);
+			Write_B8G8R8A8(dest_ptr,dest_format,b8g8r8a8_00);
+			Write_B8G8R8A8(dest_ptr+dest_pitch,dest_format,b8g8r8a8_10);
+			unsigned b8g8r8a8=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_00,b8g8r8a8_10,b8g8r8a8_10);
+			if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
+			Write_B8G8R8A8(mip_ptr,dest_format,b8g8r8a8);
+		}
+		return;
+	}
+	if (height==1) {
+		unsigned char* dest_ptr=dest_surface;
+		unsigned char* src_ptr=src_surface;
+		unsigned char* mip_ptr=mip_surface;
+		for (unsigned x=0;x<width/2;x++,dest_ptr+=dest_bpp*2,src_ptr+=src_bpp*2,mip_ptr+=dest_bpp) {
+			unsigned b8g8r8a8_00;
+			unsigned b8g8r8a8_01;
+			Read_B8G8R8A8(b8g8r8a8_00,src_ptr,src_format,nullptr,0);
+			Read_B8G8R8A8(b8g8r8a8_01,src_ptr+src_bpp,src_format,nullptr,0);
+			Write_B8G8R8A8(dest_ptr,dest_format,b8g8r8a8_00);
+			Write_B8G8R8A8(dest_ptr+dest_bpp,dest_format,b8g8r8a8_01);
+			unsigned b8g8r8a8=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_01,b8g8r8a8_00,b8g8r8a8_01);
+			if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
+			Write_B8G8R8A8(mip_ptr,dest_format,b8g8r8a8);
+		}
+		return;
+	}
 
 	for (unsigned y=0;y<height/2;++y) {
 		unsigned char* dest_ptr=dest_surface+2*y*dest_pitch;
@@ -263,10 +360,39 @@ void BitmapHandlerClass::Copy_Image(
 		if (dest_surface_width==src_surface_width && dest_surface_height==src_surface_height) {
 			// Generate the next mip level while copying the current surface?
 			if (generate_mip_level) {
-				if (dest_surface_width==1) {
+				if (dest_surface_width==1 && dest_surface_height==1) {
 					unsigned b8g8r8a8=*(unsigned*)src_surface;
 					if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
 					*(unsigned*)dest_surface=b8g8r8a8;
+				}
+				else if (dest_surface_width==1) {
+					// fable-review-of-Milestone-4 finding 2: this branch used to
+					// fire on dest_surface_width==1 alone and always did the
+					// single-pixel copy above, which is only correct for the true
+					// 1x1 terminal level. A 1xN (N>1) level - e.g. a 1x4 texture's
+					// second mip, 1x2 - silently got no copy and no mip data at
+					// all, falling through to the general 2x2 loop below whose
+					// dest_surface_width/2 bound integer-divides to 0. Vertical-
+					// only pairing here mirrors the dest_surface_height==1 case's
+					// horizontal-only pairing (no next-column read, since there is
+					// no next column).
+					unsigned* dest_ptr=(unsigned*)dest_surface;
+					unsigned* src_ptr=(unsigned*)src_surface;
+					unsigned* mip_ptr=src_ptr;
+					for (unsigned y=0;y<dest_surface_height/2;y++) {
+						unsigned b8g8r8a8_00=*src_ptr;
+						unsigned b8g8r8a8_10=src_ptr[src_surface_pitch];
+						if (has_hsv_shift) {
+							Recolor(b8g8r8a8_00,hsv_shift);
+							Recolor(b8g8r8a8_10,hsv_shift);
+						}
+						*dest_ptr=b8g8r8a8_00;
+						dest_ptr[dest_surface_pitch]=b8g8r8a8_10;
+						src_ptr+=2*src_surface_pitch;
+						dest_ptr+=2*dest_surface_pitch;
+						*mip_ptr=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_00,b8g8r8a8_10,b8g8r8a8_10);
+						mip_ptr+=src_surface_pitch;
+					}
 				}
 				else if (dest_surface_height==1) {
 					// Real bug found in Milestone 4 (Draft 22 Step 6): non-square
@@ -383,7 +509,7 @@ void BitmapHandlerClass::Copy_Image(
 		// Generate the next mip level while copying the current surface?
 		if (generate_mip_level) {
 			WWASSERT(src_surface_format!=WW3D_FORMAT_P8);	// Paletted textures can't be mipmapped
-			if (dest_surface_width==1) {
+			if (dest_surface_width==1 && dest_surface_height==1) {
 				unsigned char* dest_ptr=dest_surface;
 				unsigned char* src_ptr=src_surface;
 				unsigned b8g8r8a8;
@@ -392,6 +518,53 @@ void BitmapHandlerClass::Copy_Image(
 					Recolor(b8g8r8a8,hsv_shift);
 				}
 				Write_B8G8R8A8(dest_ptr,dest_surface_format,b8g8r8a8);
+			}
+			else if (dest_surface_width==1) {
+				// fable-review-of-Milestone-4 finding 2 (mismatched-format sibling):
+				// same defect as the fast-path width==1 branch above - only correct
+				// for the true 1x1 case. Vertical-only pairing for a 1xN (N>1) level.
+				unsigned char* dest_ptr=dest_surface;
+				unsigned char* src_ptr=src_surface;
+				unsigned char* mip_ptr=src_surface;
+				for (unsigned y=0;y<dest_surface_height/2;++y,dest_ptr+=dest_surface_pitch*2,src_ptr+=src_surface_pitch*2,mip_ptr+=src_bpp) {
+					unsigned b8g8r8a8_00;
+					unsigned b8g8r8a8_10;
+					Read_B8G8R8A8(b8g8r8a8_00,src_ptr,src_surface_format,src_palette,src_palette_bpp);
+					Read_B8G8R8A8(b8g8r8a8_10,src_ptr+src_surface_pitch,src_surface_format,src_palette,src_palette_bpp);
+					if (has_hsv_shift) {
+						Recolor(b8g8r8a8_00,hsv_shift);
+						Recolor(b8g8r8a8_10,hsv_shift);
+					}
+					Write_B8G8R8A8(dest_ptr,dest_surface_format,b8g8r8a8_00);
+					Write_B8G8R8A8(dest_ptr+dest_surface_pitch,dest_surface_format,b8g8r8a8_10);
+					unsigned b8g8r8a8=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_00,b8g8r8a8_10,b8g8r8a8_10);
+					Write_B8G8R8A8(mip_ptr,src_surface_format,b8g8r8a8);
+				}
+			}
+			else if (dest_surface_height==1) {
+				// fable-review-of-Milestone-4 finding 1: the general (mismatched-
+				// format) branch has the identical dest_surface_height==1 hole
+				// Draft 23's fix only patched in the same-format fast path above.
+				// Unreachable on GL today (GL upload dest is always A8R8G8B8, which
+				// takes the fast path), reachable the day a 16-bit GL upload format
+				// exists. Horizontal-only pairing, mirroring the fast path's fix.
+				unsigned char* dest_ptr=dest_surface;
+				unsigned char* src_ptr=src_surface;
+				unsigned char* mip_ptr=src_surface;
+				for (unsigned x=0;x<dest_surface_width/2;x++,dest_ptr+=dest_bpp*2,src_ptr+=src_bpp*2,mip_ptr+=src_bpp) {
+					unsigned b8g8r8a8_00;
+					unsigned b8g8r8a8_01;
+					Read_B8G8R8A8(b8g8r8a8_00,src_ptr,src_surface_format,src_palette,src_palette_bpp);
+					Read_B8G8R8A8(b8g8r8a8_01,src_ptr+src_bpp,src_surface_format,src_palette,src_palette_bpp);
+					if (has_hsv_shift) {
+						Recolor(b8g8r8a8_00,hsv_shift);
+						Recolor(b8g8r8a8_01,hsv_shift);
+					}
+					Write_B8G8R8A8(dest_ptr,dest_surface_format,b8g8r8a8_00);
+					Write_B8G8R8A8(dest_ptr+dest_bpp,dest_surface_format,b8g8r8a8_01);
+					unsigned b8g8r8a8=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_01,b8g8r8a8_00,b8g8r8a8_01);
+					Write_B8G8R8A8(mip_ptr,src_surface_format,b8g8r8a8);
+				}
 			}
 			else {
 				for (unsigned y=0;y<dest_surface_height/2;++y) {
