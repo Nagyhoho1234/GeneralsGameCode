@@ -36,6 +36,8 @@
 // Inits() - stood through Milestone 5 and ended in Milestone 6 Task 2.)
 #include "dx8wrapper.h"
 #include "formconv.h"
+#include "rddesc.h"
+#include "surfaceclass.h"
 #include "PortableD3D8/gl_core33.h"
 #include "PortableD3D8/gl_fixed_function.h"
 
@@ -43,6 +45,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 namespace
 {
@@ -59,6 +62,20 @@ namespace
 	// like D3D8's Reset_Device dance), so this is the whole of the state -
 	// mirrors D3DPRESENT_INTERVAL_ONE's "vsync on" default.
 	int g_SwapInterval = 1;
+
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 6, finding 6):
+	// fabricated single-entry device table - GL can't enumerate real
+	// adapters the way D3D8's Enumerate_Devices does (there's no adapter
+	// concept below a context), so this backend hands back exactly one
+	// device ("OpenGL 3.3"), populated at DX8Wrapper::Init time by
+	// Enumerate_Devices (below) and refreshed with the live context's
+	// real strings by Create_Device once one exists. Same three tables
+	// dx8wrapper_d3d8.cpp keeps (file-scope statics there too), internal
+	// linkage so the two backends' copies never collide (they're never
+	// both compiled into the same build anyway).
+	DynamicVectorClass<StringClass> _RenderDeviceNameTable;
+	DynamicVectorClass<StringClass> _RenderDeviceShortNameTable;
+	DynamicVectorClass<RenderDeviceDescClass> _RenderDeviceDescriptionTable;
 
 	DX8FrameStatistics g_LastFrameStatistics;
 
@@ -985,6 +1002,39 @@ HRESULT IDirect3DDevice8::CreateImageSurface(UINT Width, UINT Height, D3DFORMAT 
 	return D3D_OK;
 }
 
+// Real body (native port plan Phase 5(a) Milestone 6, Draft 26 Step 6,
+// finding 6): g_FBO is this whole port's sole render target - reading it
+// back via glReadPixels is the GL equivalent of D3D8's real GetBackBuffer.
+// This is what DX8Wrapper::_Get_DX8_Back_Buffer (below) calls through
+// DX8CALL, and in turn what makes WW3D::Make_Screen_Shot's TARGA path
+// (ww3d.cpp) real.
+HRESULT IDirect3DDevice8::GetBackBuffer(UINT BackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface8** ppBackBuffer)
+{
+	GLSurface8* surface = new GLSurface8(static_cast<UINT>(g_FBWidth), static_cast<UINT>(g_FBHeight), D3DFMT_A8R8G8B8);
+
+	gl_BindFramebuffer(GL_FRAMEBUFFER, g_FBO);
+
+	// glReadPixels is bottom-up; GL_BGRA/GL_UNSIGNED_BYTE matches this
+	// backend's D3DFMT_A8R8G8B8 in-memory byte order everywhere else in
+	// this file (CreateTexture's upload path, above) - read into a
+	// scratch buffer, then flip rows into the surface's top-down
+	// (real-D3D-surface-convention) storage that SurfaceClass::Lock/
+	// Get_Description callers (ww3d.cpp's Make_Screen_Shot) expect.
+	std::vector<BYTE> scratch(static_cast<size_t>(g_FBWidth) * static_cast<size_t>(g_FBHeight) * 4);
+	glReadPixels(0, 0, g_FBWidth, g_FBHeight, GL_BGRA, GL_UNSIGNED_BYTE, scratch.data());
+
+	UINT pitch = surface->Width() * surface->Bytes_Per_Pixel();
+	for (int row = 0; row < g_FBHeight; ++row)
+	{
+		const BYTE* src = scratch.data() + static_cast<size_t>(g_FBHeight - 1 - row) * pitch;
+		BYTE* dst = surface->Data() + static_cast<size_t>(row) * pitch;
+		memcpy(dst, src, pitch);
+	}
+
+	*ppBackBuffer = surface;
+	return D3D_OK;
+}
+
 // One rectangle's worth of the row-by-row memcpy CopyRects below needs -
 // shared between its cRects==0 (whole-surface) and explicit-rect-array
 // cases. D3D8 requires matching formats for CopyRects (no stretch, no
@@ -1520,26 +1570,217 @@ void DX8Wrapper::Shutdown()
 
 void DX8Wrapper::Enumerate_Devices()
 {
-	// The real Windows path enumerates real D3D8 adapters into
-	// _RenderDeviceNameTable/_RenderDeviceDescriptionTable for a device-
-	// selection UI. This milestone has no such UI and only ever runs
-	// against Set_Render_Device(int, ...) with device index 0, so there is
-	// nothing to fabricate yet - kept as an explicit hook for when a real
-	// device list becomes reachable (Phase 4 windowing work).
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 6, finding 6):
+	// D3D8 enumerates real adapters (and their supported resolutions)
+	// before any device exists; GL can't ask glGetString(GL_RENDERER)
+	// until Create_Device makes a context current - the context-ordering
+	// wrinkle finding 6 calls out. So this fabricates a single-entry
+	// device table here with a static name; Create_Device (below)
+	// refreshes this entry's description strings from the live context
+	// once one exists. Enough for ww3d.cpp's Get_Render_Device_Count()==1/
+	// index-0/non-empty-name pass-throughs.
+	_RenderDeviceNameTable.Clear();
+	_RenderDeviceShortNameTable.Clear();
+	_RenderDeviceDescriptionTable.Clear();
+
+	StringClass device_name("OpenGL 3.3", true);
+	_RenderDeviceNameTable.Add(device_name);
+	_RenderDeviceShortNameTable.Add(device_name);
+
+	RenderDeviceDescClass desc;
+	desc.set_device_name(device_name);
+	desc.set_device_vendor("PortableD3D8-GL");
+	desc.set_device_platform("OpenGL 3.3 core");
+	desc.set_driver_name("PortableD3D8-GL");
+	desc.set_driver_vendor("PortableD3D8-GL");
+	desc.set_driver_version("1.0");
+	// One sane resolution entry (native port plan default, matching
+	// DX8Wrapper::Init's own ResolutionWidth/Height default) - real D3D8
+	// gates device inclusion on Enumerate_Resolutions().Count() > 0; this
+	// keeps that invariant true without pretending to know every mode a
+	// real windowing system could offer (real fullscreen mode-setting is
+	// a deferred non-goal, per Toggle_Windowed below).
+	desc.add_resolution(640, 480, 32);
+	_RenderDeviceDescriptionTable.Add(desc);
+}
+
+// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 6, finding 6):
+// mirrors dx8wrapper_d3d8.cpp's Set_Any_Render_Device exactly - try
+// fullscreen (windowed=0) first across every enumerated device, then
+// windowed (windowed=1). With exactly one fabricated device
+// (Enumerate_Devices, above) this just means "try device 0 unwindowed,
+// then device 0 windowed" - real multi-adapter fallback has nothing to
+// fall back to on this backend, but the structure stays identical so a
+// future real multi-device GL path (if one ever existed) would need no
+// caller-visible change here.
+bool DX8Wrapper::Set_Any_Render_Device()
+{
+	int dev_number = 0;
+	for (; dev_number < _RenderDeviceNameTable.Count(); dev_number++) {
+		if (Set_Render_Device(dev_number, -1, -1, -1, 0, false)) {
+			return true;
+		}
+	}
+
+	for (dev_number = 0; dev_number < _RenderDeviceNameTable.Count(); dev_number++) {
+		if (Set_Render_Device(dev_number, -1, -1, -1, 1, false)) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Name-based overload (native port plan Phase 5(a) Milestone 6, Draft 26
+// Step 6, finding 1's ww3d.cpp:313 call site) - mirrors
+// dx8wrapper_d3d8.cpp's own version verbatim: linear search by either the
+// long or short name, then delegate to the index-based overload below.
+bool DX8Wrapper::Set_Render_Device(const char * dev_name, int width, int height, int bits, int windowed, bool resize_window)
+{
+	for (int dev_number = 0; dev_number < _RenderDeviceNameTable.Count(); dev_number++) {
+		if (strcmp(dev_name, _RenderDeviceNameTable[dev_number]) == 0) {
+			return Set_Render_Device(dev_number, width, height, bits, windowed, resize_window);
+		}
+
+		if (strcmp(dev_name, _RenderDeviceShortNameTable[dev_number]) == 0) {
+			return Set_Render_Device(dev_number, width, height, bits, windowed, resize_window);
+		}
+	}
+	return false;
 }
 
 bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int windowed,
 									bool resize_window, bool reset_device, bool restore_assets)
 {
 	WWASSERT(IsInitted);
+	WWASSERT(dev >= -1);
+	WWASSERT(dev < _RenderDeviceNameTable.Count());
 	WWASSERT(reset_device || D3DDevice == nullptr);
+
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 6, finding
+	// 6): CurRenderDevice bookkeeping, verbatim from dx8wrapper_d3d8.cpp's
+	// Set_Render_Device - needed so Get_Render_Device()/Get_Render_Device_
+	// Desc(-1) (both below) have a real answer once a device is selected.
+	if ((CurRenderDevice == -1) && (dev == -1)) {
+		CurRenderDevice = 0;
+	} else if (dev != -1) {
+		CurRenderDevice = dev;
+	}
 
 	if (width > 0) ResolutionWidth = width;
 	if (height > 0) ResolutionHeight = height;
 	if (bits > 0) BitDepth = bits;
 	if (windowed != -1) IsWindowed = (windowed != 0);
 
+	if (reset_device) {
+		return Reset_Device(restore_assets);
+	}
 	return Create_Device();
+}
+
+bool DX8Wrapper::Set_Next_Render_Device()
+{
+	int new_dev = (CurRenderDevice + 1) % _RenderDeviceNameTable.Count();
+	return Set_Render_Device(new_dev);
+}
+
+// Honest `return false` (native port plan Phase 5(a) Milestone 6, Draft 26
+// Step 6, finding 6 / Open Question 2): real fullscreen mode-switching is
+// GLFW monitor-attached-window territory - a later, input-phase-adjacent
+// feature, not this milestone's. Do not fake success here even if
+// something calls it; a caller that checks the WW3DErrorType this feeds
+// (WW3D::Toggle_Windowed) needs to see the real failure, not a silently
+// no-op'd success.
+bool DX8Wrapper::Toggle_Windowed()
+{
+	return false;
+}
+
+int DX8Wrapper::Get_Render_Device_Count()
+{
+	return _RenderDeviceNameTable.Count();
+}
+
+int DX8Wrapper::Get_Render_Device()
+{
+	WWASSERT(IsInitted);
+	return CurRenderDevice;
+}
+
+const RenderDeviceDescClass & DX8Wrapper::Get_Render_Device_Desc(int deviceidx)
+{
+	WWASSERT(IsInitted);
+
+	if ((deviceidx == -1) && (CurRenderDevice == -1)) {
+		CurRenderDevice = 0;
+	}
+
+	if (deviceidx == -1) {
+		WWASSERT(CurRenderDevice >= 0);
+		WWASSERT(CurRenderDevice < _RenderDeviceNameTable.Count());
+		return _RenderDeviceDescriptionTable[CurRenderDevice];
+	}
+
+	WWASSERT(deviceidx >= 0);
+	WWASSERT(deviceidx < _RenderDeviceNameTable.Count());
+	return _RenderDeviceDescriptionTable[deviceidx];
+}
+
+const char * DX8Wrapper::Get_Render_Device_Name(int device_index)
+{
+	device_index = device_index % _RenderDeviceShortNameTable.Count();
+	return _RenderDeviceShortNameTable[device_index];
+}
+
+// Registry persistence stays deferred (native port plan Phase 5(a)
+// Milestone 6, Draft 26 Step 6, finding 6): registry-equivalent config-file
+// persistence is Phase 7 territory. `false` is the API's own "no saved
+// settings" path (real D3D8 callers already handle a false return by
+// falling through to Set_Any_Render_Device - see WW3D::Registry_Load_
+// Render_Device's caller, if any, or ww3d.cpp's own fallback chain), not a
+// fake success - so these are honest, documented no-ops, not stubs that
+// silently lose data no one asked to persist yet.
+bool DX8Wrapper::Registry_Save_Render_Device(const char * sub_key)
+{
+	return false;
+}
+
+bool DX8Wrapper::Registry_Save_Render_Device(const char *sub_key, int device, int width, int height, int depth, bool windowed, int texture_depth)
+{
+	return false;
+}
+
+bool DX8Wrapper::Registry_Load_Render_Device(const char * sub_key, bool resize_window)
+{
+	return false;
+}
+
+bool DX8Wrapper::Registry_Load_Render_Device(const char * sub_key, char *device, int device_len, int &width, int &height, int &depth, int &windowed, int &texture_depth)
+{
+	// Mirrors dx8wrapper_d3d8.cpp's own "registry unavailable" fallback
+	// path (its Is_Valid()==false branch) - well-defined sentinel
+	// out-parameters, not garbage, since some callers (this backend has
+	// none in the current closure, but the contract is the same either
+	// platform) read them unconditionally.
+	*device = 0;
+	width = -1;
+	height = -1;
+	depth = -1;
+	windowed = -1;
+	texture_depth = -1;
+	return false;
+}
+
+// Trivial success (native port plan Phase 5(a) Milestone 6, Draft 26 Step
+// 6, finding 6): a GL context is never "lost" in the D3D8 sense -
+// TestCooperativeLevel (above) already always returns D3D_OK, so there is
+// nothing here analogous to D3D8's Reset_Device texture-invalidation/
+// swap-chain-recreation dance. reload_assets is accepted for signature
+// parity but unused, matching the "no device loss" reasoning throughout
+// this file.
+bool DX8Wrapper::Reset_Device(bool reload_assets)
+{
+	return true;
 }
 
 bool DX8Wrapper::Create_Device()
@@ -1580,6 +1821,26 @@ bool DX8Wrapper::Create_Device()
 		glfwDestroyWindow(g_Window);
 		g_Window = nullptr;
 		return false;
+	}
+
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 6, finding
+	// 6): the context-ordering wrinkle's resolution - Enumerate_Devices
+	// (called from Init, before any context existed) fabricated this
+	// entry's description with static placeholder strings; now that a
+	// real GL context is current, refresh it with the live
+	// glGetString(GL_RENDERER)/GL_VENDOR values. CurRenderDevice may
+	// still be -1 here if Create_Device is reached directly without going
+	// through Set_Render_Device first (no harness in this port's closure
+	// does that, but this stays defensive rather than assuming).
+	if (CurRenderDevice >= 0 && CurRenderDevice < _RenderDeviceDescriptionTable.Count())
+	{
+		const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+		const char* vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+		const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+		RenderDeviceDescClass& desc = _RenderDeviceDescriptionTable[CurRenderDevice];
+		desc.set_device_name(renderer && renderer[0] ? renderer : "OpenGL 3.3");
+		desc.set_driver_vendor(vendor && vendor[0] ? vendor : "Unknown");
+		desc.set_driver_version(version && version[0] ? version : "Unknown");
 	}
 
 	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): FBO/
@@ -1888,6 +2149,16 @@ void DX8Wrapper::End_Scene(bool flip_frames)
 	Set_Material(nullptr);
 }
 
+// No-op (native port plan Phase 5(a) Milestone 6, Draft 26 Step 6, finding
+// 6): D3D8's Flip_To_Primary exists to force extra Present calls until an
+// odd/even flipping-chain's front buffer is the visible one, in fullscreen
+// mode only (it's a no-op for IsWindowed there too). GL's Present (above)
+// always blits and swaps the one FBO straight to the one default
+// framebuffer - there is no flipping chain to walk forward.
+void DX8Wrapper::Flip_To_Primary()
+{
+}
+
 void DX8Wrapper::Clear(bool clear_color, bool clear_z_stencil, const Vector3& color, float dest_alpha, float z, unsigned int stencil)
 {
 	DWORD flags = 0;
@@ -1897,6 +2168,21 @@ void DX8Wrapper::Clear(bool clear_color, bool clear_z_stencil, const Vector3& co
 	{
 		DX8CALL(Clear(0, nullptr, flags, Convert_Color(color, dest_alpha), z, stencil));
 	}
+}
+
+// Accept-stub (native port plan Phase 5(a) Milestone 6, Draft 26 Step 6,
+// finding 6): no gamma ramps in core GL - the same deferral class as
+// NORMALIZENORMALS elsewhere in this port. A real implementation would
+// need platform-specific gamma-ramp APIs (XF86VidMode on X11,
+// CGSetDisplayTransferByTable on macOS, ...) that are out of this
+// milestone's scope - nothing is applied to the display.
+void DX8Wrapper::Set_Gamma(float gamma, float bright, float contrast, bool calibrate, bool uselimit)
+{
+	(void)gamma;
+	(void)bright;
+	(void)contrast;
+	(void)calibrate;
+	(void)uselimit;
 }
 
 void DX8Wrapper::Reset_Statistics()
@@ -2059,4 +2345,30 @@ IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture(IDirect3DSurface8 *surface, 
 {
 	WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_Texture(surface): no caller in the ported closure yet (Milestone 4 non-goal)"));
 	return nullptr;
+}
+
+// Real body (native port plan Phase 5(a) Milestone 6, Draft 26 Step 6,
+// finding 6): returns a lockable surface filled by FBO readback - g_FBO
+// (the anonymous namespace, above) IS this whole port's sole render
+// target (Present blits it to the window; every harness's pixel check
+// glReadPixels's it directly), so reading it back here is the GL
+// equivalent of D3D8's real GetBackBuffer/CreateImageSurface pair. This
+// is what makes WW3D::Make_Screen_Shot's TARGA path (ww3d.cpp) real
+// instead of a null-surface early-out. (_Get_DX8_Front_Buffer has no
+// caller in the ported closure - ww3d.cpp's Make_Screen_Shot uses the
+// back buffer, see its own bugfix comment - so it stays unimplemented on
+// this backend, same as before this task.)
+SurfaceClass * DX8Wrapper::_Get_DX8_Back_Buffer(unsigned int num)
+{
+	IDirect3DSurface8 * bb = nullptr;
+	DX8CALL(GetBackBuffer(num, D3DBACKBUFFER_TYPE_MONO, &bb));
+
+	SurfaceClass *surf = nullptr;
+	if (bb)
+	{
+		surf = NEW_REF(SurfaceClass, (bb));
+		bb->Release();
+	}
+
+	return surf;
 }

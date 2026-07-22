@@ -17,10 +17,13 @@
 # see RenderDeviceInit/CMakeLists.txt's matching comment for why (GL
 # Create_Device/Release_Device now unconditionally call
 # Do_Onetime_Device_Dependent_Inits/_Shutdowns, ending Trap 1 completely).
+# anim_sound_link_stub.cpp is gone (native port plan Phase 5(a) Milestone
+# 6, Draft 26 Step 6, finding 4) - AnimatedSoundMgrClass's stub graduated
+# to engine level (animatedsoundmgr_null.cpp, in corei_ww3d2) when
+# ww3d.cpp joined the portable list this same milestone.
 add_executable(RenderTexturedTriangleTest
     main.cpp
     ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
-    ${CMAKE_SOURCE_DIR}/Tests/RenderW3DMesh/anim_sound_link_stub.cpp
 )
 
 target_link_libraries(RenderTexturedTriangleTest PRIVATE

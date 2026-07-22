@@ -22,15 +22,17 @@
 # directly is simpler and is what RenderW3DMeshTest already established.
 # mesh_link_stub.cpp's stand-in MeshClass::Make_Unique is dropped - the real
 # mesh.cpp (corei_ww3d2) now links here and would collide with it.
-# matrixmapper.cpp/anim_sound_link_stub.cpp are added for the same two
-# link-closure reasons documented in RenderW3DMeshTest/CMakeLists.txt
-# (decalsys.cpp's MatrixMapperClass::Set_Texture_Transform reference,
-# animobj.cpp's two AnimatedSoundMgrClass statics) - corei_ww3d2 pulls in
-# decalsys.cpp/animobj.cpp here exactly as it does there.
+# matrixmapper.cpp is added for the same link-closure reason documented in
+# RenderW3DMeshTest/CMakeLists.txt (decalsys.cpp's MatrixMapperClass::
+# Set_Texture_Transform reference) - corei_ww3d2 pulls in decalsys.cpp
+# here exactly as it does there.
+# anim_sound_link_stub.cpp is gone (native port plan Phase 5(a) Milestone
+# 6, Draft 26 Step 6, finding 4) - AnimatedSoundMgrClass's stub graduated
+# to engine level (animatedsoundmgr_null.cpp, in corei_ww3d2) when
+# ww3d.cpp joined the portable list this same milestone.
 add_executable(RenderTexturePipelineTest
     main.cpp
     ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
-    ${CMAKE_SOURCE_DIR}/Tests/RenderW3DMesh/anim_sound_link_stub.cpp
 )
 
 target_link_libraries(RenderTexturePipelineTest PRIVATE

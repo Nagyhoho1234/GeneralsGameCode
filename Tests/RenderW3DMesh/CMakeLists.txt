@@ -32,12 +32,13 @@ add_executable(RenderW3DMeshTest
     # re-opening the unification question this step doesn't need to
     # answer.
     ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
-    # Link-only stub for AnimatedSoundMgrClass's two static methods -
-    # animatedsoundmgr.cpp itself needs WWAudio.h/mss.h (Miles Sound
-    # System, a pre-existing catalogued Phase 1 deferred dependency,
-    # unrelated to this milestone). See anim_sound_link_stub.cpp's own
-    # header comment.
-    anim_sound_link_stub.cpp
+    # anim_sound_link_stub.cpp is gone (native port plan Phase 5(a)
+    # Milestone 6, Draft 26 Step 6, finding 4) - AnimatedSoundMgrClass's
+    # stub graduated to engine level (Core/Libraries/Source/WWVegas/WW3D2/
+    # animatedsoundmgr_null.cpp, in corei_ww3d2 via WW3D2_SRC_PORTABLE) now
+    # that ww3d.cpp joined the portable list this same milestone and calls
+    # AnimatedSoundMgrClass::Initialize/Shutdown itself; the harness-local
+    # copy would now collide with it.
 )
 
 target_link_libraries(RenderW3DMeshTest PRIVATE

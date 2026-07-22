@@ -19,16 +19,19 @@
 # of direct-object-list link requirement the plan's Draft 26 correction note
 # describes. Hand-listing that whole closure here would just re-derive
 # corei_ww3d2's own list; linking it directly is simpler and is what
-# RenderW3DMeshTest already established. matrixmapper.cpp/
-# anim_sound_link_stub.cpp are added for the same two link-closure reasons
-# documented in RenderW3DMeshTest/CMakeLists.txt (decalsys.cpp's
-# MatrixMapperClass::Set_Texture_Transform reference, animobj.cpp's two
-# AnimatedSoundMgrClass statics) - corei_ww3d2 pulls in decalsys.cpp/
-# animobj.cpp here exactly as it does there.
+# RenderW3DMeshTest already established. matrixmapper.cpp is added for the
+# same link-closure reason documented in RenderW3DMeshTest/CMakeLists.txt
+# (decalsys.cpp's MatrixMapperClass::Set_Texture_Transform reference) -
+# corei_ww3d2 pulls in decalsys.cpp here exactly as it does there.
+# anim_sound_link_stub.cpp is gone (native port plan Phase 5(a) Milestone
+# 6, Draft 26 Step 6, finding 4) - AnimatedSoundMgrClass's stub graduated
+# to engine level (Core/Libraries/Source/WWVegas/WW3D2/
+# animatedsoundmgr_null.cpp, in corei_ww3d2 via WW3D2_SRC_PORTABLE) when
+# ww3d.cpp joined the portable list this same milestone; keeping the
+# harness-local copy would now collide with it.
 add_executable(RenderDeviceInitTest
     main.cpp
     ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
-    ${CMAKE_SOURCE_DIR}/Tests/RenderW3DMesh/anim_sound_link_stub.cpp
 )
 
 target_link_libraries(RenderDeviceInitTest PRIVATE

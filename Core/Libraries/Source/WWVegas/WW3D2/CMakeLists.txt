@@ -230,10 +230,7 @@ set(WW3D2_SRC
     w3derr.h
     #w3dexclusionlist.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #w3dexclusionlist.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
-    # ww3d.cpp: real WIN32-only compile (Draft 24 Step 7 - see the
-    # WW3D2_SRC_PORTABLE block's comment for the full reasoning); ww3d.h
-    # stays in the portable list above, included from both.
-    ww3d.cpp
+    #ww3d.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 26 Step 6)
     #ww3dformat.cpp
     #ww3dformat.h
     ww3dids.h
@@ -274,24 +271,15 @@ set(WW3D2_SRC_PORTABLE
     formconv.cpp
     formconv.h
     texture_common.cpp
-    # ww3d.cpp deliberately NOT compiled into the portable set (native
-    # port plan Phase 5(a) Milestone 5, Draft 24 Step 7) - it's been
-    # listed here since Milestone 1, but WW3D::Init/Set_Any_Render_Device/
-    # Registry_Save_Render_Device/Set_Device_Resolution/Set_Gamma/
-    # Toggle_Windowed/Set_Swap_Interval/etc. call ~18 DX8Wrapper device-
-    # enumeration/registry/windowing methods that only exist in the
-    # Windows-only dx8wrapper_d3d8.cpp backend (Milestone 1's Trap 1
-    # deliberately never gave the GL device an equivalent - real
-    # multi-adapter enumeration, registry persistence, and gamma ramps
-    # are Phase 4/5(e) windowing-convergence territory, not this
-    # milestone's). Compiling ww3d.cpp into a *static library* target
-    # (g_ww3d2/z_ww3d2, g_gameenginedevice/z_gameenginedevice) never
-    # actually required these symbols to resolve - static libraries only
-    # demand link-completeness from whatever final executable consumes
-    # them, and no executable in this port ever linked corei_ww3d2
-    # directly until Tests/RenderW3DMesh (Draft 24 Step 7) did. ww3d.h
-    # stays includable everywhere (just a header, no CMake-list gating
-    # needed for #include resolution) - only the .cpp is excluded.
+    # ww3d.cpp joins the portable set (native port plan Phase 5(a)
+    # Milestone 6, Draft 26 Step 6, findings 1+4): the ~18 DX8Wrapper
+    # device-enumeration/registry/windowing methods it calls (Set_Any_
+    # Render_Device, Registry_Save/Load_Render_Device, Set_Device_
+    # Resolution, Set_Gamma, Toggle_Windowed, Set_Swap_Interval, ...) that
+    # Milestone 1's Trap 1 left the GL backend without now all have real
+    # or honestly-stubbed bodies in dx8wrapper_gl.cpp (Task 4 of this
+    # milestone) - see that file for each method's disposition.
+    ww3d.cpp
     ww3d.h
     ww3d_common.cpp
     ww3dformat.cpp
@@ -501,6 +489,13 @@ else()
         PortableD3D8/gl_core33.h
         PortableD3D8/gl_core33.cpp
         PortableD3D8/gl_fixed_function.h
+        # AnimatedSoundMgrClass's engine-level stub (native port plan
+        # Phase 5(a) Milestone 6, Draft 26 Step 6, finding 4) - mutually
+        # exclusive with the real, WIN32-only animatedsoundmgr.cpp above
+        # (that one needs WWAudio.h/mss.h, a catalogued Phase 6
+        # deferral), the same backend-split pattern as dx8wrapper_gl.cpp/
+        # dx8wrapper_d3d8.cpp just above.
+        animatedsoundmgr_null.cpp
     )
 endif()
 

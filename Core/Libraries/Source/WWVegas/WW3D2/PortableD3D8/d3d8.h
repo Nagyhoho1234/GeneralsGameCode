@@ -207,7 +207,11 @@ public:
 	virtual HRESULT CreateAdditionalSwapChain(D3DPRESENT_PARAMETERS* pPresentationParameters, IDirect3DSwapChain8** pSwapChain) { *pSwapChain = nullptr; return D3DERR_NOTAVAILABLE; }
 	virtual HRESULT Reset(D3DPRESENT_PARAMETERS* pPresentationParameters);
 	virtual HRESULT Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion);
-	virtual HRESULT GetBackBuffer(UINT BackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface8** ppBackBuffer) { *ppBackBuffer = nullptr; return D3DERR_NOTAVAILABLE; }
+	// Defined out-of-line in dx8wrapper_gl.cpp (native port plan Phase 5(a)
+	// Milestone 6, Draft 26 Step 6, finding 6) - DX8Wrapper::_Get_DX8_Back_
+	// Buffer needs a real FBO-readback surface, same precedent as
+	// CreateImageSurface above.
+	virtual HRESULT GetBackBuffer(UINT BackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface8** ppBackBuffer);
 	virtual HRESULT GetRasterStatus(D3DRASTER_STATUS* pRasterStatus) { return D3DERR_NOTAVAILABLE; }
 	virtual void SetGammaRamp(DWORD Flags, CONST D3DGAMMARAMP* pRamp) {}
 	virtual void GetGammaRamp(D3DGAMMARAMP* pRamp) {}
