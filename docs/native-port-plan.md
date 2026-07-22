@@ -4336,3 +4336,48 @@ proven beneath it.
    predictions, not facts - the linker enumerates the truth once
    `ww3d.cpp` compiles into the harness; expect 0-3 additions, add
    them portable rather than stubbing.
+
+**Correction found during implementation - Steps 2/3/4 are NOT
+independently buildable as originally ordered.** Attempting Step 2
+alone (move `Do_Onetime_Device_Dependent_Inits`/`_Shutdowns`/
+`Set_Default_Global_Render_States`/`Invalidate_Cached_Render_States`
+verbatim to `dx8wrapper_draw.cpp`, verified as a true verbatim move via
+Draft 21's sorted-multiset method) compiled fine but failed to LINK on
+WSL2 linux-x64:
+```
+undefined reference to `DX8Wrapper::Compute_Caps(WW3DFormat)'
+undefined reference to `PointGroupClass::_Init()'
+undefined reference to `ShatterSystem::Init()'
+undefined reference to `ShatterSystem::Shutdown()'
+undefined reference to `PointGroupClass::_Shutdown()'
+```
+Root cause: `dx8wrapper_draw.cpp` is compiled directly into every test
+harness's object list (`target_sources`), not archived into a static
+library first. A static library only pulls in whole `.o` members that
+something actually references, so an unreferenced dead function's
+undefined symbols never surface - the "move now, wire up later"
+pattern this port has used repeatedly (Draft 20 Step 6, Draft 24 Step
+2) relies on exactly that. But when a `.cpp.o` is a *direct* link
+input (as `dx8wrapper_draw.cpp` is, for every harness), the linker
+must resolve every external reference in that object file
+unconditionally - dead code or not. `Compute_Caps` has no GL body yet
+(Step 4's job); `PointGroupClass`/`ShatterSystem` aren't portable yet
+(Step 3's job) - so Step 2 in isolation breaks all six harnesses
+immediately, not lazily. Reverted cleanly (confirmed via `git status`/
+`git diff HEAD` matching the last commit exactly) rather than left
+half-applied.
+
+**Revised ordering**: do Step 3 first (ports `PointGroupClass`/
+`ShatterSystem`'s dependencies, `pointgr.cpp`/`shattersystem.cpp`/
+`dynamesh.cpp`), then do Steps 2 and 4 together as one combined step -
+move the four functions AND give the GL backend a real `Compute_Caps`
+body in the same change, so no intermediate state ever has an
+unresolved reference from a directly-linked object file. Separately
+verified as real, not a plan typo: Step 1 (the `MMRESULT`/
+`TIMERR_NOERROR`/`timeBeginPeriod`/`timeEndPeriod` compat plumbing)
+turned out to be a no-op - `Dependencies/Utility/Utility/
+time_compat.h:24-27` already defines all four, missed by the
+planning pass's grep (which only checked `win32_compat.h`). Attempting
+step 1 anyway (redundant definitions in `win32_compat.h`) produced a
+real `error: conflicting declaration 'typedef UINT MMRESULT'` -
+confirms the existing definition, no action needed there.
