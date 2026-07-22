@@ -3193,3 +3193,100 @@ formats, which is the last texture-side prerequisite for Milestone 5
 `Load_Texture`, material passes, and real W3D files close the loop).
 The ladder after M4: meshes/dx8renderer (M5) -> `W3DDisplay`/scene/
 camera + windowing (Phase 4/5(e) convergence).
+
+## Draft 23: Phase 5(a) Milestone 4 achieved - the texture pipeline,
+verified on real CI (commits `69da84664` through `75c71f47d`), working
+unattended per explicit user request (proceed through all six approved
+steps without pausing for permission between them).
+
+Executed Draft 22's plan step by step, verifying real MSVC win32 and
+WSL2 linux-x64 `-k 0` builds after every step, preferring an actual
+harness run over trusting compilation alone:
+
+1. **`ThreadClass` (WWLib) made real on POSIX** - `pthread_create`/
+   `pthread_join` backing `Execute`/`Stop`, previously a non-functional
+   stub. The load-bearing prerequisite for step 5's background loader.
+2. **`GLTexture8`/`GLSurface8` rewritten mip-aware** - per-level shadow
+   (CPU) buffers, real `GetLevelCount`/`GetLevelDesc`/`GetSurfaceLevel`/
+   `LockRect`/`UnlockRect(level)`, re-uploaded via `glTexSubImage2D`.
+3. **Texture stage state + samplers** - real `SetTextureStageState`
+   translating D3D8 filter/address enums to GL sampler objects,
+   completing Milestone 3's honest-but-incomplete caps block.
+4. **`assetmgr_common.cpp`/`ww3d_common.cpp` extractions** - moved the
+   remaining `WW3DAssetManager::TheInstance` definition and several
+   `WW3D::Get_Texture_*` accessors out of the still-duplicated
+   per-tree `assetmgr.cpp`/`ww3d.cpp` pair, matching the established
+   Core-unification pattern, without pulling the rest of either
+   monolithic file's Windows-only closure into Core yet.
+5. **The nine texture-pipeline TUs ported**: `textureloader.cpp` (+
+   background thread), `texturethumbnail.cpp`, `ddsfile.cpp`,
+   `dx8texman.cpp`, `missingtexture.cpp`, `surfaceclass.cpp`,
+   `texturefilter.cpp`, `bitmaphandler.cpp`, `texture.cpp` - mostly
+   `#ifdef _WIN32`-gating D3DX/`ddraw.h`/`mmsystem.h` dependencies and
+   swapping in already-portable equivalents (`TIMEGETTIME()`,
+   `ZeroMemory` added to `win32_compat.h`). One real 64-bit bug found
+   here too: `surfaceclass.cpp`'s `Copy`/`Stretch_Copy` did
+   `(unsigned char*)((unsigned int)lock_rect.pBits+offset)` - a pointer
+   truncated through `unsigned int` before the add, silently dropping
+   the upper 32 bits of a real pointer on x86-64. Fixed to add through
+   the pointer directly.
+6. **`Tests/RenderTexturePipeline/` harness + CI - the exit
+   criterion.** All 6 checks pass, stable across 5 consecutive runs.
+   Getting there surfaced three more genuine, real, pre-existing engine
+   bugs - all latent since Westwood's original source, only ever
+   surfaced because this is the first time real, non-uniform texture
+   content has been loaded through this exact code path on this
+   platform:
+   - `TARGA.h`'s `TGA2Footer`/`TGA2Extension` used `long` for on-disk
+     4-byte TGA 2.0 fields; 8 bytes under LP64 vs. the format's 4,
+     silently growing `sizeof(TGA2Footer)` from 26 to 34 and breaking
+     the hardcoded `File_Seek(-26, SEEK_END)` footer read used by every
+     real TGA load on 64-bit non-Windows. Fixed with `int32_t`.
+   - `dx8wrapper_gl.cpp`'s `Create_Device()` never called
+     `Init_D3D_To_WW3_Conversion()` - on Windows that's called once from
+     `WW3D::Init()` (`ww3d.cpp:189`) before `DX8Wrapper::Init()` ever
+     runs, but Milestone 1's Trap 1 deliberately keeps GL's
+     `Create_Device()` out of that monolithic init chain. The format
+     lookup table it populates stayed zero-initialized (all
+     `WW3D_FORMAT_UNKNOWN`), which made every
+     `DX8Caps::Support_Texture_Format()` check fail, silently
+     collapsing every real texture load's format down
+     `Get_Valid_Texture_Format`'s fallback chain to a 16-bit format
+     regardless of the requested 32-bit bit depth - invisible until
+     this milestone finally exercised real (non-synthetic) format
+     resolution. Fixed by calling the same portable `formconv.cpp`
+     function from the GL-analogous spot.
+   - `bitmaphandler.cpp`'s `Copy_Image()` same-format fast path (the
+     "copy current level while box-filtering the next mip level in
+     place" branch) only special-cased `dest_surface_width==1` (a
+     square chain's terminal 1x1 level). A non-square texture whose
+     height bottoms out at 1 while width has not (e.g. 2x1) fell
+     through to the general box-filter loop, whose
+     `dest_surface_height/2` bound integer-divides to 0 - the loop
+     never runs, leaving the destination as whatever garbage was
+     already in its shadow buffer. Nondeterministic in practice (the
+     garbage values changed run to run). Fixed with a symmetric
+     `dest_surface_height==1` case doing horizontal-only pairing.
+
+Confirmed correct (each independently re-derived or re-run, not taken on
+trust): WSL2 linux-x64 `-k 0` build of `g_gameenginedevice`/
+`z_gameenginedevice` - exactly 17 errors each (34 total), per-file
+breakdown unchanged (atlbase 6, winsock 4, imagehlp 3, d3dx8math/
+BezierSegment 3, mbstring 1, no WW3D2 file among them) - the established
+baseline, zero regression. Real MSVC win32 build of `g_ww3d2`/`z_ww3d2`/
+`g_gameenginedevice`/`z_gameenginedevice`: 0 errors. All four GL
+harnesses rebuilt and re-run under WSLg `DISPLAY=:0`:
+`RENDERDEVICEINIT_OK`, `RENDERTEXTUREDTRIANGLE_OK`,
+`RENDERENGINEDRAWPATH_OK` bit-identical to Draft 21's run,
+`RENDERTEXTUREPIPELINE_OK` (all 6 checks) stable across 5 consecutive
+runs. Wired into `linux-native.yml`, mirroring the existing
+build+run+summary pattern.
+
+**Standing deferred items, unchanged:** the dynamic-buffer draw-offset
+verification gap Draft 21 flagged (a second `RenderEngineDrawPath` quad
+with a genuinely nonzero `VertexBufferOffset`/`IndexBufferOffset` +
+`NOOVERWRITE` lock) is still open, still non-blocking, still intended
+before Milestone 5 leans on that plumbing. Milestone 4's own honest gap
+(Draft 22's "does NOT yet make possible" section) stands unchanged: no
+image from real *game* data yet - that is exactly Milestone 5's scope
+(meshes + `dx8renderer.cpp` + `assetmgr` unification).
