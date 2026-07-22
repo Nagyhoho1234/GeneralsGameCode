@@ -4381,3 +4381,135 @@ planning pass's grep (which only checked `win32_compat.h`). Attempting
 step 1 anyway (redundant definitions in `win32_compat.h`) produced a
 real `error: conflicting declaration 'typedef UINT MMRESULT'` -
 confirms the existing definition, no action needed there.
+
+## Draft 27: Phase 5(a) Milestone 6 achieved - `Tests/RenderWW3DFrame/`,
+the milestone's exit criterion: the engine's own frame loop, driven
+entirely through `WW3D::`'s own entry points, in a real visible window.
+
+Step 7 (the final step of Draft 26's plan, Steps 1-6 already landed in
+prior commits on this branch) is the harness itself:
+`Tests/RenderWW3DFrame/main.cpp`, sibling to `Tests/RenderW3DMesh/`,
+linking `corei_ww3d2` the same way. Init is exactly `WW3D::Init(nullptr)`
+-> `WW3D::Set_Render_Device(0, 640, 480, 32, windowed=1,
+resize_window=true)` and nothing else - no manual `DX8Wrapper::Init`/
+`Set_Render_Device`/subsystem init anywhere in the harness, the
+structural proof that `Do_Onetime_Device_Dependent_Inits` now runs
+through the real chain from several layers above `DX8Wrapper`.
+
+**All six checks pass**, verified via real `ctest` (Draft 25's rule),
+stable across 15 consecutive local runs (10 direct invocations + 5 via
+`ctest -R`), not just 5:
+
+1. Init round-trip - both calls `WW3D_ERROR_OK`,
+   `Get_Render_Device_Count()==1` with a non-empty name,
+   `DX8Wrapper::Get_Current_Caps()` non-null.
+2. Engine-driven frame - a textured two-triangle quad (M5's authoring
+   code as template, trimmed to the textured-only case, authored LOCAL
+   so `Set_Transform` alone drives its position) loaded through a real
+   `WW3DAssetManager`, added to a live `SimpleSceneClass` (the first
+   `SceneClass` ever constructed on POSIX), rendered via
+   `WW3D::Begin_Render(true,true,color)` -> `WW3D::Render(scene,
+   camera)` -> `WW3D::End_Render(true)`. Camera at `+Z0` with identity
+   rotation per Draft 25's -Z-forward lesson - correctly applied from
+   the start this time, no repeat of that bug.
+3. The loop - 30 frames, mesh transform animated per frame via
+   `Set_Transform`; frame 0 and frame 29 verified at distinct
+   predicted positions; `WW3D::Get_Frame_Count()` advances by exactly
+   30.
+4. Present really happened - window-side readback verified against the
+   FBO from the same frame.
+5. Resolution change - `WW3D::Set_Device_Resolution(800, 600)`
+   mid-run; next frame's FBO readback is 800x600 with the mesh at the
+   re-predicted position.
+6. Teardown - `scene`/`camera` released, `Free_Assets`,
+   `WW3D::Shutdown()` (the first full `WW3D::Init`->`Shutdown` cycle on
+   POSIX), `WW3D::Is_Initted()` false afterward, clean `ctest` exit.
+
+**One real, previously-dormant engine bug found and fixed, confirmed
+with hard evidence before concluding it wasn't harness code**: check 2
+initially rendered the mesh with `MissingTexture`'s placeholder color
+(`0x7FFF00FF`, i.e. `(255,0,255)` at the exact predicted bounding box -
+confirmed via a temporary debug build that scanned the whole FBO for
+the non-background bounding box and printed its center pixel, ruling
+out a camera/position bug immediately since the box matched the
+predicted position exactly). Root cause: `TextureClass::Init()`
+(`texture.cpp:850-868`) only takes the synchronous
+`Request_Foreground_Loading` path when thumbnails are disabled (or
+`MipLevelCount==MIP_LEVELS_1`); `WW3D::ThumbnailEnabled` defaults to
+`true` (`ww3d_common.cpp:115`), so without an explicit
+`WW3D::Set_Thumbnail_Enabled(false)` the harness's very first
+`WW3D::Render` raced the real background `TextureLoader` pthread and
+saw the missing-texture placeholder before the real upload landed.
+`Tests/RenderW3DMesh/main.cpp` already carried this exact call with a
+comment calling it out as harness-local, non-chain configuration; this
+harness had simply omitted it. Fixed by adding
+`WW3D::Set_Thumbnail_Enabled(false)` +
+`DX8Wrapper::Set_Texture_Bitdepth(32)` right after `Set_Render_Device`,
+matching the established precedent exactly. All camera/NDC/pixel-
+position math was correct on the very first attempt this time - no
+repeat of Draft 25's camera-placement lesson.
+
+**Open Question 3 resolved, with a real environment caveat**: tried
+`glReadBuffer(GL_FRONT)` after swap first, per the plan's stated
+preference. This session's environment could not install a literal
+Xvfb (`apt-get install xvfb` requires interactive `sudo` auth not
+available here) - WSL2's own WSLg compositor (`DISPLAY=:0`,
+`WAYLAND_DISPLAY=wayland-0`) was used instead, a real, if different,
+display server. Under that environment, `glReadBuffer(GL_FRONT)` read
+back all-zero (black) on every run, with `glGetError()` staying
+`GL_NO_ERROR` throughout the whole read sequence (not a caught API
+misuse - a buffer whose contents simply don't reflect what
+`glfwSwapBuffers` put on screen under this driver/compositor
+combination). That is exactly the instability Open Question 3
+anticipated, so the harness keeps the documented fallback: a
+harness-triggered extra `Present` (`DX8Wrapper::Begin_Scene()` ->
+`DX8Wrapper::End_Scene(true)`, FBO content unchanged) forces one more
+blit-then-swap cycle, after which `GL_BACK` is guaranteed to match the
+FBO regardless of whether the driver implements swap as a true
+exchange or an in-place copy - two consecutive swaps of unchanged
+content converge both buffers to the same image either way. Weaker
+than a genuine single-swap `GL_FRONT` read (re-proves the blit path
+twice, not that the original swap alone was correct) - exactly the
+tradeoff the open question flagged. RGB-only comparison (alpha
+excluded: the window's default framebuffer carries no alpha channel in
+this GLFW configuration, observed 0 throughout, vs. the FBO's genuine
+RGBA texture at 255 - an expected, harmless format difference, not a
+presentation bug). Stable 100% RGB match across all 15 local runs.
+**Caveat for the real CI run** (GitHub-hosted `ubuntu-latest` +
+`xvfb-run`, genuinely different from WSLg): CI may exhibit different
+`GL_FRONT` behavior than observed here (Xvfb + llvmpipe is the
+combination the plan's own open question specifically named as likely
+stable) - if so, a future pass could revisit `GL_FRONT` as CI evidence
+permits. This session's fallback choice is the conservative, verified-
+stable option given what was actually testable, not a claim that
+`GL_FRONT` is unconditionally broken everywhere.
+
+**Verification**: WSL2 scoped baseline
+(`--target g_gameenginedevice z_gameenginedevice -- -k 0`) holds at
+exactly 34/34, unchanged; all 7 `ctest` entries pass (`core_tests` +
+all six harnesses), stable across repeated local runs; real MSVC win32
+rebuild of `g_ww3d2`/`z_ww3d2`/`g_gameenginedevice`/
+`z_gameenginedevice` at 0 new errors (unaffected - `RenderWW3DFrameTest`
+is `NOT WIN32`-gated exactly like its five siblings, confirmed by
+`ninja: error: unknown target` when explicitly requested on the win32
+build, the expected/correct outcome, not a bug); wired into
+`linux-native.yml` behind `xvfb-run` alongside the other five
+harnesses, `workflow_dispatch`-only, matching the established pattern.
+**Honesty note on CI**: this session ran the harness locally under
+WSL2 (WSLg's compositor, substituting for the unavailable literal
+Xvfb) and via real `ctest`, not through an actual GitHub Actions run -
+the workflow YAML is wired and ready, but a genuine CI execution
+(this milestone's own stated exit criterion, per Draft 26's finding
+3/5 framing) still needs to happen on an actual `workflow_dispatch`
+trigger to fully close out that specific claim.
+
+**What Milestone 6 makes possible, honestly** (matches Draft 26's own
+framing): the entire rendering stack from `WW3D::Init` down to
+pixels-in-a-real-window is the engine's own code on both platforms,
+`ww3d.cpp` is portable (the last WW3D2 holdout), and the remaining
+convergence work is purely GameEngine-side - rung 2 (the portable
+engine skeleton) and rung 3 (`W3DDisplay`/`W3DScene`/`W3DView`, still
+per-tree) each now have this milestone's frame loop already proven
+beneath them. Still missing, unchanged from Draft 26's own list: image
+from shipped game assets, `W3DDisplay`/`RTS3DScene`/`W3DView`, input,
+text, audio, fullscreen.

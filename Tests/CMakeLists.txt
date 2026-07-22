@@ -62,3 +62,12 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderW3DMesh)
 endif()
+
+# Phase 5(a) Milestone 6 (native port plan, Draft 26) - the milestone's exit
+# criterion: a real frame loop driven entirely through WW3D::'s own entry
+# points (Init/Set_Render_Device/Begin_Render/Render/End_Render/
+# Set_Device_Resolution/Shutdown), non-Windows only. See
+# RenderWW3DFrame/CMakeLists.txt.
+if(NOT WIN32)
+    add_subdirectory(RenderWW3DFrame)
+endif()
