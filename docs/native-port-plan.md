@@ -3781,3 +3781,144 @@ scene/camera wiring + windowing, the Phase 4/5(e) convergence).
    documented fallback is two rigid meshes plus deferring the skin
    pixel check to Milestone 6 - but that must be stated explicitly in
    the close-out draft, not silently shrunk.
+
+## Draft 25: Phase 5(a) Milestone 5 achieved - real W3D meshes on GL,
+verified on real CI (commits `eb0d329b5` through the two closing this
+session), the exit criterion for the mesh render path.
+
+Executed Draft 24's plan step by step (Steps 1-6 unification/
+portability waves, Step 7 the `Tests/RenderW3DMesh/` harness), verifying
+real MSVC win32 and WSL2 linux-x64 `-k 0` builds after every step,
+preferring an actual harness run over trusting compilation alone - same
+discipline as every prior milestone.
+
+**Steps 1-6** (mesh/meshgeometry/hlod/assetmgr Core unification,
+`TriIndex` resolved to `Vector3i16`, two portability waves moving the
+mesh-render-path and asset-manager closures into `WW3D2_SRC_PORTABLE`)
+matched the plan closely; see the commit history for the file-level
+detail already covered step-by-step during implementation.
+
+**Step 7** (`Tests/RenderW3DMesh/`) is the exit criterion: 6 checks,
+all passing on real `ctest` (not just program stdout - see below for
+why that distinction mattered). Check 1 (load round-trip) landed early
+and needed 3 real bug fixes (`RawFileClass::Raw_Seek`'s fseek/ftell
+confusion, `ww3d.cpp`'s false portability, a `Get_Render_Target_
+Resolution` placement lesson) plus several link-closure gaps - all
+already committed and covered in earlier session notes. Checks 2-6
+landed together at the end, needing 3 more real, previously-dormant
+engine bugs, each confirmed with hard evidence before fixing (this
+port's standing no-guessing discipline held throughout, even under
+real time pressure):
+
+1. **Test-only bug**: the harness's camera sat at world `(0,0,-Z0)`
+   with identity rotation. `camera.cpp`'s `Update_Frustum` documents
+   "Forward is negative Z in our viewspace coordinate system" - a
+   camera with identity rotation looks toward -Z, so it needed to sit
+   at `+Z0` (in front of the z=0 quads) to look back at them. Every
+   mesh was permanently behind the camera and frustum-culled,
+   regardless of any pixel-position math - confirmed by a temporary
+   `CollisionMath::Overlap_Test` debug print showing `OUTSIDE` for
+   every quad, not a texture or draw-call problem.
+2. **`dx8wrapper_gl.cpp`'s FVF table gap** (dormant since Milestone 2):
+   `Translate_FVF_To_GL_Layout`'s `SUPPORTED_FVFS` allowlist never
+   included `D3DFVF_XYZ|D3DFVF_NORMAL|D3DFVF_DIFFUSE` (untextured,
+   per-vertex-colored, lit mesh) - every existing `DIFFUSE` entry
+   required a texture stage alongside it. An unrecognized FVF makes
+   `DrawIndexedPrimitive` return `D3DERR_INVALIDCALL` immediately,
+   silently skipping the draw - first exercised by Step 7's
+   vertex-color check, the first mesh in this port's history to need
+   this exact combination.
+3. **`WWLib/mempool.h`'s real 32-to-64-bit porting bug** in
+   `ObjectPoolClass::Allocate_Object_Memory`: the block-chain header
+   reserves `sizeof(uint32*)` bytes (8 on x64) via the allocation-size
+   formula, but `FreeListHead = (T*)(BlockListHead + 1)` only advances
+   by `sizeof(uint32)` = 4 bytes (pointer arithmetic on `BlockListHead`'s
+   declared `uint32*` type advances by the pointee size, not a
+   pointer's size). On the original 32-bit build these were identical
+   (4==4) - no bug. On x64 the first object slot overlaps the header's
+   upper 4 bytes, so the very first free-list-link write corrupts half
+   of `BlockListHead` into a bogus value that only crashes later, in
+   this pool's static destructor at process exit - first surfaced by
+   Step 7, the first harness in this port driving a real end-to-end
+   mesh render through `MultiListClass`-backed container/rendering
+   lists (this pool backs `MultiListNodeClass`) at a scale that
+   actually exercises the block-allocation path. Confirmed via a real
+   `gdb` watchpoint on the exact corrupted field (byte-for-byte
+   matching the predicted corruption pattern), not guessed. Fixed with
+   byte-pointer arithmetic advancing by the true `sizeof(uint32*)`.
+
+**Why "verify via real `ctest`, not just program stdout" is now a
+standing rule**: this bug's symptom was a hard `SEGFAULT` reported by
+`ctest` even though the program printed `RENDERW3DMESH_OK` and returned
+0 - the crash happened in static-destructor teardown *after* `main()`
+returned, which the C runtime still surfaces as an abnormal process
+exit that `ctest` correctly scores as a failure. A raw `./binary; echo
+$?` invocation missed this inconsistently depending on shell/output
+buffering; `ctest -R RenderW3DMeshTest` was the reliable, authoritative
+check. Once wired into CI, always verify through the actual CI
+mechanism, not just a program's own reported success.
+
+**Scope trap worth recording**: re-verifying the established
+34-error baseline after the `mempool.h` fix (a widely-included header)
+with a bare `cmake --build build/linux-x64 -j32 -- -k 0` (no
+`--target`) reported 171 errors - alarming until filtering confirmed
+the true baseline categories (winsock/imagehlp/d3dx8math/mbstring) were
+unchanged, and the rest was 100% noise from Windows-only GUI tools
+(GUIEdit/ParticleEditor/WorldBuilder/W3DView/wdump/MapCacheBuilder/
+ImagePacker/DebugWindow) and WWAudio/WWDownload that a bare "all"-target
+build pulls in but were never part of native-port scope or this port's
+established baseline convention. The properly-scoped `--target
+g_gameenginedevice z_gameenginedevice -- -k 0` (matching every prior
+milestone's verification) confirmed exactly 34/34, unchanged. **Always
+use the scoped invocation for baseline checks; a bare no-target `-k 0`
+answers a different, broader question than the one this port tracks.**
+
+**Draft 24's open question #3 resolved**: the diffuse-bearing FVF for
+check 4 needed both the `MATERIAL_PASS`'s `DCG` chunk *and* an
+emissive-only vertex material (`Ambient=Diffuse=0, Emissive=255`) -
+`W3d_Vertex_Material_Reset` defaults `Ambient`/`Diffuse` to 255 (not
+0), so a lit mesh with no scene lights genuinely renders near-black on
+real D3D8 unless the material is authored emissive-only, which is the
+engine's own supported "show raw vertex color unlit" mechanism
+(`meshmatdesc.cpp`'s `Post_Load_Process` only calls `Set_Lighting
+(false)` for that specific case). Prelit (`W3D_MESH_FLAG_PRELIT_VERTEX`)
+was tried and is a dead end this milestone - not wired up, left alone.
+
+**Draft 24's open question #4 resolved, fallback NOT needed**: check 6
+(skin) authoring succeeded on the first real attempt once the loading
+code was read carefully (`HLodClass`'s real constructor resolves each
+sub-object by name via `Create_Render_Obj`, `Add_Lod_Model`/
+`Update_Sub_Object_Transforms` set each rigid sub-object's transform to
+its bone's world transform, and a skin's vertices are independently
+transformed per-vertex by their own `BoneIdx`'s pivot transform via
+`MeshGeometryClass::get_deformed_vertices` - the skin mesh's own base
+Transform plays no part in its rendered position). All 6 checks passed
+in the same run; the documented "two rigid meshes, defer skin to
+Milestone 6" fallback was never invoked.
+
+**Also fixed this session, previously deferred**: the 6 non-blocking
+findings from Milestone 4's fable review (Draft 23) - 3 sibling
+row/column-of-1 holes in `bitmaphandler.cpp`'s `Copy_Image`/
+`Copy_Image_Generate_Mipmap`, a pre-existing `missingtexture.cpp`
+off-by-one, a POSIX `ThreadClass::Stop()` join race, and a real
+ADDRESSV verification gap in `Tests/RenderTexturePipeline` - all fixed
+and verified (`RenderTexturePipelineTest` passing 5 consecutive runs),
+recorded at the time but never actioned until now.
+
+**Verification**: all 6 `ctest` entries pass (100%), stable across 5+
+repeated runs; the scoped baseline (`--target g_gameenginedevice
+z_gameenginedevice -- -k 0`) holds at exactly 34/34; real MSVC win32
+rebuild of both targets, 0 errors (only pre-existing unrelated
+warnings elsewhere); wired into `linux-native.yml` alongside the other
+four harnesses (`workflow_dispatch`, not auto-triggered, matching the
+established pattern).
+
+**What Milestone 5 makes possible, honestly**: a real .w3d mesh -
+including a hierarchical HLod with rigid sub-objects and a bone-
+deformed skin - can be authored, loaded through the real asset manager,
+and rendered correctly on the GL backend, pixel-verified end to end.
+Still missing before an actual game frame renders: `W3DDisplay`/scene/
+camera wiring and windowing (the Phase 4/5(e) convergence), and this
+port's own catalogued Windows-only deferrals (ATL/winsock/imagehlp/
+d3dx8math/mbstring-dependent subsystems, WWAudio/Miles Sound System,
+the MFC-based Tools).
