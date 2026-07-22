@@ -56,7 +56,11 @@
 //      through a FRESH WW3DAssetManager and confirm it FAILS cleanly (no
 //      crash, Load_3D_Assets returns false). Guards against a silent
 //      fallback to some other file-loading path making check 3 pass for
-//      the wrong reason.
+//      the wrong reason. Checks 2/3's WW3DAssetManager lives in its own
+//      nested block so its destructor runs (nulling the TheInstance
+//      singleton, assetmgr.cpp:271) before check 4 constructs a second,
+//      independent WW3DAssetManager - its constructor asserts TheInstance
+//      == nullptr (assetmgr.cpp:223).
 // Then full teardown: scene/asset cleanup, WW3D::Shutdown(),
 // ~W3DFileSystem's _TheFileFactory restore (verified directly against the
 // real WWLib global), both file-system generations deleted.
@@ -643,68 +647,91 @@ int main()
 		// W3DFileSystem::Get_File -> new GameFileClass("quad.w3d") ->
 		// Set_Name maps it to "Art/W3D/quad.w3d" -> TheFileSystem->
 		// doesFileExist/openFile -> local-miss -> archive-hit -> RAMFile.
-		printf("=== Check 2: asset-manager load by bare name (\"quad.w3d\") ===\n");
-		WW3DAssetManager asset_manager;
-		bool loaded = asset_manager.Load_3D_Assets("quad.w3d");
-		Check(loaded, "2a. Load_3D_Assets(\"quad.w3d\") succeeded via factory->TheFileSystem->archive resolution");
-
-		RenderObjClass* robj = nullptr;
-		if (loaded)
+		// Checks 2/3's positive-path state (asset_manager, scene, camera,
+		// robj) lives in its own nested block, closing BEFORE Check 4
+		// constructs a second WW3DAssetManager below. WW3DAssetManager's
+		// constructor asserts TheInstance == nullptr (assetmgr.cpp:223) and
+		// its destructor is what nulls TheInstance back out again
+		// (assetmgr.cpp:271, only run when the object's scope ends) - so
+		// without this scoping, negative_asset_manager's construction while
+		// this block's asset_manager was still alive would trip that assert
+		// in any debug/asserts-on build (it silently passed under this
+		// harness's release-style build preset only because NDEBUG compiles
+		// the assert away). Same nested-block technique as this file's own
+		// main()-vs-helper-function comment above documents for a different
+		// reason.
 		{
-			robj = asset_manager.Create_Render_Obj("RGA.Quad");
-		}
-		Check(robj != nullptr, "2b. Create_Render_Obj(\"RGA.Quad\") returned non-null");
+			printf("=== Check 2: asset-manager load by bare name (\"quad.w3d\") ===\n");
+			WW3DAssetManager asset_manager;
+			bool loaded = asset_manager.Load_3D_Assets("quad.w3d");
+			Check(loaded, "2a. Load_3D_Assets(\"quad.w3d\") succeeded via factory->TheFileSystem->archive resolution");
 
-		if (!robj)
-		{
-			fprintf(stderr, "RENDERGAMEASSETS_FAIL: could not create render object, aborting remaining checks\n");
-			WW3D::Shutdown();
-			g_AnyFailure = true;
-			return 1; // same early-abort rationale as check 1's abort path above.
-		}
+			RenderObjClass* robj = nullptr;
+			if (loaded)
+			{
+				robj = asset_manager.Create_Render_Obj("RGA.Quad");
+			}
+			Check(robj != nullptr, "2b. Create_Render_Obj(\"RGA.Quad\") returned non-null");
 
-		SimpleSceneClass scene;
-		scene.Add_Render_Object(robj);
+			if (!robj)
+			{
+				fprintf(stderr, "RENDERGAMEASSETS_FAIL: could not create render object, aborting remaining checks\n");
+				WW3D::Shutdown();
+				g_AnyFailure = true;
+				return 1; // same early-abort rationale as check 1's abort path above.
+			}
 
-		// Camera at +Z0 with identity rotation, looking back at the quad
-		// (Draft 25's -Z-forward lesson, same convention as every prior
-		// rendering harness).
-		CameraClass camera;
-		Matrix3D camera_tm(Vector3(0.0f, 0.0f, Z0));
-		camera.Set_Transform(camera_tm);
-		camera.Set_View_Plane(1.57079632679489661923f, 1.57079632679489661923f); // 90deg h/v FOV
-		camera.Set_Clip_Planes(1.0f, 100.0f);
+			SimpleSceneClass scene;
+			scene.Add_Render_Object(robj);
 
-		const Vector3 CLEAR_COLOR(BG_R / 255.0f, BG_G / 255.0f, BG_B / 255.0f);
+			// Camera at +Z0 with identity rotation, looking back at the quad
+			// (Draft 25's -Z-forward lesson, same convention as every prior
+			// rendering harness).
+			CameraClass camera;
+			Matrix3D camera_tm(Vector3(0.0f, 0.0f, Z0));
+			camera.Set_Transform(camera_tm);
+			camera.Set_View_Plane(1.57079632679489661923f, 1.57079632679489661923f); // 90deg h/v FOV
+			camera.Set_Clip_Planes(1.0f, 100.0f);
 
-		// --- Check 3: a pixel-verified frame, authored texel at predicted position ---
-		printf("=== Check 3: engine-driven frame, authored texel color at predicted position ===\n");
-		const float QUAD_X = 0.9f, QUAD_Y = -0.4f;
-		robj->Set_Transform(Matrix3D(Vector3(QUAD_X, QUAD_Y, 0.0f)));
+			const Vector3 CLEAR_COLOR(BG_R / 255.0f, BG_G / 255.0f, BG_B / 255.0f);
 
-		WW3DErrorType begin_result = WW3D::Begin_Render(true, true, CLEAR_COLOR);
-		Check(begin_result == WW3D_ERROR_OK, "3a. WW3D::Begin_Render returned WW3D_ERROR_OK");
-		WW3DErrorType render_result = WW3D::Render(&scene, &camera);
-		Check(render_result == WW3D_ERROR_OK, "3b. WW3D::Render returned WW3D_ERROR_OK");
-		WW3DErrorType end_result = WW3D::End_Render(true);
-		Check(end_result == WW3D_ERROR_OK, "3c. WW3D::End_Render returned WW3D_ERROR_OK");
+			// --- Check 3: a pixel-verified frame, authored texel at predicted position ---
+			printf("=== Check 3: engine-driven frame, authored texel color at predicted position ===\n");
+			const float QUAD_X = 0.9f, QUAD_Y = -0.4f;
+			robj->Set_Transform(Matrix3D(Vector3(QUAD_X, QUAD_Y, 0.0f)));
 
-		{
-			unsigned char* fbo = Read_Fbo_Pixels_TopDown(g_W, g_H);
-			// Background: sample a corner, well away from the quad.
-			Check_Pixel(fbo, 5, 5, BG_R, BG_G, BG_B, "3d. background == clear color");
-			int px, py; float ndc_x, ndc_y;
-			Predict_Ndc(QUAD_X, QUAD_Y, 0.0f, &ndc_x, &ndc_y);
-			Ndc_To_Pixel_TopDown(ndc_x, ndc_y, &px, &py);
-			Check_Pixel(fbo, px, py, TEX_R, TEX_G, TEX_B, "3e. authored texel color at predicted position (bytes came ONLY from the archive)");
-			free(fbo);
-		}
+			WW3DErrorType begin_result = WW3D::Begin_Render(true, true, CLEAR_COLOR);
+			Check(begin_result == WW3D_ERROR_OK, "3a. WW3D::Begin_Render returned WW3D_ERROR_OK");
+			WW3DErrorType render_result = WW3D::Render(&scene, &camera);
+			Check(render_result == WW3D_ERROR_OK, "3b. WW3D::Render returned WW3D_ERROR_OK");
+			WW3DErrorType end_result = WW3D::End_Render(true);
+			Check(end_result == WW3D_ERROR_OK, "3c. WW3D::End_Render returned WW3D_ERROR_OK");
+
+			{
+				unsigned char* fbo = Read_Fbo_Pixels_TopDown(g_W, g_H);
+				// Background: sample a corner, well away from the quad.
+				Check_Pixel(fbo, 5, 5, BG_R, BG_G, BG_B, "3d. background == clear color");
+				int px, py; float ndc_x, ndc_y;
+				Predict_Ndc(QUAD_X, QUAD_Y, 0.0f, &ndc_x, &ndc_y);
+				Ndc_To_Pixel_TopDown(ndc_x, ndc_y, &px, &py);
+				Check_Pixel(fbo, px, py, TEX_R, TEX_G, TEX_B, "3e. authored texel color at predicted position (bytes came ONLY from the archive)");
+				free(fbo);
+			}
+
+			// Release the positive-path scene/render-object/asset-manager
+			// state before this block closes below (nothing from here on
+			// should still reference the soon-to-be-deleted
+			// first-generation file-system objects).
+			scene.Remove_Render_Object(robj);
+			robj->Release_Ref();
+			robj = nullptr;
+			asset_manager.Free_Assets();
+		} // asset_manager/scene/camera/robj destroyed here - WW3DAssetManager's
+		  // destructor nulls TheInstance (assetmgr.cpp:271) BEFORE Check 4
+		  // constructs negative_asset_manager below.
 
 		// --- Check 4: negative control -------------------------------------------
-		// Release the positive-path scene/render-object/asset-manager state
-		// first (nothing from here on should still reference the
-		// soon-to-be-deleted first-generation file-system objects), then
-		// tear down and reconstruct TheFileSystem/TheLocalFileSystem/
+		// Tear down and reconstruct TheFileSystem/TheLocalFileSystem/
 		// TheArchiveFileSystem from scratch - a fresh FileSystem object has
 		// no ENABLE_FILESYSTEM_EXISTENCE_CACHE-cached doesFileExist results
 		// (GameDefines.h:145, on by default), so this is a clean re-test,
@@ -714,10 +741,6 @@ int main()
 		// negative control exercises the SAME factory->TheFileSystem->
 		// archive code path, just with the archive genuinely gone.
 		printf("=== Check 4: negative control (archive absent) ===\n");
-		scene.Remove_Render_Object(robj);
-		robj->Release_Ref();
-		robj = nullptr;
-		asset_manager.Free_Assets();
 
 		delete TheArchiveFileSystem; TheArchiveFileSystem = nullptr;
 		delete TheLocalFileSystem; TheLocalFileSystem = nullptr;
@@ -740,7 +763,8 @@ int main()
 
 		// --- Full teardown --------------------------------------------------------
 		printf("=== Teardown ===\n");
-		asset_manager.Free_Assets(); // idempotent - matches Tests/RenderWW3DFrame's precedent.
+		// (asset_manager's own Free_Assets()/destruction already happened
+		// when its nested block closed, above Check 4.)
 
 		WW3DErrorType shutdown_result = WW3D::Shutdown();
 		Check(shutdown_result == WW3D_ERROR_OK, "5a. WW3D::Shutdown returned WW3D_ERROR_OK");

@@ -5197,6 +5197,8 @@ the `GameMemory.cpp` alignment gap and the GNU-only guard above):
 `Debug.cpp`'s Win32-only crash-dialog gap (Task 2); the `INI.h` case-
 mismatch dormant risk found by the same repo-wide scan that caught the
 `RAWFILE.h` bug in Milestone 6, currently unreachable by anything built
-(recorded, not chased); the stale commented-out `W3DFileSystem`
+(recorded, not chased). (The stale commented-out `W3DFileSystem`
 placeholder cleanup in `Core/GameEngineDevice/CMakeLists.txt`'s older
-scaffold block (Minor, found by Task 3's reviewer, cosmetic only).
+scaffold block, previously listed here, was fixed in `a5fc3383b`
+("drop stale CMake lines") - verified: only the active, non-commented
+registration lines remain.)
