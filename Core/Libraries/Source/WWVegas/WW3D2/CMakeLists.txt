@@ -69,8 +69,8 @@ set(WW3D2_SRC
     #dx8wrapper_d3d8.cpp
     #dx8wrapper_common.cpp
     #dx8wrapper.h
-    dynamesh.cpp
-    dynamesh.h
+    #dynamesh.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 26 Step 3)
+    #dynamesh.h # portable, see WW3D2_SRC_PORTABLE (Draft 26 Step 3)
     #font3d.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #font3d.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #formconv.cpp
@@ -146,8 +146,8 @@ set(WW3D2_SRC
     #part_ldr.h
     #pivot.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #pivot.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
-    pointgr.cpp
-    pointgr.h
+    #pointgr.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 26 Step 3)
+    #pointgr.h # portable, see WW3D2_SRC_PORTABLE (Draft 26 Step 3)
     polyinfo.cpp
     polyinfo.h
     #predlod.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
@@ -181,8 +181,8 @@ set(WW3D2_SRC
     seglinerenderer.h
     #shader.cpp
     #shader.h
-    shattersystem.cpp
-    shattersystem.h
+    #shattersystem.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 26 Step 3)
+    #shattersystem.h # portable, see WW3D2_SRC_PORTABLE (Draft 26 Step 3)
     shdlib.h
     #snappts.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #snapPts.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
@@ -473,6 +473,21 @@ set(WW3D2_SRC_PORTABLE
     bwrender.h
     projector.cpp
     projector.h
+
+    # Milestone 6 (native port plan Phase 5(a), Draft 26 Step 3, Task 1):
+    # pointgr.cpp/shattersystem.cpp/dynamesh.cpp - verified zero Windows/D3DX/
+    # GDI deps except pointgr.cpp's single D3DXMatrixRotationZ call site,
+    # replaced with a bit-identical portable matrix assignment under
+    # #ifdef _WIN32/#else (see pointgr.cpp for the derivation). Moved first
+    # (ahead of other Draft 26 steps) because Task 2's Do_Onetime move
+    # references PointGroupClass::_Init/_Shutdown and ShatterSystem::
+    # Init/Shutdown and would fail to link otherwise.
+    pointgr.cpp
+    pointgr.h
+    shattersystem.cpp
+    shattersystem.h
+    dynamesh.cpp
+    dynamesh.h
 )
 
 if(WIN32)

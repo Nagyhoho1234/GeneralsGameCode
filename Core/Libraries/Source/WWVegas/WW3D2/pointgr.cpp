@@ -86,7 +86,9 @@
 #include "rinfo.h"
 #include "camera.h"
 #include "dx8fvf.h"
+#ifdef _WIN32
 #include "d3dx8math.h"
+#endif
 #include "sortingrenderer.h"
 
 // Upgraded to DX8 2/2/01 HY
@@ -1216,7 +1218,23 @@ void PointGroupClass::Update_Arrays(
 					if (!Billboard) {
 						// If we're not billboarding, then the coordinate we have is in screen space.
 						Matrix4x4 rotMat;
+#ifdef _WIN32
 						D3DXMatrixRotationZ(&(D3DXMATRIX&) rotMat, ((float)point_orientation[i] / 255.0f * 2 * D3DX_PI));
+#else
+						// Bit-identical to D3DXMatrixRotationZ's row-major output as aliased through
+						// Matrix4x4::Row (D3DX's row-vector convention read back via Matrix4x4's
+						// column-vector operator* - verified against matrix4.h:824-831). Row is
+						// protected, so we go through the public operator[] instead of the brief's
+						// literal ".Row[i]" spelling; the resulting floats are identical.
+						{
+							const float angle = (float)point_orientation[i] / 255.0f * 2 * WWMATH_PI;
+							const float s = sinf(angle), c = cosf(angle);
+							rotMat[0].Set(c, s, 0.0f, 0.0f);
+							rotMat[1].Set(-s, c, 0.0f, 0.0f);
+							rotMat[2].Set(0.0f, 0.0f, 1.0f, 0.0f);
+							rotMat[3].Set(0.0f, 0.0f, 0.0f, 1.0f);
+						}
+#endif
 
 						Vector4 orientedVecX = rotMat * GroundMultiplierX;
 						Vector4 orientedVecY = rotMat * GroundMultiplierY;
