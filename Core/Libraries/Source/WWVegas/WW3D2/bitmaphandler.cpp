@@ -76,7 +76,11 @@ void BitmapHandlerClass::Copy_Image_Generate_Mipmap(
 		// via TextureLoader::Load_Thumbnail for any non-square
 		// thumbnail) made both /2 loop bounds below integer-divide to 0,
 		// silently leaving dest_surface *and* mip_surface as shadow-
-		// buffer garbage for every level of a narrow mip chain.
+		// buffer garbage at that level. This fixes the first 1xN/Nx1
+		// level a chain reaches; Load_Thumbnail's own width/height
+		// halving isn't clamped at 1, so a steep (>=4:1) aspect ratio's
+		// later/final levels can still integer-divide to 0 and stay
+		// uninitialized - a pre-existing caller-side gap, not fixed here.
 		if (width==1 && height==1) {
 			unsigned b8g8r8a8=*(unsigned*)src_surface;
 			if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
@@ -99,7 +103,13 @@ void BitmapHandlerClass::Copy_Image_Generate_Mipmap(
 				dest_ptr+=2*dest_pitch;
 				unsigned b8g8r8a8=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_00,b8g8r8a8_10,b8g8r8a8_10);
 				if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
-				*mip_ptr++=b8g8r8a8;
+				// fable-review finding: this mip surface is only 1 pixel
+				// wide, so the next mip row starts mip_pitch units away,
+				// not 1 unit away - a padded (non-tightly-packed) mip
+				// pitch would otherwise write every mip row into the same
+				// first few units of the buffer.
+				*mip_ptr=b8g8r8a8;
+				mip_ptr+=mip_pitch;
 			}
 			return;
 		}
@@ -170,7 +180,12 @@ void BitmapHandlerClass::Copy_Image_Generate_Mipmap(
 		unsigned char* dest_ptr=dest_surface;
 		unsigned char* src_ptr=src_surface;
 		unsigned char* mip_ptr=mip_surface;
-		for (unsigned y=0;y<height/2;++y,dest_ptr+=dest_pitch*2,src_ptr+=src_pitch*2,mip_ptr+=dest_bpp) {
+		// fable-review finding: mip_ptr must advance by the mip surface's
+		// row pitch (mip_pitch, a byte stride in this byte-pointer branch),
+		// not by one pixel's width (dest_bpp) - this mip surface is only 1
+		// pixel wide, so dest_bpp only happens to equal mip_pitch when the
+		// mip surface is tightly packed with no row padding.
+		for (unsigned y=0;y<height/2;++y,dest_ptr+=dest_pitch*2,src_ptr+=src_pitch*2,mip_ptr+=mip_pitch) {
 			unsigned b8g8r8a8_00;
 			unsigned b8g8r8a8_10;
 			Read_B8G8R8A8(b8g8r8a8_00,src_ptr,src_format,nullptr,0);
@@ -526,7 +541,15 @@ void BitmapHandlerClass::Copy_Image(
 				unsigned char* dest_ptr=dest_surface;
 				unsigned char* src_ptr=src_surface;
 				unsigned char* mip_ptr=src_surface;
-				for (unsigned y=0;y<dest_surface_height/2;++y,dest_ptr+=dest_surface_pitch*2,src_ptr+=src_surface_pitch*2,mip_ptr+=src_bpp) {
+				// Second fable-review pass: mip_ptr must advance by the row
+				// stride (src_surface_pitch), not by one pixel's width
+				// (src_bpp) - each y-iteration here produces exactly one
+				// output mip row (width==1, no x loop), matching this
+				// function's own general-case convention just below
+				// (mip_ptr=src_surface+y*src_surface_pitch). src_bpp is
+				// only correct for jumping between adjacent columns *within*
+				// a row, which the height==1 sibling below genuinely does.
+				for (unsigned y=0;y<dest_surface_height/2;++y,dest_ptr+=dest_surface_pitch*2,src_ptr+=src_surface_pitch*2,mip_ptr+=src_surface_pitch) {
 					unsigned b8g8r8a8_00;
 					unsigned b8g8r8a8_10;
 					Read_B8G8R8A8(b8g8r8a8_00,src_ptr,src_surface_format,src_palette,src_palette_bpp);
