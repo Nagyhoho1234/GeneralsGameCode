@@ -3290,3 +3290,494 @@ before Milestone 5 leans on that plumbing. Milestone 4's own honest gap
 (Draft 22's "does NOT yet make possible" section) stands unchanged: no
 image from real *game* data yet - that is exactly Milestone 5's scope
 (meshes + `dx8renderer.cpp` + `assetmgr` unification).
+
+**A fable review of Milestone 4 (commits `69da84664`..`06c4fdb4f`),
+run in parallel with Draft 24's planning below, mutation-tested all
+three of Draft 23's claimed bug fixes plus the thread and sampler
+layers by reverting each locally (never committed) and confirming the
+harness actually catches the regression - the strongest evidence those
+fixes are real, not narrative. Clean bill of health on the delivered
+code; six non-blocking findings recorded here so they aren't lost,
+none of them re-touched by Draft 24's plan and none of them block it:**
+1. `bitmaphandler.cpp`'s `Copy_Image()` general (mismatched-format)
+   branch has the identical `dest_surface_height==1` hole Draft 23's
+   fix only patched in the fast (same-format) path. Unreachable on GL
+   today (dest is always A8R8G8B8), reachable the day 16-bit GL upload
+   formats exist.
+2. The pre-existing `dest_surface_width==1` branch in the same
+   function is itself only correct for 1x1, not 1xN - a transposed
+   sibling of the bug Draft 23 fixed, equally real, equally latent.
+3. `Copy_Image_Generate_Mipmap` (same file) has the same zero-iteration
+   hole with no row/column-of-1 special case at all, reachable via
+   `TextureLoader::Load_Thumbnail` for a non-square thumbnail.
+4. Pre-existing (not introduced by this port) off-by-one in
+   `MissingTexture::_Init`'s level-0 fill: row 0 is written twice, the
+   last row (127) never - leaves malloc garbage in the GL shadow
+   buffer's bottom row. One-line fix.
+5. POSIX `ThreadClass::Stop`'s join can be skipped if the thread's own
+   exit clears `handle` before `Stop()` checks it - a small unjoined-
+   thread leak plus a narrow use-after-free window. The identical race
+   pre-exists on the Windows path; POSIX-side hardening is cheap.
+6. A real Draft-21-style verification gap in the exit-criterion harness
+   itself: `Tests/RenderTexturePipeline` check 6 only exercises
+   `D3DTSS_ADDRESSU`; deleting the `ADDRESSV` case from
+   `SetTextureStageState` still passes all 6 checks. Low risk given
+   exact code symmetry with the proven U path, but an honest gap.
+
+Suggested disposition: bundle findings 1-3 into one small follow-up fix
+(same family, same root cause), 4-5 into one small hardening commit,
+and 6 into a harness-only addition (a V-axis WRAP/CLAMP check
+alongside the existing U-axis one) - none of them urgent enough to
+block Milestone 5, all of them cheap enough not to defer indefinitely.
+
+## Draft 24: Milestone 5 plan - real W3D meshes on GL (mesh/
+meshgeometry/hlod/assetmgr Core unification, TriIndex resolution, the
+dx8renderer mesh pipeline), planned as a fable background agent per
+standing user request, in parallel with the Milestone 4 review above,
+against Milestone 4's actual delivered code (commits `69da84664`..
+`06c4fdb4f`, HEAD at planning time), not just its plan.
+
+**What Milestone 4 actually delivered (verified by reading the current
+files, not the commit messages):** the full texture pipeline runs on GL
+end-to-end - all nine texture TUs are in `WW3D2_SRC_PORTABLE`
+(`Core/.../WW3D2/CMakeLists.txt:287-304`), `ThreadClass` is real on
+POSIX, `GLTexture8`/`GLSurface8` are mip-aware, the per-stage GL sampler
+layer exists (`dx8wrapper_gl.cpp:973`), and `Tests/RenderTexturePipeline/`
+passes all 6 checks in CI alongside the three older harnesses
+(`linux-native.yml:100-108`). `assetmgr_common.cpp` holds only
+`WW3DAssetManager::TheInstance`; both per-tree `assetmgr.cpp` copies
+remain, diverging by exactly 9 diff lines (re-verified: title, one
+changelog line, ZH's `#include "shdlib.h"` + `SHD_REG_LOADER;` in the
+constructor - a no-op macro without `USE_WWSHADE`, `shdlib.h:67` - and
+one comment typo). `WW3DAssetManager::Get_Texture`'s cache path
+(`assetmgr.cpp:1065-1140` ZH) has still never executed - no live
+manager instance has ever existed in any harness. The honest gap Draft
+22 closed on stands: no image from real *game* data. Milestone 5 is
+that image: a real `.w3d` file, loaded by the real chunk loader through
+a real `WW3DAssetManager`, rendered by the real `dx8renderer.cpp` mesh
+pipeline, pixel-verified on GL. Also still open from Draft 21: the
+dynamic-buffer draw-offset verification gap (mutation-proven check-6
+blindness), explicitly required to close "before Milestone 5 leans on
+that plumbing" - this milestone starts by closing it.
+
+**Milestone 5 scope statement.** Three jobs, long forward-referenced as
+one line ("meshes + dx8renderer.cpp + assetmgr Core/ unification"): (1)
+unify the per-tree mesh/model/asset-manager layer into `Core/`
+("GeneralsMD wins", the Draft 17 verdict, re-verified below), resolving
+the `TriIndex` width question; (2) make the mesh rendering closure -
+`dx8renderer.cpp`, `dx8polygonrenderer.cpp`, and the ~35 pure-C++ TUs
+the asset manager's constructor drags - compile and link portably; (3)
+the small GL device additions real meshes genuinely require (a
+diffuse-source rule for lighting-enabled draws). Goal-state:
+`WW3DAssetManager::Load_3D_Assets` -> `Create_Render_Obj` ->
+`MeshClass::Render(rinfo)` -> `TheDX8MeshRenderer.Flush()` renders
+correct pixels on GL from harness-authored W3D bytes, including an
+HLod-contained hierarchy and a skin.
+
+**Key findings, verified against current code (file:line):**
+
+1. **The per-tree divergence is exactly the Draft 17 verdict, plus one
+   new fact: the particle system is NOT in this milestone's closure.**
+   Re-diffed every remaining per-tree WW3D2 pair. The mesh set
+   diverges modestly and GeneralsMD is uniformly the later, bugfixed
+   revision: `mesh.cpp` (86 diff lines - ZH adds the shadow/alpha
+   base-pass logic, delayed material passes, `DX8RendererDebugger`
+   hooks, `StartBad` raytest guards, and *moves*
+   `Compose_Deformed_Vertex_Buffer` off `MeshClass`), `meshgeometry.cpp`
+   (141 - ZH deep-clones `CullTree` in `operator=`, scales it in
+   `Scale()`, and *receives* the `get_deformed_*` family that ZH moved
+   from `MeshModelClass`; it also already carries the native-port
+   TriIndex truncation assert, `meshgeometry.cpp:1866-1873`),
+   `meshmdl.cpp`/`meshmdlio.cpp`/`meshmatdesc.cpp` (199/64/132 - the
+   same refactor's other half plus `HasBeenInUse` debug tracking),
+   `hlod.cpp` (16 - the bone-index re-export guard at ZH `:3502-3509`),
+   and small deltas for
+   `rinfo`/`boxrobj`/`nullrobj`/`decalmsh`/`htreemgr`/`hanimmgr`/
+   `hrawanim`/`hmorphanim`/`aabtreebuilder`/`lightenvironment` (ZH adds
+   a 32-bit `Build_AABTree(Vector3i*)` overload and CNC3-derived
+   light-attenuation fixes). Generals' removed
+   `Compose_Deformed_Vertex_Buffer` has **zero callers outside
+   Generals' own mesh.cpp/mesh.h** (repo-wide grep) - safe to drop. By
+   contrast `part_buf.cpp` diverges by 644 lines, and grep proves the
+   particle TUs (`part_buf/part_emt/part_ldr`), `linegrp.cpp` (ZH-only),
+   and `matrixmapper.cpp` are referenced by nothing in the
+   assetmgr/mesh closure (only `renderobjectrecycler.cpp`, itself out
+   of closure; `_ParticleEmitterLoader` is *not* among the
+   constructor-registered loaders, `assetmgr.cpp:223-235`). They stay
+   per-tree, deferred with reasoning, not silently.
+
+2. **TriIndex: resolve on `Vector3i16`, and the rendering argument
+   makes it safe.** Generals `meshgeometry.h:63` says `typedef Vector3i
+   TriIndex` (32-bit); GeneralsMD says `Vector3i16`. The decisive fact,
+   verified in `dx8renderer.cpp`: the render path never preserved
+   32-bit indices anyway - every index written to an index buffer goes
+   through `unsigned short` (`DX8TextureCategoryClass::Add_Mesh`,
+   `dx8renderer.cpp:1586-1600` and `:1625-1660`), the shared VBs clamp
+   at 65535 (`VERTEX_BUFFER_OVERFLOW`, `:90`, skin clamp `:1300-1305`),
+   and `DX8IndexBufferClass` is 16-bit. A >65535-vertex Generals mesh
+   was *already* silently broken at render time under 32-bit TriIndex;
+   under the unified header it now fails loudly at load time via the ZH
+   assert (the exact precondition Draft 17 demanded, landed in
+   `8d65653d3`). External consumers
+   (`W3DVolumetricShadow.cpp:322,340`, `W3DBridgeBuffer.cpp:638` in
+   both trees) use the typedef, never `sizeof`-math against a hardcoded
+   width, and GeneralsMD's own copies of those files already run on
+   16-bit - the Generals copies recompile identically. Memory halves
+   as a bonus. This closes the Draft 17 open item: unify
+   `meshgeometry.h` on GeneralsMD's typedef, keep the load-time assert,
+   document the (theoretical, never-render-correct) >65535 case as the
+   loud failure mode.
+
+3. **The mesh rendering closure is almost entirely Windows-free
+   already - this is a link-closure milestone, not a porting
+   milestone.** Grep-verified zero `<windows.h>`/D3DX/`<mmsystem.h>`/
+   GDI dependencies in: `dx8renderer.cpp`, `dx8polygonrenderer.cpp`,
+   `dx8rendererdebugger.cpp`, both trees'
+   `mesh/meshgeometry/meshmdl/meshmdlio/meshmatdesc/hlod/rinfo/boxrobj/
+   nullrobj/decalmsh/htreemgr/hanimmgr/hrawanim/hmorphanim/
+   aabtreebuilder/lightenvironment`, and Core's
+   `proto/rendobj/animobj/htree/pivot/hanim/hcanim/hmdldef/motchan/
+   matinfo/matpass/aabtree/coltest/decalsys/predlod/visrasterizer/
+   stripoptimizer/snappts/collect/distlod/dazzle/ringobj/sphereobj/
+   metalmap/font3d/assetstatus/w3dexclusionlist/scene/
+   static_sort_list`. Exactly two real Windows surfaces exist in the
+   whole closure: `agg_def.cpp:46`'s `<windows.h>` include (no API use
+   found - drop/gate it) and `render2dsentence.cpp`'s GDI font
+   rasterizer (finding 4). `assetmgr.cpp` itself needs only its
+   `<windows.h>` gated and its `<d3dx8core.h>` dropped (lowercase
+   include, zero D3DX symbols used - dead; its `D3DSURFACE_DESC`/
+   `GetLevelDesc(0,&desc)` use in `Log_Textures` is plain D3D8
+   vocabulary PortableD3D8 has had since M4). `dazzle.cpp`'s
+   `persistfactory.h` lands in WWSaveLoad, which already builds
+   unconditionally on every platform.
+
+4. **The asset manager constructor is the link-closure root, and fonts
+   are its one genuinely Windows subsystem.**
+   `WW3DAssetManager::WW3DAssetManager` (`assetmgr.cpp:206-242`)
+   directly references eleven loader instances - `_MeshLoader`/
+   `_HModelLoader` (`proto.cpp:52-53`), `_CollectionLoader`,
+   `_BoxLoader`, `_HLodLoader` (`hlod.cpp:144`), `_DistLODLoader`,
+   `_AggregateLoader`, `_NullLoader` + static `_NullPrototype`
+   (`assetmgr.cpp:133`), `_DazzleLoader`, `_RingLoader`,
+   `_SphereLoader` - so all their TUs *must* link; there is no smaller
+   honest cut. The same TU also hard-references `MetalMapManagerClass`
+   (WWLib `INIClass` - `ini.cpp` already portable), `Font3DDataClass`/
+   `Font3DInstanceClass` (`font3d.cpp` - texture/surface-based,
+   portable), and constructs `FontCharsClass` calling
+   `Initialize_GDI_Font` (`assetmgr.cpp:1455-1470`). `FontCharsClass`'s
+   GDI block (`render2dsentence.cpp:1310-1570`: `ExtTextOutW`,
+   `CreateFont`, `CreateDIBSection`, `WW3D::Get_Window`) is real
+   Windows font rasterization with no GL analog this milestone. Gate
+   the three GDI member functions `#ifdef _WIN32` / return-false-loudly
+   on POSIX (`Initialize_GDI_Font` returning false makes
+   `Get_FontChars` return nullptr - honest "fonts not ported yet", and
+   it severs the only `WW3D::Get_Window` reference in the closure); the
+   rest of the TU (sentence building over `SurfaceClass`) compiles
+   portably. `render2dsentence.h`'s `HFONT`/`HBITMAP`/`HDC` members
+   need opaque handle typedefs in `win32_compat.h` (verified absent;
+   `WCHAR` already exists in `wchar_compat.h:28`). `SHD_REG_LOADER`
+   stays in the unified file - it expands to nothing (`shdlib.h:58,67`)
+   so both games compile identically.
+
+5. **Link-closure landmines, enumerated up front (the Draft 20
+   discipline):**
+   - **`WW3D::Add_To_Static_Sort_List` is defined in monolithic
+     `ww3d.cpp:1942`** and `mesh.cpp` calls it (3 sites) - referencing
+     it pulls all of `ww3d.cpp.o` (Set_Render_Device chain, scene
+     render, shattersystem...) into any harness link. Third
+     `ww3d_common.cpp` extraction round: move
+     `Add_To_Static_Sort_List` + `Render_And_Clear_Static_Sort_Lists`
+     (`ww3d.cpp:1947-1955`; both are two-liners over
+     `CurrentStaticSortLists`, whose static definition already lives
+     in `ww3d_common.cpp` from M3 Step 1) - which makes
+     `static_sort_list.cpp` portable too (pure list code, zero Windows
+     deps, and the harness's sort-level mesh check will genuinely
+     execute it). `Set_NPatches_Level` (`ww3d.cpp:158`) looked like a
+     fourth candidate but its only closure-side mention is a comment
+     (`meshmdl.cpp:171`) - not needed.
+   - **`DX8Wrapper::Set_Light_Environment` lives in the Windows-only
+     backend file** (`dx8wrapper_d3d8.cpp:2424-2497`) but is called
+     from `dx8renderer.cpp:1805` - a guaranteed POSIX link failure the
+     moment the mesh pipeline links. Its body is pure
+     `LightEnvironmentClass` reads + `Set_Light(unsigned, const
+     D3DLIGHT8*)` calls (already in `dx8wrapper_draw.cpp:588`). Move it
+     verbatim to `dx8wrapper_draw.cpp` (multiset no-loss/no-duplicate
+     verification, the Draft 21 method). `Set_Light(unsigned, const
+     LightClass&)` stays behind - still drags `light.cpp`, still
+     uncalled by this closure.
+   - **The `mapper.cpp` link stub must die in the same commit that
+     makes `mesh.cpp` portable.** `mapper.cpp:1115-1131`'s `#ifndef
+     _WIN32` `MeshClass::Make_Unique` stub becomes a duplicate-symbol
+     error the moment the real `mesh.cpp` joins the link - Draft 21
+     predicted exactly this loud failure and called it self-correcting;
+     delete the stub in the same change.
+   - **`statistics.cpp` can finally un-gate.** M3 no-op'd the
+     `DX8_RECORD_*` macros on `!_WIN32` because `statistics.cpp` needs
+     `TextureBaseClass::Get_Texture_Memory_Usage`
+     (`statistics.cpp:121,219-222`) - which has been portable since M4
+     Step 5. Un-gate the macros, move `statistics.cpp` to
+     `WW3D2_SRC_PORTABLE` (its only callers are the draw path and
+     `dx8renderer.cpp`'s `DX8_RECORD_SKIN_RENDER`,
+     `dx8renderer.cpp:1342`). Closes Draft 22's deferred item on
+     schedule.
+
+6. **Two GL diffuse-source grenades would render every real mesh black
+   - both found by reading, before any run could hit them.** (i)
+   `DX8FVFCategoryContainer::Define_FVF` (`dx8renderer.cpp:702-738`)
+   gives a realtime-lit rigid mesh `XYZ|NORMAL|TEXn` - **no diffuse
+   component** - and `dx8wrapper_gl.cpp:1168-1176` documents in its own
+   comment that a diffuse-less FVF falls back to GL's generic-attribute
+   default `(0,0,0,1)`, MODULATE-ing every texel to black ("a known
+   deferred gap, not exercised by Step 7's harness"). The deferral ends
+   here. (ii) The skin path fills `dynamic_fvf_type` vertices with
+   `diffuse=0` when the mesh has no color array
+   (`dx8renderer.cpp:1364-1369`) - black again, even with fix (i). Both
+   have the same faithful resolution: D3D8 *ignores* vertex diffuse
+   when `D3DRS_LIGHTING` is TRUE (the state `VertexMaterialClass::Apply`
+   sets from `UseLighting`, `vertmaterial.cpp:954-956`) and computes
+   color from lights+material instead. The GL device therefore (a) sets
+   the generic diffuse attribute to opaque white via `glVertexAttrib4f`
+   when the FVF lacks diffuse, and (b) tracks `D3DRS_LIGHTING` into a
+   shader uniform that forces the diffuse source to white when lighting
+   is on - "unlit renders as fully-lit", the honest documented
+   approximation until real lighting emulation (a later milestone;
+   `SetLight`/`LightEnable` stay accept-stubs). Compatibility argument,
+   verified: `UseLighting` defaults false (`vertmaterial.cpp:82`) and
+   no existing harness ever enables it, so M2/M3/M4 harness output is
+   bit-identical - re-running them is the proof.
+   `D3DRS_NORMALIZENORMALS` (`dx8renderer.cpp:1863`) and `D3DRS_ZBIAS
+   8` for decals (`:2221`) arrive at the GL device as already-accepted
+   no-ops - fine (no lighting to normalize; decals out of scope) but
+   get a documenting comment, not silence.
+
+7. **The harness can author real `.w3d` bytes with the engine's own
+   `ChunkSaveClass` - no binary blobs, and the whole load path is
+   real.** WWLib `chunkio` is portable since Phase 1; `w3d_file.h`'s
+   structs (unifying into Core this milestone) define the on-disk
+   layout; `MeshLoaderClass::Load_W3D` -> `MeshClass::Load_W3D`
+   (`mesh.cpp`) -> `MeshModelClass::Load_W3D` (`meshmdlio.cpp`) reads
+   `W3D_CHUNK_MESH_HEADER3`/`VERTICES`/`VERTEX_NORMALS`/`TRIANGLES`/
+   `MATERIAL_INFO`/`SHADERS`/`VERTEX_MATERIALS`/`TEXTURES`/
+   `MATERIAL_PASS`, and the texture chunk funnels through
+   `::Load_Texture` (`texture.cpp:1034`) into the virtual
+   `WW3DAssetManager::Get_Texture` - the cache path that has never once
+   executed, finally driven by a live manager instance.
+   `TheDX8MeshRenderer` needs only `Init()` + `Set_Camera()` before
+   `Flush()` (`dx8renderer.cpp:1986,2171-2206`; `Flush` early-outs
+   without a camera). The M4 harness's init sequence
+   (`Tests/RenderTexturePipeline/main.cpp:387-419`:
+   `MissingTexture::_Init`, `_Init_Filters`, `TextureLoader::Init`,
+   thumbnails off - the game's real configuration) extends by exactly
+   `TheDX8MeshRenderer.Init()`.
+
+**Design decisions:**
+
+- **Unify first, port second, as two separately verified steps**
+  (findings 1-2): the unification wave lands with the files still
+  WIN32-gated (Draft 17's `eacd89cb2` precedent - unification is proven
+  by MSVC builds of all four targets alone, before any POSIX concern
+  enters). "GeneralsMD wins" for all 17 file pairs and 9 header pairs;
+  each pair re-diffed at implementation time, not taken from this plan.
+- **No loader is gated out of the constructor** (finding 4): registering
+  fewer prototype loaders on POSIX would silently change eventual game
+  behavior - the whole loader set links, and only the GDI *interior* of
+  `FontCharsClass` is platform-gated (loud, documented,
+  nullptr-returning).
+- **The lighting-white rule is a documented approximation, not lighting
+  emulation** (finding 6): one uniform, no light math, no material
+  color - `D3DLIGHT8`->GLSL stays deferred and the deferral is written
+  at the shader.
+- **Link hygiene lands before link users, again** (finding 5): the
+  `ww3d_common` round-3 and `Set_Light_Environment` moves are their own
+  step with full MSVC no-duplicate/no-loss verification before any mesh
+  TU becomes portable.
+- **Draft 21's verification debt is paid first, not alongside**: the
+  second dynamic quad (nonzero `VertexBufferOffset`/`IndexBufferOffset`
+  + `NOOVERWRITE` lock) goes into `Tests/RenderEngineDrawPath` as step
+  1, so the skin path in step 7 stands on pixel-verified base-vertex
+  plumbing.
+- **Harness closure stays an explicit file list** (M1-M4 precedent),
+  but hoisted into one shared `WW3D2_PORTABLE_TEST_SRCS` CMake variable
+  consumed by the new harness (the M4 list plus ~40 TUs would otherwise
+  be the fifth hand-maintained copy; older harness CMakeLists stay
+  untouched as regression artifacts).
+
+**Explicit non-goals (Milestone 6+ / other phases):** lighting
+emulation (`D3DLIGHT8`->GLSL; the white rule above is the placeholder);
+particles (`part_buf/part_emt/part_ldr`, 644-line divergence),
+`linegrp.cpp`, `matrixmapper.cpp` - stay per-tree, out of closure
+(finding 1); GDI font rasterization on POSIX (FontChars returns
+nullptr; real text is Phase 4/5(e) territory); alpha test (`discard`) -
+the authored meshes use the opaque preset; multi-pass/multi-texture
+materials and texture-stage combiners beyond stage-0 MODULATE (stage-1
+binds are already silently accepted, `dx8wrapper_gl.cpp:958-962`);
+mapper UV animation correctness; sorting-renderer `Flush` end-to-end
+(`SORT` flag meshes route through `Render_Sorted` - the harness's
+meshes don't set it); decal generation (`DecalMeshClass` links and
+`Render_Decal_Meshes` runs empty); `dynamesh`/`bmp2d`/`textdraw`/
+`Stretch_Copy` callers; prototype loaders *executing* beyond Mesh/HLod
+(Box/Ring/Sphere/Dazzle/Collection/DistLOD/Aggregate/Null link and
+register but load nothing in the harness); `.big`-archive file access;
+`WW3D::Init`/`WW3D::Render`/scene-graph driving (Phase 4/5(e)
+convergence owns `W3DDisplay`); windowing.
+
+**Implementation ordering** (each step independently buildable; after
+every step: WSL2 linux-x64 `-k 0` builds of
+`g_gameenginedevice`/`z_gameenginedevice` hold the 17-error-each
+baseline (the 34 catalogued errors are all outside WW3D2 - nothing here
+may add to them), real MSVC win32 build of
+`g_ww3d2`/`z_ww3d2`/`g_gameenginedevice`/`z_gameenginedevice` stays at 0
+errors via `build-win32.bat` (repeat `--target` per target), and all
+four existing harnesses RUN green whenever a step touches anything they
+link):
+
+1. **Close the Draft 21 gap in `Tests/RenderEngineDrawPath`**: second
+   dynamic quad in the same frame - the second
+   `DynamicVBAccessClass`/`DynamicIBAccessClass` pair receives
+   `VertexBufferOffset=4`/`IndexBufferOffset=6` and a `NOOVERWRITE`
+   lock through untouched engine code (`dx8vertexbuffer.cpp:744,
+   793-806`); pixel-check both quads at distinct locations. Verify by
+   re-running Draft 21's Mutation A (hard-wire basevertex to 0): the
+   harness must now FAIL, then restore and re-run green. Small,
+   prerequisite, pays the standing debt.
+2. **Link hygiene**: (a) `ww3d_common.cpp` round 3 - move
+   `Add_To_Static_Sort_List` + `Render_And_Clear_Static_Sort_Lists` out
+   of `ww3d.cpp`; add `static_sort_list.cpp` to `WW3D2_SRC_PORTABLE`.
+   (b) Move `Set_Light_Environment` verbatim from
+   `dx8wrapper_d3d8.cpp:2424` to `dx8wrapper_draw.cpp`. Pure moves;
+   full MSVC rebuild plus sorted-line multiset comparison (Draft 21's
+   method - the librarian never catches duplicates in static libs, so
+   grep/multiset is the real check).
+3. **Unification wave (still WIN32-gated)**: move to `Core/`,
+   GeneralsMD version winning after fresh re-diff of each pair:
+   `assetmgr.cpp`, `mesh.cpp`/`mesh.h`, `meshgeometry.cpp`/
+   `meshgeometry.h` (the `Vector3i16` TriIndex + truncation assert -
+   finding 2's decision), `meshmdl.cpp`/`meshmdl.h`, `meshmdlio.cpp`,
+   `meshmatdesc.cpp`, `hlod.cpp`, `rinfo.cpp`, `boxrobj.cpp`,
+   `nullrobj.cpp`, `decalmsh.cpp`, `htreemgr.cpp`/`.h`, `hanimmgr.cpp`,
+   `hrawanim.cpp`, `hmorphanim.cpp`, `aabtreebuilder.cpp`/`.h`,
+   `lightenvironment.cpp`/`.h`, `meshbuild.h`, `w3d_file.h`. Delete
+   both per-tree copies of each; per-tree CMakeLists shrink to the
+   particle/linegrp/matrixmapper residue. Verification: full MSVC
+   rebuild of all four targets is the whole proof at this step (both
+   games now compile ZH's mesh layer - the Generals-side knock-ons to
+   watch are exactly the finding-1/2 items: the dropped
+   `Compose_Deformed_Vertex_Buffer`, and TriIndex-width fallout in
+   `W3DVolumetricShadow.cpp`/`W3DBridgeBuffer.cpp`, expected nil but
+   proven only by this build).
+4. **GL device: diffuse-source rules** (finding 6): white generic
+   attribute for diffuse-less FVFs; `D3DRS_LIGHTING` tracked into a
+   "force white diffuse" uniform; documenting comments on
+   `NORMALIZENORMALS`/`ZBIAS` accept-stubs; `Release_Device` resets the
+   new state (Draft 19 watch-item discipline). RE-RUN M2/M3/M4
+   harnesses - bit-identical output is the compatibility proof
+   (`UseLighting` defaults false).
+5. **Portability wave A - the mesh render path into
+   `WW3D2_SRC_PORTABLE`**: `mesh.cpp`, `meshgeometry.cpp`,
+   `meshmdl.cpp`, `meshmdlio.cpp`, `meshmatdesc.cpp`, `hlod.cpp`,
+   `rinfo.cpp`, `decalmsh.cpp`, `boxrobj.cpp`, `nullrobj.cpp`,
+   `htree.cpp`, `htreemgr.cpp`, `pivot.cpp`, `hanim.cpp`,
+   `hanimmgr.cpp`, `hcanim.cpp`, `hrawanim.cpp`, `hmorphanim.cpp`,
+   `motchan.cpp`, `hmdldef.cpp`, `animobj.cpp`, `rendobj.cpp`,
+   `proto.cpp`, `matinfo.cpp`, `matpass.cpp`, `aabtree.cpp`,
+   `aabtreebuilder.cpp`, `lightenvironment.cpp`, `coltest.cpp`,
+   `decalsys.cpp`, `predlod.cpp`, `visrasterizer.cpp`,
+   `stripoptimizer.cpp`, `statistics.cpp` (+ un-gate the
+   `DX8_RECORD_*` macros), `dx8renderer.cpp`, `dx8polygonrenderer.cpp`,
+   `dx8rendererdebugger.cpp`. **Delete the `mapper.cpp` Make_Unique
+   stub in the same change** (finding 5). Expected source edits:
+   near-zero beyond includes (finding 3); budget for LP64/const-
+   correctness compile fixes of the M4-Step-5 kind, found only by the
+   actual GCC/Clang compile. Verify: linux + macOS compile, MSVC
+   rebuild, harness re-runs.
+6. **Portability wave B - the asset-manager closure**: `assetmgr.cpp`
+   (gate `<windows.h>`, drop dead `<d3dx8core.h>`), `collect.cpp`,
+   `distlod.cpp`, `agg_def.cpp` (drop `:46` `<windows.h>`),
+   `dazzle.cpp`, `ringobj.cpp`, `sphereobj.cpp`, `metalmap.cpp`,
+   `font3d.cpp`, `render2dsentence.cpp` (GDI trio gated per finding 4;
+   `HDC`/`HFONT`/`HBITMAP` opaque typedefs into `win32_compat.h`),
+   `render2d.cpp`, `assetstatus.cpp`, `w3dexclusionlist.cpp`,
+   `snappts.cpp`, `scene.cpp` if the linker demands it (the one
+   enumeration this plan could not settle by grep alone - `dazzle.cpp`'s
+   SceneClass references may be vtable-only; **the linker is the
+   ground truth for this step's final file list, and small additions
+   here are expected, not failures of the plan**). Verify: a scratch
+   executable (or the step-7 harness skeleton) that constructs and
+   destroys one `WW3DAssetManager` on linux-x64 - the first live
+   instance ever - plus the standing build matrix.
+7. **`Tests/RenderW3DMesh/` harness + CI - the exit criterion.**
+   Sibling harness (all four existing harnesses stay untouched); links
+   the shared `WW3D2_PORTABLE_TEST_SRCS` list; authors its assets at
+   startup in a temp dir: an 8x8 TGA (M4's authoring code as template)
+   and `.w3d` files written through real `ChunkSaveClass` against the
+   now-Core `w3d_file.h` structs. Init: M4's sequence +
+   `TheDX8MeshRenderer.Init()` + one `WW3DAssetManager` on the stack.
+   Checks: **(1) load round-trip** - `Load_3D_Assets` of a single-mesh
+   W3D; `Render_Obj_Exists`, `Create_Render_Obj` returns a `MeshClass`
+   with the authored vertex/poly counts (structural precondition, not
+   the exit proof); **(2) textured lit rigid mesh** - two-triangle
+   quad, `XYZNUV1` via `Define_FVF`, texture chunk -> `Load_Texture` ->
+   `Get_Texture` -> foreground TGA load; `Render(rinfo)` + `Flush()`;
+   sampled pixels equal authored texel colors at CPU-predicted
+   projected positions (proves finding 6(i)+(ii)'s lighting-white rule,
+   the FVF container/`DX8PolygonRendererClass` index plumbing, and the
+   first real `Get_Texture`-cache-mediated texture on a mesh); **(3)
+   Get_Texture cache path** - a second mesh referencing the same
+   texture name: `Texture_Hash()` holds exactly one entry and both
+   meshes render (the never-exercised path, now load-bearing); **(4)
+   vertex-color mesh** - a mesh whose material pass carries per-vertex
+   DCG (diffuse-bearing FVF per `Define_FVF`'s `Get_Color_Array`
+   branch, `dx8renderer.cpp:713`) with lighting off: rendered colors
+   equal authored vertex colors exactly (pins the diffuse path
+   *against* the white rule - the discriminator that check 2 alone
+   can't provide); **(5) HLod hierarchy** - authored
+   `W3D_CHUNK_HIERARCHY` (two pivots, second translated) +
+   `W3D_CHUNK_HLOD` with two sub-meshes: `Create_Render_Obj` yields an
+   `HLodClass`, both meshes render at pivot-offset-predicted distinct
+   positions (proves `hlod.cpp`/`htree.cpp`/`proto.cpp`/`_HLodLoader`
+   end-to-end); **(6) skin** - a skin-flagged mesh (vertex influences
+   on the translated pivot) inside the HLod: rendered at the
+   bone-transformed predicted position (proves ZH's moved
+   `get_deformed_vertices`,
+   `DX8SkinFVFCategoryContainer::Render`'s dynamic-buffer fill
+   `dx8renderer.cpp:1288-1410`, and the diffuse=0-under-lighting rule -
+   the path step 1's offset verification underwrites). Teardown:
+   `Free_Assets`, manager destruction, `TheDX8MeshRenderer.Shutdown()`,
+   `TextureLoader::Deinit()` - clean exit is itself a check (first-ever
+   teardown of a live manager). Wire into `linux-native.yml` behind
+   `xvfb-run`; re-run ALL FIVE harnesses in CI. A REAL RUN is the exit
+   criterion - findings 5 and 6 are precisely the class of thing only
+   this run proves, and every prior milestone's only-found-at-runtime
+   bug list is the standing argument.
+
+**What this milestone does NOT yet make possible, honestly:** still no
+image from shipped game assets - nothing reads a `.big` archive, no
+scene graph or `W3DDisplay` drives rendering, text/fonts don't
+rasterize on POSIX, lighting is a white-diffuse approximation, and
+particles remain per-tree and unported. What it does make possible:
+after Milestone 5, every layer from W3D bytes on disk to correct pixels
+on GL is real engine code on both platforms - which is the last
+WW3D2-side prerequisite before the ladder's next rung (`W3DDisplay`/
+scene/camera wiring + windowing, the Phase 4/5(e) convergence).
+
+**Open questions for the implementer, not yet resolved:**
+1. TriIndex fallback if `Vector3i16` unification is challenged on
+   review: leave `meshgeometry.h` per-tree instead (Core INTERFACE TUs
+   already compile per-target with per-tree include dirs, so this stays
+   viable, just perpetuates the fork). Recommended: proceed as planned.
+2. Portability wave B's exact file list - `scene.cpp` (and transitively
+   `pointgr.cpp`/`layer.cpp`) may or may not be dragged by
+   `dazzle.cpp`/`agg_def.cpp`; grep was inconclusive (vtable vs. direct
+   references). Let the linker enumerate at implementation time; expect
+   1-3 additions beyond the listed set, add them to
+   `WW3D2_SRC_PORTABLE` rather than stubbing.
+3. The exact W3D chunk combination that yields a diffuse-bearing FVF
+   for harness check 4 (DCG in `W3D_CHUNK_MATERIAL_PASS` vs.
+   `W3D_MESH_FLAG_PRELIT_VERTEX` header attributes) should be confirmed
+   against `meshmdlio.cpp`'s read path while authoring the check, not
+   assumed from this plan.
+4. Check 6 (skin) is the deepest verification (hierarchy + influences +
+   HLod container + dynamic buffers). If W3D skin authoring stalls, the
+   documented fallback is two rigid meshes plus deferring the skin
+   pixel check to Milestone 6 - but that must be stated explicitly in
+   the close-out draft, not silently shrunk.
