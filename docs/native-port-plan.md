@@ -4541,3 +4541,58 @@ aren't lost, none of them blocking, none re-touched by this milestone:**
    filtering is a no-op. All three pass `ctest` today; this is a latent
    inconsistency worth resolving explicitly (not urgently) rather than
    rediscovering later.
+4. **`Present`'s `glBlitFramebuffer` call assumes the window's default
+   framebuffer is the same size as `g_FBO`** (`dx8wrapper_gl.cpp`,
+   `IDirect3DDevice8::Present`) - true under Xvfb (1:1 pixel density,
+   every existing pixel check reads the FBO, never the window), but
+   false on a HiDPI/Retina display (a declared port target: macOS) or a
+   fractionally-scaled Linux desktop, where `glfwGetFramebufferSize`
+   differs from the window size passed to `glfwCreateWindow` - the blit
+   would land in one corner of the real window instead of filling it.
+   A second instance of the same assumption: after
+   `Set_Device_Resolution`'s `glfwSetWindowSize`, X11 resizes
+   asynchronously, so the first frame(s) after a resize could blit into
+   a stale-size framebuffer. Fix is small when needed: query
+   `glfwGetFramebufferSize` in `Present` and blit into that size instead
+   of `g_FBWidth`/`g_FBHeight`. Not exercised by anything in this
+   milestone's Linux/Xvfb-based verification; found by an independent
+   fable review of the full milestone diff, not by any test.
+
+**Real CI run performed after this draft was first written** (closing
+the one item this milestone's own text called its exit criterion):
+`workflow_dispatch` triggered on `fork/native-port-plan` at commit
+`2622c6c75` found a real, previously-undetected bug that only a genuine
+case-sensitive Linux filesystem (GitHub Actions' `ubuntu-latest`, ext4)
+can surface - WSL2's NTFS-backed mount is case-insensitive and had
+masked it through every prior local verification, this milestone's and
+Milestone 5's alike. Both `Tests/RenderW3DMesh/main.cpp` (Milestone 5)
+and `Tests/RenderWW3DFrame/main.cpp` (this milestone) wrote
+`#include "RawFile.h"`, but the real on-disk file is
+`Core/Libraries/Source/WWVegas/WWLib/RAWFILE.h` (all-caps) - every other
+call site in the tree already spells it `"RAWFILE.h"` correctly
+(confirmed by a repo-wide grep). This is exactly the class of bug the
+plan's own text predicted only a real CI run could prove (Draft 26's
+"a real CI run is the exit criterion" line) - it had been silently
+dormant since Milestone 5 landed, since this workflow is
+`workflow_dispatch`-only (not auto-triggered) and evidently had not
+actually been re-run against a fresh checkout since. Fixed by correcting
+both includes to `"RAWFILE.h"`; a repo-wide case-mismatch scan (comparing
+every `#include "X.h"` against the actual on-disk filename, case-
+sensitive) found one more pre-existing instance -
+`Core/Libraries/Source/WWVegas/WWLib/INI.h` includes `"listnode.h"`/
+`"index.h"`/"`pipe.h"`/`"straw.h"` against real files `LISTNODE.h`/
+`INDEX.h`/`PIPE.h`/`STRAW.h` - but nothing in the currently-built target
+set (`g_gameenginedevice`/`z_gameenginedevice`, all seven `ctest`
+entries) actually reaches that code path (`ini.cpp.o` itself compiled
+clean in the real CI run), so it was left unfixed and is recorded here
+as a dormant, currently-unreachable risk rather than chased further -
+if `INI.h` (not `ini.cpp`, the header) is ever included from a new
+translation unit added to a built target, expect this to surface the
+same way `RAWFILE.h` just did. **Lesson for this port's own standing
+discipline**: a WSL2/NTFS-mounted local verification is not sufficient
+proof of Linux compatibility by itself - it cannot catch case-sensitivity
+bugs, only a genuinely case-sensitive filesystem (real CI, or a native
+Linux/ext4 checkout) can. `workflow_dispatch` was re-triggered after the
+fix to confirm all six harnesses build and pass on real GitHub Actions
+infrastructure - see the commit that applied this fix for the run link
+and result.

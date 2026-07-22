@@ -55,7 +55,7 @@
 #include "chunkio.h"
 #include "hashtemplate.h"
 #include "texture.h"
-#include "RawFile.h"
+#include "RAWFILE.h"
 #include "PortableD3D8/gl_core33.h"
 #include "PortableD3D8/gl_fixed_function.h"
 

@@ -71,7 +71,7 @@
 #include "assetmgr.h"
 #include "w3d_file.h"
 #include "chunkio.h"
-#include "RawFile.h"
+#include "RAWFILE.h"
 #include "PortableD3D8/gl_core33.h"
 
 #include <GLFW/glfw3.h>
