@@ -19,6 +19,7 @@
 # reference dozens of per-tree/Windows-only subsystems Milestones 4-5 own.
 add_executable(RenderEngineDrawPathTest
     main.cpp
+    ${CMAKE_SOURCE_DIR}/Tests/mesh_link_stub.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_common.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_draw.cpp

@@ -16,6 +16,7 @@
 # WW3DAssetManager::TheInstance's static definition - link finding 1).
 add_executable(RenderTexturePipelineTest
     main.cpp
+    ${CMAKE_SOURCE_DIR}/Tests/mesh_link_stub.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_common.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_draw.cpp

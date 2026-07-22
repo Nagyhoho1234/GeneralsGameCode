@@ -3,16 +3,16 @@
 # Phase 1); the actual portable rendering backend is Phase 5.
 if(WIN32)
 set(WW3D2_SRC
-    aabtree.cpp
-    aabtree.h
-    aabtreebuilder.cpp
-    aabtreebuilder.h
+    #aabtree.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #aabtree.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #aabtreebuilder.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #aabtreebuilder.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     agg_def.cpp
     agg_def.h
     animatedsoundmgr.cpp
     animatedsoundmgr.h
-    animobj.cpp
-    animobj.h
+    #animobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #animobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     assetmgr.cpp
     assetmgr.h
     assetstatus.cpp
@@ -21,8 +21,8 @@ set(WW3D2_SRC
     #bitmaphandler.h
     bmp2d.cpp
     bmp2d.h
-    boxrobj.cpp
-    boxrobj.h
+    #boxrobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #boxrobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     bwrender.cpp
     bwrender.h
     #camera.cpp
@@ -31,8 +31,8 @@ set(WW3D2_SRC
     collect.cpp
     collect.h
     colorspace.h
-    coltest.cpp
-    coltest.h
+    #coltest.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #coltest.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     coltype.h
     composite.cpp
     composite.h
@@ -40,10 +40,10 @@ set(WW3D2_SRC
     dazzle.h
     #ddsfile.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #ddsfile.h
-    decalmsh.cpp
-    decalmsh.h
-    decalsys.cpp
-    decalsys.h
+    #decalmsh.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #decalmsh.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #decalsys.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #decalsys.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     distlod.cpp
     distlod.h
     dllist.h
@@ -54,12 +54,12 @@ set(WW3D2_SRC
     #dx8indexbuffer.cpp
     #dx8indexbuffer.h
     dx8list.h
-    dx8polygonrenderer.cpp
-    dx8polygonrenderer.h
-    dx8renderer.cpp
-    dx8renderer.h
-    dx8rendererdebugger.cpp
-    dx8rendererdebugger.h
+    #dx8polygonrenderer.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #dx8polygonrenderer.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #dx8renderer.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #dx8renderer.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #dx8rendererdebugger.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #dx8rendererdebugger.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #dx8texman.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #dx8texman.h
     #dx8vertexbuffer.cpp
@@ -77,24 +77,24 @@ set(WW3D2_SRC
     #formconv.h
     FramGrab.cpp
     framgrab.h
-    hanim.cpp
-    hanim.h
-    hanimmgr.cpp
-    hanimmgr.h
-    hcanim.cpp
-    hcanim.h
-    hlod.cpp
-    hlod.h
-    hmdldef.cpp
-    hmdldef.h
-    hmorphanim.cpp
-    hmorphanim.h
-    hrawanim.cpp
-    hrawanim.h
-    htree.cpp
-    htree.h
-    htreemgr.cpp
-    htreemgr.h
+    #hanim.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hanim.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hanimmgr.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hanimmgr.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hcanim.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hcanim.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hlod.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hlod.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hmdldef.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hmdldef.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hmorphanim.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hmorphanim.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hrawanim.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #hrawanim.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #htree.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #htree.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #htreemgr.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #htreemgr.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     intersec.cpp
     intersec.h
     intersec.inl
@@ -103,61 +103,61 @@ set(WW3D2_SRC
     layer.h
     light.cpp
     light.h
-    lightenvironment.cpp
-    lightenvironment.h
+    #lightenvironment.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #lightenvironment.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     line3d.cpp
     line3d.h
     #linegrp.cpp
     #linegrp.h
     #mapper.cpp
     #mapper.h
-    matinfo.cpp
-    matinfo.h
-    matpass.cpp
-    matpass.h
+    #matinfo.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #matinfo.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #matpass.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #matpass.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #matrixmapper.cpp
     #matrixmapper.h
-    mesh.cpp
-    mesh.h
+    #mesh.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #mesh.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     meshbuild.cpp
     meshbuild.h
     meshdam.cpp
     meshdam.h
-    meshgeometry.cpp
-    meshgeometry.h
-    meshmatdesc.cpp
-    meshmatdesc.h
-    meshmdl.cpp
-    meshmdl.h
-    meshmdlio.cpp
+    #meshgeometry.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #meshgeometry.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #meshmatdesc.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #meshmatdesc.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #meshmdl.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #meshmdl.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #meshmdlio.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     metalmap.cpp
     metalmap.h
     #missingtexture.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #missingtexture.h
-    motchan.cpp
-    motchan.h
-    nullrobj.cpp
-    nullrobj.h
+    #motchan.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #motchan.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #nullrobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #nullrobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #part_buf.cpp
     #part_buf.h
     #part_emt.cpp
     #part_emt.h
     #part_ldr.cpp
     #part_ldr.h
-    pivot.cpp
-    pivot.h
+    #pivot.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #pivot.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     pointgr.cpp
     pointgr.h
     polyinfo.cpp
     polyinfo.h
-    predlod.cpp
-    predlod.h
+    #predlod.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #predlod.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     prim_anim.cpp
     prim_anim.h
     projector.cpp
     projector.h
-    proto.cpp
-    proto.h
+    #proto.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #proto.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     proxy.h
     rddesc.h
     render2d.cpp
@@ -166,10 +166,10 @@ set(WW3D2_SRC
     render2dsentence.h
     renderobjectrecycler.cpp
     renderobjectrecycler.h
-    rendobj.cpp
-    rendobj.h
-    rinfo.cpp
-    rinfo.h
+    #rendobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #rendobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #rinfo.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #rinfo.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     ringobj.cpp
     ringobj.h
     robjlist.h
@@ -195,14 +195,14 @@ set(WW3D2_SRC
     sphereobj.h
     #static_sort_list.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 2)
     #static_sort_list.h
-    statistics.cpp
-    statistics.h
+    #statistics.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #statistics.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     streak.cpp
     streak.h
     streakRender.cpp
     streakRender.h
-    stripoptimizer.cpp
-    stripoptimizer.h
+    #stripoptimizer.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #stripoptimizer.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #surfaceclass.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #surfaceclass.h
     texproject.cpp
@@ -219,8 +219,8 @@ set(WW3D2_SRC
     #texturethumbnail.h
     #vertmaterial.cpp
     #vertmaterial.h
-    visrasterizer.cpp
-    visrasterizer.h
+    #visrasterizer.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
+    #visrasterizer.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     w3d_dep.cpp
     w3d_dep.h
     w3d_file.h
@@ -311,6 +311,86 @@ set(WW3D2_SRC_PORTABLE
     # milestone's real caller of both.
     static_sort_list.cpp
     static_sort_list.h
+
+    # Portability wave A (native port plan Phase 5(a) Milestone 5, Draft 24
+    # Step 5) - the mesh render path: dx8renderer.cpp's FVF/category
+    # containers, the mesh/HLod/animation object hierarchy, and their
+    # supporting math (aabtree, coltest, predlod, visrasterizer,
+    # stripoptimizer). Grep-verified zero Windows/D3DX/GDI dependencies
+    # across the whole closure before moving.
+    aabtree.cpp
+    aabtree.h
+    aabtreebuilder.cpp
+    aabtreebuilder.h
+    animobj.cpp
+    animobj.h
+    boxrobj.cpp
+    boxrobj.h
+    coltest.cpp
+    coltest.h
+    decalmsh.cpp
+    decalmsh.h
+    decalsys.cpp
+    decalsys.h
+    dx8polygonrenderer.cpp
+    dx8polygonrenderer.h
+    dx8renderer.cpp
+    dx8renderer.h
+    dx8rendererdebugger.cpp
+    dx8rendererdebugger.h
+    hanim.cpp
+    hanim.h
+    hanimmgr.cpp
+    hanimmgr.h
+    hcanim.cpp
+    hcanim.h
+    hlod.cpp
+    hlod.h
+    hmdldef.cpp
+    hmdldef.h
+    hmorphanim.cpp
+    hmorphanim.h
+    hrawanim.cpp
+    hrawanim.h
+    htree.cpp
+    htree.h
+    htreemgr.cpp
+    htreemgr.h
+    lightenvironment.cpp
+    lightenvironment.h
+    matinfo.cpp
+    matinfo.h
+    matpass.cpp
+    matpass.h
+    mesh.cpp
+    mesh.h
+    meshgeometry.cpp
+    meshgeometry.h
+    meshmatdesc.cpp
+    meshmatdesc.h
+    meshmdl.cpp
+    meshmdl.h
+    motchan.cpp
+    motchan.h
+    nullrobj.cpp
+    nullrobj.h
+    pivot.cpp
+    pivot.h
+    predlod.cpp
+    predlod.h
+    proto.cpp
+    proto.h
+    rendobj.cpp
+    rendobj.h
+    rinfo.cpp
+    rinfo.h
+    statistics.cpp
+    statistics.h
+    stripoptimizer.cpp
+    stripoptimizer.h
+    visrasterizer.cpp
+    visrasterizer.h
+    meshmdlio.cpp
 )
 
 if(WIN32)

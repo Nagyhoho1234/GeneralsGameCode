@@ -1112,23 +1112,10 @@ void Reset_All_Texture_Mappers(RenderObjClass *robj, bool make_unique)
 	}
 }
 
-#ifndef _WIN32
-// Link-only stub, not a behavior implementation (native port plan Phase
-// 5(a) Milestone 3, finding 6's mapper.cpp risk flag - anticipated as a
-// compile-time header risk, turned out to be this link-time instance
-// instead). MeshClass lives in per-tree mesh.cpp (Generals/GeneralsMD),
-// not yet unified into Core/ and entirely uncompiled on this platform
-// (commented out of WW3D2's CMakeLists.txt) - out of scope until
-// Milestone 5. Reset_All_Texture_Mappers above is real, already-portable
-// code nothing on Milestone 3's path calls, but the linker must still
-// resolve every symbol a linked TU references, called or not. Milestone
-// 5's real MeshClass::Make_Unique supersedes this the moment mesh.cpp
-// becomes portable.
-void MeshClass::Make_Unique(bool force_meshmdl_clone)
-{
-	WWASSERT_PRINT(false, "MeshClass::Make_Unique: mesh.cpp is not yet portable (Milestone 5)");
-}
-#endif // !_WIN32
+// The link-only MeshClass::Make_Unique stub that used to live here (native
+// port plan Phase 5(a) Milestone 3, finding 6) is gone - mesh.cpp is
+// portable as of Milestone 5 Step 5 and supplies the real implementation
+// now, so keeping this stub would be a duplicate-symbol link error.
 
 GridWSEnvMapperClass::GridWSEnvMapperClass(float fps, unsigned int gridwidth_log2, unsigned int last_frame, unsigned int offset, AxisType axis, unsigned int stage):
 	GridTextureMapperClass(fps, gridwidth_log2, last_frame, offset, stage),
