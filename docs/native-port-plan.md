@@ -4593,6 +4593,12 @@ discipline**: a WSL2/NTFS-mounted local verification is not sufficient
 proof of Linux compatibility by itself - it cannot catch case-sensitivity
 bugs, only a genuinely case-sensitive filesystem (real CI, or a native
 Linux/ext4 checkout) can. `workflow_dispatch` was re-triggered after the
-fix to confirm all six harnesses build and pass on real GitHub Actions
-infrastructure - see the commit that applied this fix for the run link
-and result.
+fix (commit `27f67b33c`,
+https://github.com/Nagyhoho1234/GeneralsGameCode/actions/runs/29923238311)
+and confirmed: the scoped `g_gameengine`/`z_gameengine` baseline holds
+at the same 34-error categories (atlbase/imagehlp/winsock/d3dx8math/
+mbstring, unchanged), and all six test harnesses - including
+`RenderWW3DFrameTest`, this milestone's exit-criterion harness - build
+and pass on genuine GitHub Actions infrastructure for the first time
+(`RENDERWW3DFRAME_OK: all checks passed`). **Milestone 6's exit
+criterion, stated at the top of this draft, is now genuinely closed.**
