@@ -40,13 +40,13 @@ set(GAMEENGINEDEVICE_SRC
     Include/W3DDevice/GameClient/W3DBridgeBuffer.h
     Include/W3DDevice/GameClient/W3DBufferManager.h
     Include/W3DDevice/GameClient/W3DCustomEdging.h
-    Include/W3DDevice/GameClient/W3DCustomScene.h
+#    Include/W3DDevice/GameClient/W3DCustomScene.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
     Include/W3DDevice/GameClient/W3DDebugDisplay.h
     Include/W3DDevice/GameClient/W3DDebugIcons.h
     Include/W3DDevice/GameClient/W3DDisplay.h
     Include/W3DDevice/GameClient/W3DDisplayString.h
     Include/W3DDevice/GameClient/W3DDisplayStringManager.h
-    Include/W3DDevice/GameClient/W3DDynamicLight.h
+#    Include/W3DDevice/GameClient/W3DDynamicLight.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
 #    Include/W3DDevice/GameClient/W3DFileSystem.h # unified into Core/GameEngineDevice (native port plan, Milestone 7 Task 3)
 #    Include/W3DDevice/GameClient/W3DGadget.h
     Include/W3DDevice/GameClient/W3DGameClient.h
@@ -64,11 +64,11 @@ set(GAMEENGINEDEVICE_SRC
     Include/W3DDevice/GameClient/W3DRoadBuffer.h
     Include/W3DDevice/GameClient/W3DScene.h
 #    Include/W3DDevice/GameClient/W3DShaderManager.h
-    Include/W3DDevice/GameClient/W3DShadow.h
-    Include/W3DDevice/GameClient/W3DShroud.h
+#    Include/W3DDevice/GameClient/W3DShadow.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
+#    Include/W3DDevice/GameClient/W3DShroud.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
 #    Include/W3DDevice/GameClient/W3DSmudge.h
 #    Include/W3DDevice/GameClient/W3DSnow.h
-    Include/W3DDevice/GameClient/W3DStatusCircle.h
+#    Include/W3DDevice/GameClient/W3DStatusCircle.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
 #    Include/W3DDevice/GameClient/W3DTerrainBackground.h
 #    Include/W3DDevice/GameClient/W3DTerrainTracks.h
 #    Include/W3DDevice/GameClient/W3DTerrainVisual.h
@@ -138,7 +138,7 @@ set(GAMEENGINEDEVICE_SRC
 #    Source/W3DDevice/GameClient/HeightMap.cpp
     Source/W3DDevice/GameClient/Shadow/W3DBufferManager.cpp
     Source/W3DDevice/GameClient/Shadow/W3DProjectedShadow.cpp
-    Source/W3DDevice/GameClient/Shadow/W3DShadow.cpp
+#    Source/W3DDevice/GameClient/Shadow/W3DShadow.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
     Source/W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp
 #    Source/W3DDevice/GameClient/TerrainTex.cpp
 #    Source/W3DDevice/GameClient/TileData.cpp
@@ -152,7 +152,7 @@ set(GAMEENGINEDEVICE_SRC
     Source/W3DDevice/GameClient/W3DDisplay.cpp
     Source/W3DDevice/GameClient/W3DDisplayString.cpp
     Source/W3DDevice/GameClient/W3DDisplayStringManager.cpp
-    Source/W3DDevice/GameClient/W3DDynamicLight.cpp
+#    Source/W3DDevice/GameClient/W3DDynamicLight.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
 #    Source/W3DDevice/GameClient/W3DFileSystem.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 7 Task 3)
     Source/W3DDevice/GameClient/W3DGameClient.cpp
     Source/W3DDevice/GameClient/W3DInGameUI.cpp
@@ -163,10 +163,10 @@ set(GAMEENGINEDEVICE_SRC
     Source/W3DDevice/GameClient/W3DRoadBuffer.cpp
     Source/W3DDevice/GameClient/W3DScene.cpp
 #    Source/W3DDevice/GameClient/W3DShaderManager.cpp
-    Source/W3DDevice/GameClient/W3DShroud.cpp
+#    Source/W3DDevice/GameClient/W3DShroud.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
 #    Source/W3DDevice/GameClient/W3DSmudge.cpp
 #    Source/W3DDevice/GameClient/W3DSnow.cpp
-    Source/W3DDevice/GameClient/W3DStatusCircle.cpp
+#    Source/W3DDevice/GameClient/W3DStatusCircle.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
 #    Source/W3DDevice/GameClient/W3DTerrainBackground.cpp
 #    Source/W3DDevice/GameClient/W3DTerrainTracks.cpp
 #    Source/W3DDevice/GameClient/W3DTerrainVisual.cpp

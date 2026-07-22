@@ -44,13 +44,13 @@ set(GAMEENGINEDEVICE_SRC
 #    Include/W3DDevice/GameClient/W3DBridgeBuffer.h
 #    Include/W3DDevice/GameClient/W3DBufferManager.h
 #    Include/W3DDevice/GameClient/W3DCustomEdging.h
-#    Include/W3DDevice/GameClient/W3DCustomScene.h
+    Include/W3DDevice/GameClient/W3DCustomScene.h
 #    Include/W3DDevice/GameClient/W3DDebugDisplay.h
 #    Include/W3DDevice/GameClient/W3DDebugIcons.h
 #    Include/W3DDevice/GameClient/W3DDisplay.h
 #    Include/W3DDevice/GameClient/W3DDisplayString.h
 #    Include/W3DDevice/GameClient/W3DDisplayStringManager.h
-#    Include/W3DDevice/GameClient/W3DDynamicLight.h
+    Include/W3DDevice/GameClient/W3DDynamicLight.h
     Include/W3DDevice/GameClient/W3DGadget.h
 #    Include/W3DDevice/GameClient/W3DGameClient.h
 #    Include/W3DDevice/GameClient/W3DGameFont.h
@@ -68,11 +68,11 @@ set(GAMEENGINEDEVICE_SRC
 #    Include/W3DDevice/GameClient/W3DRoadBuffer.h
 #    Include/W3DDevice/GameClient/W3DScene.h
     Include/W3DDevice/GameClient/W3DShaderManager.h
-#    Include/W3DDevice/GameClient/W3DShadow.h
-#    Include/W3DDevice/GameClient/W3DShroud.h
+    Include/W3DDevice/GameClient/W3DShadow.h
+    Include/W3DDevice/GameClient/W3DShroud.h
     Include/W3DDevice/GameClient/W3DSmudge.h
     Include/W3DDevice/GameClient/W3DSnow.h
-#    Include/W3DDevice/GameClient/W3DStatusCircle.h
+    Include/W3DDevice/GameClient/W3DStatusCircle.h
     Include/W3DDevice/GameClient/W3DTerrainBackground.h
     Include/W3DDevice/GameClient/W3DTerrainTracks.h
     Include/W3DDevice/GameClient/W3DTerrainVisual.h
@@ -146,7 +146,7 @@ set(GAMEENGINEDEVICE_SRC
     Source/W3DDevice/GameClient/HeightMap.cpp
 #    Source/W3DDevice/GameClient/Shadow/W3DBufferManager.cpp
 #    Source/W3DDevice/GameClient/Shadow/W3DProjectedShadow.cpp
-#    Source/W3DDevice/GameClient/Shadow/W3DShadow.cpp
+    Source/W3DDevice/GameClient/Shadow/W3DShadow.cpp
 #    Source/W3DDevice/GameClient/Shadow/W3DVolumetricShadow.cpp
     Source/W3DDevice/GameClient/TerrainTex.cpp
     Source/W3DDevice/GameClient/TileData.cpp
@@ -160,7 +160,7 @@ set(GAMEENGINEDEVICE_SRC
 #    Source/W3DDevice/GameClient/W3DDisplay.cpp
 #    Source/W3DDevice/GameClient/W3DDisplayString.cpp
 #    Source/W3DDevice/GameClient/W3DDisplayStringManager.cpp
-#    Source/W3DDevice/GameClient/W3DDynamicLight.cpp
+    Source/W3DDevice/GameClient/W3DDynamicLight.cpp
 #    Source/W3DDevice/GameClient/W3DGameClient.cpp
 #    Source/W3DDevice/GameClient/W3DInGameUI.cpp
     Source/W3DDevice/GameClient/W3DMouse.cpp
@@ -171,10 +171,10 @@ set(GAMEENGINEDEVICE_SRC
 #    Source/W3DDevice/GameClient/W3DRoadBuffer.cpp
 #    Source/W3DDevice/GameClient/W3DScene.cpp
     Source/W3DDevice/GameClient/W3DShaderManager.cpp
-#    Source/W3DDevice/GameClient/W3DShroud.cpp
+    Source/W3DDevice/GameClient/W3DShroud.cpp
     Source/W3DDevice/GameClient/W3DSmudge.cpp
     Source/W3DDevice/GameClient/W3DSnow.cpp
-#    Source/W3DDevice/GameClient/W3DStatusCircle.cpp
+    Source/W3DDevice/GameClient/W3DStatusCircle.cpp
     Source/W3DDevice/GameClient/W3DTerrainBackground.cpp
     Source/W3DDevice/GameClient/W3DTerrainTracks.cpp
     Source/W3DDevice/GameClient/W3DTerrainVisual.cpp
@@ -202,6 +202,22 @@ set(GAMEENGINEDEVICE_SRC
     Source/Win32Device/GameClient/Win32Mouse.cpp
 )
 endif() # WIN32
+
+# W3DDynamicLight/W3DShroud/W3DCustomScene/Shadow::W3DShadow/W3DStatusCircle:
+# five small W3DScene.cpp closure siblings unified from the per-tree
+# Generals/GeneralsMD copies into the WIN32-gated block above (native port
+# plan, Draft 30 finding 1, Milestone 8 Task 1 - the rung-3a warm-up before
+# W3DScene.cpp itself, Task 2). All five are GeneralsMD-wins with NO
+# RTS_ZEROHOUR guard needed: verified by direct diff and sorted-line
+# multiset comparison that every divergence from the Generals original is
+# branding only (the "Generals(tm)" vs "Generals Zero Hour(tm)" copyright
+# line), except W3DDynamicLight.h (one added `friend class
+# BaseHeightMapRenderObjClass;`, a harmless superset) and
+# W3DStatusCircle.cpp (ZH already added `#include ".../WorldHeightMap.h"`
+# and dropped its own now-redundant, provably-unused-in-this-file
+# VERTEX_BUFFER_TILE_LENGTH/VERTS_IN_BLOCK_ROW macro pair in favor of the
+# identical ones WorldHeightMap.h already defines - a header-hygiene
+# cleanup, not a logic change).
 
 # Add C++ 17 FileSystem implementation for non-VS6 builds
 if(NOT IS_VS6_BUILD)
