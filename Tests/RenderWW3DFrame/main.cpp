@@ -587,6 +587,11 @@ int main()
 	// not a present-correctness question.
 	if (frame29_fbo)
 	{
+		// Direct DX8Wrapper Begin/End_Scene, bypassing WW3D::Begin_Render/
+		// End_Render's own bookkeeping - only safe because this backend's
+		// BeginScene/EndScene are unconditional no-ops on GL (they don't
+		// assert on nesting/state the way real D3D8 would). Reconsider this
+		// if this trick is ever attempted against the D3D8 backend.
 		DX8Wrapper::Begin_Scene();
 		DX8Wrapper::End_Scene(true);
 

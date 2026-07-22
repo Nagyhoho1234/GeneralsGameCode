@@ -4513,3 +4513,31 @@ per-tree) each now have this milestone's frame loop already proven
 beneath them. Still missing, unchanged from Draft 26's own list: image
 from shipped game assets, `W3DDisplay`/`RTS3DScene`/`W3DView`, input,
 text, audio, fullscreen.
+
+**A final whole-branch review of all five Milestone 6 tasks found the
+diff merge-ready; three non-blocking findings recorded here so they
+aren't lost, none of them blocking, none re-touched by this milestone:**
+1. `DX8Wrapper::Get_Swap_Interval()` on GL returns the raw `int` passed
+   to `Set_Swap_Interval` verbatim, while the D3D8 backend's version
+   returns a `D3DPRESENT_INTERVAL_*` flag constant for the same input -
+   a latent cross-backend semantic mismatch. Currently unexercised by
+   any caller in the ported closure; standardizing the two is a real
+   design decision (which backend's behavior is "correct") for whoever
+   next actually needs to call this method, not a drive-by fix.
+2. `DX8Wrapper::_Get_DX8_Back_Buffer`/`IDirect3DDevice8::GetBackBuffer`
+   (Task 4's FBO-readback implementation feeding `WW3D::Make_Screen_
+   Shot`'s TARGA path) is real, non-trivial new code - a `glReadPixels`
+   + manual row-flip into top-down surface storage - but has zero test
+   coverage; no harness in this tree currently calls `Make_Screen_Shot`
+   or otherwise exercises this path. A future harness should verify it
+   (readback a screenshot and diff against the FBO's own known
+   contents).
+3. Texture-filter-mode handling now differs across the three harnesses
+   that touch it: `RenderTexturePipeline` explicitly re-asserts
+   `TEXTURE_FILTER_POINT` after the real init chain since Task 2;
+   `RenderW3DMesh` silently accepts the chain's bilinear default since
+   the same task; `RenderWW3DFrame`, this milestone's new harness,
+   sidesteps the question by using a solid-color texture where
+   filtering is a no-op. All three pass `ctest` today; this is a latent
+   inconsistency worth resolving explicitly (not urgently) rather than
+   rediscovering later.

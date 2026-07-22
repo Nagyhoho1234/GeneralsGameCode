@@ -20,8 +20,6 @@
 # move attempt. Hand-listing the whole mesh-render/asset-manager closure
 # here would just re-derive corei_ww3d2's own list a sixth time; linking it
 # directly is simpler and is what RenderW3DMeshTest already established.
-# mesh_link_stub.cpp's stand-in MeshClass::Make_Unique is dropped - the real
-# mesh.cpp (corei_ww3d2) now links here and would collide with it.
 # matrixmapper.cpp is added for the same link-closure reason documented in
 # RenderW3DMeshTest/CMakeLists.txt (decalsys.cpp's MatrixMapperClass::
 # Set_Texture_Transform reference) - corei_ww3d2 pulls in decalsys.cpp
