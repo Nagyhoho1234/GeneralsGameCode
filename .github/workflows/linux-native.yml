@@ -137,6 +137,46 @@ jobs:
         run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./build/linux-x64/Tests/RenderWW3DFrame/RenderWW3DFrameTest 2>&1 | tee -a configure-log.txt
         continue-on-error: true
 
+      - name: Build GameFileSystemTest (Phase 5(a) Milestone 7 Task 2 - headless file-system harness)
+        id: build-gamefilesystem
+        run: cmake --build --preset linux-x64 --target GameFileSystemTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run GameFileSystemTest (no display needed - pure headless file-system test)
+        id: run-gamefilesystem
+        if: steps.build-gamefilesystem.outcome == 'success'
+        # No xvfb-run here, unlike every other harness in this workflow: this
+        # harness has no GL/display dependency at all (see
+        # Tests/GameFileSystem/CMakeLists.txt's own header comment) - it only
+        # exercises TheFileSystem/StdBIGFileSystem/StdLocalFileSystem on
+        # POSIX for the first time. Invoked via ctest (not the raw binary
+        # path, unlike the six RenderXxx harnesses above): this harness's
+        # CMakeLists.txt sets add_test(... WORKING_DIRECTORY
+        # gamefilesystem_scratch) because StdBIGFileSystem::init() scans its
+        # cwd recursively for "*.big" and the harness authors its own
+        # test-local archive into that cwd - ctest is what actually applies
+        # that WORKING_DIRECTORY, the same way local verification (`ctest
+        # --output-on-failure`) already exercises it.
+        run: ctest --test-dir build/linux-x64 -R '^GameFileSystemTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Build RenderGameAssetsTest (Phase 5(a) Milestone 7 Task 4 - the milestone's exit harness)
+        id: build-rendergameassets
+        run: cmake --build --preset linux-x64 --target RenderGameAssetsTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run RenderGameAssetsTest (headless Mesa software rendering)
+        id: run-rendergameassets
+        if: steps.build-rendergameassets.outcome == 'success'
+        # Like its six RenderXxx siblings above, this harness needs a display
+        # for GLFW/GL even though rendering itself goes to an offscreen FBO -
+        # xvfb-run supplies the virtual X server bare GitHub-hosted runners
+        # lack. Invoked via ctest for the same WORKING_DIRECTORY reason as
+        # GameFileSystemTest above (rendergameassets_scratch; this harness
+        # authors its own "RenderGameAssets.big" into cwd at runtime).
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ctest --test-dir build/linux-x64 -R '^RenderGameAssetsTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
       - name: Upload configure/build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -182,6 +222,16 @@ jobs:
           echo "Build outcome: ${{ steps.build-renderww3dframe.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Run outcome: ${{ steps.run-renderww3dframe.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "The first harness in this port driven entirely through WW3D::'s own entry points (Init/Set_Render_Device/Begin_Render/Render/End_Render/Set_Device_Resolution/Shutdown), not DX8Wrapper directly - the structural proof that Milestone 6's Do_Onetime_Device_Dependent_Inits/Shutdowns chain, real Compute_Caps, real Present/End_Scene contract, and portable ww3d.cpp all work together as a real frame loop on GL, in a real (if small) visible window (windowed=1, hosted by Xvfb). Asserts an init round-trip, an engine-driven single frame, a 30-frame loop with an animated transform (verified at frame 0 and frame 29, FrameCount advancing by exactly 30), a window-side present-readback that matches the FBO byte-for-byte, a mid-run resolution change (640x480 -> 800x600) with re-predicted pixel positions, and a clean WW3D::Init->Shutdown teardown cycle." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 7 Task 2: headless file-system harness (Tests/GameFileSystem)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-gamefilesystem.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-gamefilesystem.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "The first GameEngine code (not WW3D2 rendering code) ever to RUN, not merely compile, on POSIX: wires up the real TheFileSystem/TheLocalFileSystem/TheArchiveFileSystem/StdBIGFileSystem/StdLocalFileSystem stack against a test-authored .big archive and a loose local file, on the real GameMemory.cpp allocator, with no GL/display dependency at all." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 7 Task 4: the milestone's exit harness (Tests/RenderGameAssets)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-rendergameassets.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-rendergameassets.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Every byte on screen comes out of a real BIG archive through the engine's own file stack (GameFileClass -> TheFileSystem -> StdBIGFile -> RAMFile), not a loose temp file - the first harness in this port to combine the GameEngine file-system stack (Tasks 1-2) with the unified W3DFileSystem (Task 3) and the WW3D2/GL render stack together. Milestone 7's exit criterion." >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if unexpected error count
         if: always()
