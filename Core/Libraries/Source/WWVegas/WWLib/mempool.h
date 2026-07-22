@@ -286,8 +286,26 @@ T * ObjectPoolClass<T,BLOCK_SIZE>::Allocate_Object_Memory()
 		// Link this block into the block list
 		*(void **)BlockListHead = tmp_block_head;
 
-		// Link the objects in the block into the free object list
-		FreeListHead = (T*)(BlockListHead + 1);
+		// Link the objects in the block into the free object list.
+		// Real, latent 32-to-64-bit porting bug (native port plan Phase
+		// 5(a) Milestone 5, Step 7): the allocation above reserves
+		// sizeof(uint32*) bytes for the block-chain header (8 bytes on
+		// x64), but `BlockListHead + 1` (pointer arithmetic on a uint32*)
+		// only advances by sizeof(uint32) = 4 bytes. On the original
+		// 32-bit build sizeof(uint32*)==sizeof(uint32)==4, so this was
+		// exact; on x64 it under-skips by 4 bytes, making the first
+		// object slot overlap the header's upper 4 bytes - the very
+		// first free-list link write then clobbers half of BlockListHead's
+		// own "next block" pointer, corrupting it into a bogus value
+		// that only crashes later, in this pool's static destructor at
+		// process exit (~run_exit_handlers, walking BlockListHead).
+		// First surfaced by Milestone 5's RenderW3DMeshTest - the first
+		// harness in this port driving a real end-to-end mesh render
+		// through MultiListClass-backed container/rendering lists (this
+		// pool backs MultiListNodeClass) at a scale (>1 node) that
+		// actually exercises Allocate_Object_Memory's block-allocation
+		// path. Advance by the true reserved header size instead.
+		FreeListHead = (T*)((char*)BlockListHead + sizeof(uint32 *));
 		for ( int i = 0; i < BLOCK_SIZE; i++ ) {
 			*(T**)(&(FreeListHead[i])) = &(FreeListHead[i+1]);	// link up the elements
 		}

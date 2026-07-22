@@ -108,6 +108,17 @@ jobs:
         run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./build/linux-x64/Tests/RenderTexturePipeline/RenderTexturePipelineTest 2>&1 | tee -a configure-log.txt
         continue-on-error: true
 
+      - name: Build RenderW3DMeshTest (Phase 5(a) Milestone 5 - real W3D meshes end-to-end)
+        id: build-renderw3dmesh
+        run: cmake --build --preset linux-x64 --target RenderW3DMeshTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run RenderW3DMeshTest (headless Mesa software rendering)
+        id: run-renderw3dmesh
+        if: steps.build-renderw3dmesh.outcome == 'success'
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./build/linux-x64/Tests/RenderW3DMesh/RenderW3DMeshTest 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
       - name: Upload configure/build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -143,6 +154,11 @@ jobs:
           echo "Build outcome: ${{ steps.build-rendertexturepipeline.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Run outcome: ${{ steps.run-rendertexturepipeline.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Drives the real TextureClass/TextureLoader/TextureFilterClass/MissingTexture/DDSFileClass/BitmapHandlerClass pipeline, including the first real cross-thread (pthread) background texture load on POSIX - asserts 6 real pixel-level checks (foreground TGA load, engine-generated mip chain, DDS/DXT1 software decode, missing-texture fallback, real background-thread load, WRAP/CLAMP sampler addressing) against the offscreen FBO." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 5: real W3D meshes end-to-end (Tests/RenderW3DMesh)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-renderw3dmesh.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-renderw3dmesh.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Authors real .w3d chunk bytes at runtime via ChunkSaveClass, loads them through the real WW3DAssetManager (Load_3D_Assets/Create_Render_Obj), and renders through the real dx8renderer.cpp mesh pipeline - asserts a load round-trip, a textured lit rigid mesh, the Get_Texture cache path, a per-vertex-color mesh, a real HLod hierarchy (pivot-attached rigid sub-meshes), and a bone-deformed skin mesh, verifying each at a CPU-predicted pixel position against the offscreen FBO. This is Milestone 5's exit criterion." >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if unexpected error count
         if: always()
