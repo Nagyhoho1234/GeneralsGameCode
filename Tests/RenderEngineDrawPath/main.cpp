@@ -44,13 +44,28 @@
 //      bits, decoded by shader.cpp, applied by Apply_Render_State_Changes) -
 //      a near quad must occlude a far quad drawn second at (nearly) the
 //      same footprint.
-//   6. A second draw through DynamicVBAccessClass/DynamicIBAccessClass
+//   6. A draw through DynamicVBAccessClass/DynamicIBAccessClass
 //      (BUFFER_TYPE_DYNAMIC_DX8, dynamic_fvf_type) renders its content at
 //      its own designated location - proves the VertexBufferOffset/
 //      IndexBufferOffset plumbing glDrawElementsBaseVertex was built for
 //      (Milestone 2) is now driven by real engine code (dazzle.cpp's own
 //      DynamicVBAccessClass/DynamicIBAccessClass usage pattern), not just
 //      Milestone 2's hand-rolled Draw_Sorting_IB_VB caller.
+//   7. Native port plan Phase 5(a) Milestone 5, Draft 24 Step 1 - closes
+//      a real verification gap Draft 21's review found: check 6 alone
+//      always lands at VertexBufferOffset=IndexBufferOffset=0 (the
+//      first dynamic allocation in the frame), so hard-wiring
+//      glDrawElementsBaseVertex's basevertex to 0 would still pass the
+//      whole suite - the offset plumbing was never actually exercised.
+//      A SECOND DynamicVBAccessClass/DynamicIBAccessClass draw in the
+//      same frame (no _Reset between them) lands at a genuinely nonzero
+//      offset - dx8vertexbuffer.cpp's/dx8indexbuffer.cpp's own rolling
+//      cursors (_DynamicDX8VertexBufferOffset/_DynamicDX8IndexBufferOffset)
+//      advance by the first draw's vertex/index count in each class's
+//      destructor, and Allocate_DX8_Dynamic_Buffer's own D3DLOCK_DISCARD-
+//      vs-D3DLOCK_NOOVERWRITE choice is keyed off that same offset being
+//      zero or not - so this needs no new engine code, only a second
+//      call through the untouched real path.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -332,8 +347,16 @@ int main()
 	Draw_Real_Quad(0.0f, -3.0f, -0.1f, D3DCOLOR_XRGB(0, 0, 255), ShaderClass::_PresetOpaqueShader, nullptr); // near
 	Draw_Real_Quad(0.0f, -3.0f, 0.1f, D3DCOLOR_XRGB(255, 0, 0), ShaderClass::_PresetOpaqueShader, nullptr);  // far
 
-	// Region E (3.0, -3.0): check 6, DynamicVBAccessClass/DynamicIBAccessClass.
+	// Region E (3.0, -3.0): check 6, DynamicVBAccessClass/DynamicIBAccessClass,
+	// first allocation in the frame - VertexBufferOffset=IndexBufferOffset=0,
+	// D3DLOCK_DISCARD.
 	Draw_Dynamic_Quad(3.0f, -3.0f, 0.0f, D3DCOLOR_XRGB(0, 255, 255), ShaderClass::_PresetOpaqueShader);
+
+	// Region F (0.0, 0.0): check 7, a SECOND dynamic draw in the same frame -
+	// VertexBufferOffset=4/IndexBufferOffset=6 (Region E's vertex/index
+	// counts), D3DLOCK_NOOVERWRITE. Center of the grid, doesn't overlap any
+	// other region's footprint.
+	Draw_Dynamic_Quad(0.0f, 0.0f, 0.0f, D3DCOLOR_XRGB(255, 128, 0), ShaderClass::_PresetOpaqueShader);
 
 	DX8Wrapper::End_Scene(false);
 
@@ -381,6 +404,14 @@ int main()
 	Ndc_To_Pixel_TopDown(ndc_x, ndc_y, &px, &py);
 	Check_Pixel(topdown, px, py, 0, 255, 255, "6. DynamicVBAccessClass/DynamicIBAccessClass offset plumbing");
 
+	// 7. Second dynamic-buffer draw, same frame: nonzero VertexBufferOffset/
+	// IndexBufferOffset + D3DLOCK_NOOVERWRITE actually rendering at its own
+	// distinct location - the real discriminator a hard-wired basevertex=0
+	// would fail.
+	Predict_Ndc(0.0f, 0.0f, 0.0f, &ndc_x, &ndc_y);
+	Ndc_To_Pixel_TopDown(ndc_x, ndc_y, &px, &py);
+	Check_Pixel(topdown, px, py, 255, 128, 0, "7. second dynamic-buffer draw: nonzero offset + NOOVERWRITE");
+
 	free(topdown);
 
 	DX8Wrapper::Set_Vertex_Buffer(nullptr);
@@ -396,6 +427,6 @@ int main()
 		return 1;
 	}
 
-	printf("RENDERENGINEDRAWPATH_OK: all 6 checks passed (%dx%d)\n", W, H);
+	printf("RENDERENGINEDRAWPATH_OK: all 7 checks passed (%dx%d)\n", W, H);
 	return 0;
 }
