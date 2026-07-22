@@ -13,34 +13,25 @@
 #
 # Sibling to RenderDeviceInit/RenderTexturedTriangle, not an extension of
 # either - both stay untouched regression tests for their own milestones.
-# Compiles the portable WW3D2 TUs this milestone's steps 1-7 moved/added
-# directly (not via corei_ww3d2) for the same link-closure reason those
-# harnesses do: ww3d.cpp/camera.cpp/mesh.cpp/texture.cpp/etc. still
-# reference dozens of per-tree/Windows-only subsystems Milestones 4-5 own.
+#
+# Milestone 6 (native port plan Phase 5(a), Draft 26 Steps 2+4 combined):
+# switched from a hand-picked file list to linking corei_ww3d2 directly -
+# see RenderDeviceInit/CMakeLists.txt's matching comment for why (GL
+# Create_Device/Release_Device now unconditionally call
+# Do_Onetime_Device_Dependent_Inits/_Shutdowns, ending Trap 1 completely).
+# mesh_link_stub.cpp is dropped - the real mesh.cpp (corei_ww3d2) now links
+# here and would collide with it. matrixmapper.cpp/anim_sound_link_stub.cpp
+# are added for the same two link-closure reasons documented in
+# RenderW3DMeshTest/CMakeLists.txt.
 add_executable(RenderEngineDrawPathTest
     main.cpp
-    ${CMAKE_SOURCE_DIR}/Tests/mesh_link_stub.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_draw.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/PortableD3D8/gl_core33.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3d_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8caps.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8fvf.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8vertexbuffer.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8indexbuffer.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/shader.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/vertmaterial.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/mapper.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/sortingrenderer.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/texture_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/formconv.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3dformat.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/w3d_util.cpp
+    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
+    ${CMAKE_SOURCE_DIR}/Tests/RenderW3DMesh/anim_sound_link_stub.cpp
 )
 
 target_link_libraries(RenderEngineDrawPathTest PRIVATE
     core_wwvegas
+    corei_ww3d2
     core_wwstub
     portabled3d8_gl
     corei_always

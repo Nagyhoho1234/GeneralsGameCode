@@ -8,26 +8,33 @@
 # (win32/win-x64 presets, macos-native.yml's sibling). This only exercises
 # the GL backend introduced by this milestone.
 #
-# Compiles dx8wrapper_gl.cpp/dx8wrapper_common.cpp/gl_core33.cpp directly
-# (not via corei_ww3d2) rather than linking the whole WW3D2_SRC_PORTABLE
-# set - ww3d.cpp/camera.cpp/formconv.cpp reference dozens of still-per-tree/
-# Windows-only WW3D2 subsystems (mesh rendering, W3D memory pools, texture
-# filtering, ...) that this milestone deliberately doesn't touch, and every
-# symbol referenced anywhere in those translation units must resolve at
-# link time even though main.cpp never calls into WW3D:: at all.
+# Milestone 6 (native port plan Phase 5(a), Draft 26 Steps 2+4 combined):
+# switched from a hand-picked file list to linking corei_ww3d2 directly.
+# Reason: GL Create_Device/Release_Device (dx8wrapper_gl.cpp) now
+# unconditionally call DX8Wrapper::Do_Onetime_Device_Dependent_Inits/
+# _Shutdowns (moved to the always-compiled dx8wrapper_draw.cpp as part of
+# ending Trap 1 completely - no POSIX-gated subset, per the plan's Draft 24
+# no-gating principle) - this pulls in the mesh-render/asset-manager
+# closure regardless of whether main.cpp ever exercises it, the same class
+# of direct-object-list link requirement the plan's Draft 26 correction note
+# describes. Hand-listing that whole closure here would just re-derive
+# corei_ww3d2's own list; linking it directly is simpler and is what
+# RenderW3DMeshTest already established. matrixmapper.cpp/
+# anim_sound_link_stub.cpp are added for the same two link-closure reasons
+# documented in RenderW3DMeshTest/CMakeLists.txt (decalsys.cpp's
+# MatrixMapperClass::Set_Texture_Transform reference, animobj.cpp's two
+# AnimatedSoundMgrClass statics) - corei_ww3d2 pulls in decalsys.cpp/
+# animobj.cpp here exactly as it does there.
 add_executable(RenderDeviceInitTest
     main.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/PortableD3D8/gl_core33.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3d_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8caps.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/formconv.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3dformat.cpp
+    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
+    ${CMAKE_SOURCE_DIR}/Tests/RenderW3DMesh/anim_sound_link_stub.cpp
 )
 
 target_link_libraries(RenderDeviceInitTest PRIVATE
     core_wwvegas
+    corei_ww3d2
+    core_wwstub
     portabled3d8_gl
     corei_always
 )

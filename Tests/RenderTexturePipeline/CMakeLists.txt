@@ -7,47 +7,35 @@
 # RenderDeviceInit/RenderTexturedTriangle/RenderEngineDrawPath, not an
 # extension of any of them - all three stay untouched regression tests.
 #
-# Compiles the portable WW3D2 TUs this milestone's steps 1-5 moved/added
-# directly (not via corei_ww3d2), same link-closure reason those harnesses
-# do: ww3d.cpp/camera.cpp/mesh.cpp/assetmgr.cpp/etc. still reference dozens
-# of per-tree/Windows-only subsystems Milestone 5 owns. Builds on
-# RenderEngineDrawPath's file list (the real draw path this harness also
-# needs) plus the nine texture-pipeline TUs and assetmgr_common.cpp (for
-# WW3DAssetManager::TheInstance's static definition - link finding 1).
+# Milestone 6 (native port plan Phase 5(a), Draft 26 Steps 2+4 combined):
+# switched from a hand-picked file list to linking corei_ww3d2 directly,
+# like RenderW3DMeshTest. Reason: this harness's Set_Render_Device now runs
+# DX8Wrapper::Do_Onetime_Device_Dependent_Inits (moved to the always-
+# compiled dx8wrapper_draw.cpp as part of ending Trap 1), which references
+# TheDX8MeshRenderer/BoxRenderObjClass/PointGroupClass/ShatterSystem -
+# dx8wrapper_draw.cpp links directly into this target's object list (not
+# archived into a static library first), so the linker must resolve every
+# external reference in it unconditionally, the same class of failure the
+# plan's Draft 26 correction note describes for Do_Onetime's first (isolated)
+# move attempt. Hand-listing the whole mesh-render/asset-manager closure
+# here would just re-derive corei_ww3d2's own list a sixth time; linking it
+# directly is simpler and is what RenderW3DMeshTest already established.
+# mesh_link_stub.cpp's stand-in MeshClass::Make_Unique is dropped - the real
+# mesh.cpp (corei_ww3d2) now links here and would collide with it.
+# matrixmapper.cpp/anim_sound_link_stub.cpp are added for the same two
+# link-closure reasons documented in RenderW3DMeshTest/CMakeLists.txt
+# (decalsys.cpp's MatrixMapperClass::Set_Texture_Transform reference,
+# animobj.cpp's two AnimatedSoundMgrClass statics) - corei_ww3d2 pulls in
+# decalsys.cpp/animobj.cpp here exactly as it does there.
 add_executable(RenderTexturePipelineTest
     main.cpp
-    ${CMAKE_SOURCE_DIR}/Tests/mesh_link_stub.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_draw.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/PortableD3D8/gl_core33.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3d_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8caps.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8fvf.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8vertexbuffer.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8indexbuffer.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/shader.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/vertmaterial.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/mapper.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/sortingrenderer.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/texture_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/formconv.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3dformat.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/w3d_util.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/assetmgr_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/texture.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/texturefilter.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/textureloader.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/texturethumbnail.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ddsfile.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8texman.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/missingtexture.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/surfaceclass.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/bitmaphandler.cpp
+    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
+    ${CMAKE_SOURCE_DIR}/Tests/RenderW3DMesh/anim_sound_link_stub.cpp
 )
 
 target_link_libraries(RenderTexturePipelineTest PRIVATE
     core_wwvegas
+    corei_ww3d2
     core_wwstub
     portabled3d8_gl
     corei_always

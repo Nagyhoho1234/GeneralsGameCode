@@ -1555,24 +1555,73 @@ bool DX8Wrapper::Create_Device()
 		gl_SamplerParameteri(g_Samplers[stage], GL_TEXTURE_WRAP_T, D3D_To_GL_Address(D3DTADDRESS_WRAP));
 	}
 
-	// Trap 1 (native-port-plan.md, Phase 5(a) Milestone 1): deliberately
-	// does NOT call Do_Onetime_Device_Dependent_Inits() - that pulls in
-	// real texture creation and a background TextureLoader thread, both
-	// out of scope for this milestone.
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Steps 2+4
+	// combined): Trap 1 ends here. Create_Device now runs the same
+	// Do_Onetime_Device_Dependent_Inits chain the D3D8 backend runs, with
+	// the same subsystem list - no POSIX-gated subset (Draft 24's
+	// no-gating principle: registering less would silently diverge
+	// eventual game behavior). This pulls in real texture creation, a
+	// background TextureLoader thread, the mesh renderer, and the
+	// PointGroupClass/ShatterSystem closure - all portable since Milestone
+	// 5/Draft 26 Step 3.
 	D3DDevice = new IDirect3DDevice8();
 
-	// Real CurrentCaps (native port plan Phase 5(a) Milestone 3, finding
-	// 3), fabricated directly via DX8Caps' device-free D3DCAPS8 constructor
-	// rather than Do_Onetime_Device_Dependent_Inits' DX8Wrapper::Compute_
-	// Caps (which drives the Init_Caps overload through the device's
-	// GetDeviceCaps accept-stub - the wrong ctor for this milestone, same
-	// Trap 1 reasoning). Reports only what the GL backend genuinely does
-	// today: TnL yes (the GPU transforms), 2 simultaneous textures
-	// (matching the engine's actual 2-stage usage and the eventual
-	// combiner-shader plan), NPatches/ZBias no (their DevCaps/RasterCaps
-	// bits are simply left unset), shader versions 0.
+	// DisplayFormat/CurrentAdapterIdentifier must be live before
+	// Do_Onetime_Device_Dependent_Inits runs: it calls
+	// Compute_Caps(D3DFormat_To_WW3DFormat(DisplayFormat)) internally, the
+	// same way the D3D8 backend does from within its own copy of that
+	// function (dx8wrapper_d3d8.cpp).
 	DisplayFormat = D3DFMT_A8R8G8B8;
 
+	// Zeroed D3DADAPTER_IDENTIFIER8 -> VENDOR_UNKNOWN (Define_Vendor(0))
+	// makes every vendor-quirk path in DX8Caps::Compute_Caps correctly
+	// inert (finding 3); GetAdapterIdentifier fills in the Driver/
+	// Description strings only.
+	D3DInterface->GetAdapterIdentifier(0, 0, &CurrentAdapterIdentifier);
+
+	// Real bug found in Milestone 4 (Draft 22 Step 6): on the real Windows
+	// path, D3DFormatToWW3DFormatConversionArray is populated by
+	// Init_D3D_To_WW3_Conversion(), called exactly once from WW3D::Init()
+	// (ww3d.cpp) before DX8Wrapper::Init() ever runs. Trap 1 (Milestone 1)
+	// deliberately keeps this GL Create_Device() out of ww3d.cpp's
+	// monolithic init chain, so that call never happened - the array
+	// stayed zero-initialized (all WW3D_FORMAT_UNKNOWN), which made
+	// D3DFormat_To_WW3DFormat(DisplayFormat) below return UNKNOWN, which
+	// in turn made every DX8Caps::Support_Texture_Format() check fail
+	// (Check_Texture_Format_Support's display_format==WW3D_FORMAT_UNKNOWN
+	// early-exit) and silently collapsed every real texture load down
+	// Get_Valid_Texture_Format's fallback chain to a 16-bit format. Fix:
+	// populate the table here, the same portable formconv.cpp function
+	// the real game uses, just called from the GL-analogous spot, before
+	// Do_Onetime_Device_Dependent_Inits' Compute_Caps call needs it.
+	Init_D3D_To_WW3_Conversion();
+
+	// Initialize all subsystems (mirrors dx8wrapper_d3d8.cpp's
+	// Create_Device calling this at the same point, after device
+	// creation). This is what makes GL Create_Device run the engine's
+	// real init chain instead of a hand-picked subset.
+	Do_Onetime_Device_Dependent_Inits();
+
+	return true;
+}
+
+void DX8Wrapper::Compute_Caps(WW3DFormat display_format)
+{
+	// GL's Compute_Caps (native port plan Phase 5(a) Milestone 6, Draft 26
+	// Steps 2+4 combined): factored out of Create_Device's former inline
+	// caps fabrication so Do_Onetime_Device_Dependent_Inits (moved to
+	// dx8wrapper_draw.cpp, portable) can call it exactly the way the D3D8
+	// backend's Do_Onetime_Device_Dependent_Inits calls its own
+	// Compute_Caps. Fabricated directly via DX8Caps' device-free D3DCAPS8
+	// constructor - this backend has no real IDirect3DDevice8::
+	// GetDeviceCaps to query (the accept-stub always returns success with
+	// nothing filled in), so the device-querying DX8Caps constructor the
+	// D3D8 backend's Compute_Caps uses would just report empty caps.
+	// Reports only what the GL backend genuinely does today: TnL yes (the
+	// GPU transforms), 2 simultaneous textures (matching the engine's
+	// actual 2-stage usage and the eventual combiner-shader plan),
+	// NPatches/ZBias no (their DevCaps/RasterCaps bits are simply left
+	// unset), shader versions 0.
 	D3DCAPS8 caps;
 	memset(&caps, 0, sizeof(caps));
 	caps.DeviceType = D3DDEVTYPE_HAL;
@@ -1600,9 +1649,10 @@ bool DX8Wrapper::Create_Device()
 	// limit; MaxTextureAspectRatio=0 means "no limit" (the code path
 	// already handles that, textureloader.cpp:394). Point+linear min/mag/
 	// mip filtering is genuinely supported (GL_NEAREST/GL_LINEAR and their
-	// mipmap variants always are); anisotropic stays unset until Step 3's
-	// sampler layer (below) actually implements it - same "honest, not
-	// theater" argument as Milestone 3 finding 3's CheckDeviceFormat.
+	// mipmap variants always are); anisotropic stays unset until the
+	// sampler layer (Create_Device, above) actually implements it - same
+	// "honest, not theater" argument as Milestone 3 finding 3's
+	// CheckDeviceFormat.
 	GLint maxTextureSize = 0;
 	glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
 	caps.MaxTextureWidth = static_cast<DWORD>(maxTextureSize);
@@ -1614,47 +1664,43 @@ bool DX8Wrapper::Create_Device()
 		D3DPTFILTERCAPS_MAGFPOINT | D3DPTFILTERCAPS_MAGFLINEAR |
 		D3DPTFILTERCAPS_MIPFPOINT | D3DPTFILTERCAPS_MIPFLINEAR;
 
-	// Zeroed D3DADAPTER_IDENTIFIER8 -> VENDOR_UNKNOWN (Define_Vendor(0))
-	// makes every vendor-quirk path in DX8Caps::Compute_Caps correctly
-	// inert (finding 3); GetAdapterIdentifier fills in the Driver/
-	// Description strings only.
-	D3DInterface->GetAdapterIdentifier(0, 0, &CurrentAdapterIdentifier);
-
-	// Real bug found in Milestone 4 (Draft 22 Step 6): on the real Windows
-	// path, D3DFormatToWW3DFormatConversionArray is populated by
-	// Init_D3D_To_WW3_Conversion(), called exactly once from WW3D::Init()
-	// (ww3d.cpp) before DX8Wrapper::Init() ever runs. Trap 1 (Milestone 1)
-	// deliberately keeps this GL Create_Device() out of ww3d.cpp's
-	// monolithic init chain, so that call never happened - the array
-	// stayed zero-initialized (all WW3D_FORMAT_UNKNOWN), which made
-	// D3DFormat_To_WW3DFormat(DisplayFormat) below return UNKNOWN, which
-	// in turn made every DX8Caps::Support_Texture_Format() check fail
-	// (Check_Texture_Format_Support's display_format==WW3D_FORMAT_UNKNOWN
-	// early-exit) and silently collapsed every real texture load down
-	// Get_Valid_Texture_Format's fallback chain to a 16-bit format. Fix:
-	// populate the table here, the same portable formconv.cpp function
-	// the real game uses, just called from the GL-analogous spot.
-	Init_D3D_To_WW3_Conversion();
-
 	delete CurrentCaps;
-	CurrentCaps = new DX8Caps(D3DInterface, caps, D3DFormat_To_WW3DFormat(DisplayFormat), CurrentAdapterIdentifier);
-
-	return true;
+	CurrentCaps = new DX8Caps(D3DInterface, caps, display_format, CurrentAdapterIdentifier);
 }
 
 void DX8Wrapper::Release_Device()
 {
 	if (D3DDevice)
 	{
+		// Milestone 6 (native port plan Phase 5(a), Draft 26 Steps 2+4
+		// combined): buffer-release preamble, mirroring dx8wrapper_d3d8.cpp
+		// Release_Device (:590-627) verbatim in structure - release
+		// references to any textures/streams/indices used in the last
+		// rendering call, then the current vertex/index buffers, before
+		// running the same Do_Onetime_Device_Dependent_Shutdowns() the
+		// D3D8 backend runs at this same point (this is what ends Trap 1
+		// on the teardown side).
+		for (int a = 0; a < MAX_TEXTURE_STAGES; ++a)
+		{
+			DX8CALL(SetTexture(a, nullptr));
+		}
+
+		DX8CALL(SetStreamSource(0, nullptr, 0));
+		DX8CALL(SetIndices(nullptr, 0));
+
+		for (unsigned i = 0; i < MAX_VERTEX_STREAMS; ++i)
+		{
+			if (render_state.vertex_buffers[i]) render_state.vertex_buffers[i]->Release_Engine_Ref();
+			REF_PTR_RELEASE(render_state.vertex_buffers[i]);
+		}
+		if (render_state.index_buffer) render_state.index_buffer->Release_Engine_Ref();
+		REF_PTR_RELEASE(render_state.index_buffer);
+
+		Do_Onetime_Device_Dependent_Shutdowns();
+
 		D3DDevice->Release();
 		D3DDevice = nullptr;
 	}
-
-	// Mirrors just the CurrentCaps piece of the real path's
-	// Do_Onetime_Device_Dependent_Shutdowns() - the rest of that chain
-	// (texture/mesh/etc. subsystems) is Trap 1, out of scope here.
-	delete CurrentCaps;
-	CurrentCaps = nullptr;
 
 	if (g_VAO) { gl_DeleteVertexArrays(1, &g_VAO); g_VAO = 0; }
 	if (g_WhiteFallbackTex) { glDeleteTextures(1, &g_WhiteFallbackTex); g_WhiteFallbackTex = 0; }

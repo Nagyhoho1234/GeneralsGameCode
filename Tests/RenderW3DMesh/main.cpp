@@ -579,20 +579,23 @@ int main()
 
 	DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE);
 
-	// Real texture pipeline init sequence (Tests/RenderTexturePipeline's
-	// established order, Do_Onetime_Device_Dependent_Inits' order): thumbnails
-	// off (the game's real configuration once assets are actually managed).
-	MissingTexture::_Init();
-	TextureFilterClass::_Init_Filters(TextureFilterClass::TEXTURE_FILTER_POINT, TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC_2X);
-	TextureLoader::Init();
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Steps 2+4
+	// combined): Trap 1 ends here - Set_Render_Device's Create_Device now
+	// runs the real Do_Onetime_Device_Dependent_Inits chain itself
+	// (MissingTexture::_Init/TextureFilterClass::_Init_Filters/
+	// TextureLoader::Init/TheDX8MeshRenderer.Init among others), so this
+	// harness no longer hand-initializes them; MissingTexture::_Init()'s
+	// WWASSERT(!_MissingTexture) would abort on the double-init otherwise.
+	// Thumbnails off (the game's real configuration once assets are
+	// actually managed) and the texture bit depth are harness-local
+	// settings, not part of that chain, so they stay explicit here.
 	DX8Wrapper::Set_Texture_Bitdepth(32);
 	WW3D::Set_Thumbnail_Enabled(false);
 
-	// Milestone 5's addition: the real mesh renderer + one live
-	// WW3DAssetManager - the first ever constructed in this port, the
-	// never-exercised Get_Texture cache path (check 3) and every
-	// prototype loader's constructor now finally run for real.
-	TheDX8MeshRenderer.Init();
+	// Milestone 5's addition: one live WW3DAssetManager - the first ever
+	// constructed in this port, the never-exercised Get_Texture cache path
+	// (check 3) and every prototype loader's constructor now finally run
+	// for real.
 	WW3DAssetManager asset_manager;
 
 	// Real camera: CameraClass::Apply() pushes VIEW/PROJECTION to
@@ -798,10 +801,17 @@ int main()
 	if (robj4) robj4->Release_Ref();
 	if (robjHlod) robjHlod->Release_Ref();
 
+	// Milestone 6: matching manual subsystem teardown removed -
+	// DX8Wrapper::Shutdown() below now runs Release_Device()'s Do_Onetime_
+	// Device_Dependent_Shutdowns() chain (TheDX8MeshRenderer.Shutdown()/
+	// TextureLoader::Deinit()/MissingTexture::_Deinit() among others), so
+	// calling them here too would double-deinit. asset_manager.Free_Assets()
+	// stays explicit (not part of that chain) and must run before
+	// DX8Wrapper::Shutdown() releases the mesh renderer/texture subsystems
+	// its assets reference - asset_manager's own destructor (WW3DAssetManager,
+	// assetmgr.cpp) calls Free_Assets() too, but only at end of main(),
+	// after DX8Wrapper::Shutdown() would already have torn those down.
 	asset_manager.Free_Assets();
-	TheDX8MeshRenderer.Shutdown();
-	TextureLoader::Deinit();
-	MissingTexture::_Deinit();
 
 	unlink(path1.c_str());
 	unlink(path2.c_str());

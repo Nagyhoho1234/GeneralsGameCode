@@ -435,14 +435,28 @@ int main()
 		return 1;
 	}
 
-	// Real init sequence mirroring Do_Onetime_Device_Dependent_Inits' order
-	// (dx8wrapper_d3d8.cpp:302-326) - the GL Create_Device deliberately does
-	// NOT wire this itself (Draft 22's design decision: doing so would drag
-	// the whole texture closure into every existing harness's link), so
-	// this harness performs the same sequence explicitly.
-	MissingTexture::_Init();
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Steps 2+4
+	// combined): Trap 1 ends here - Set_Render_Device's Create_Device now
+	// runs the real Do_Onetime_Device_Dependent_Inits chain itself
+	// (MissingTexture::_Init/TextureFilterClass::_Init_Filters/
+	// TextureLoader::Init among others), so this harness no longer
+	// hand-initializes them; MissingTexture::_Init()'s
+	// WWASSERT(!_MissingTexture) would abort on the double-init otherwise.
+	//
+	// TextureFilterClass::_Init_Filters is the one exception re-called here:
+	// unlike MissingTexture::_Init/TextureLoader::Init (genuinely one-shot,
+	// asserted/asserting against re-entry), it is a plain settings-table
+	// rebuild with no re-entry guard - real games call it again whenever a
+	// video-quality option changes. The real init chain just ran it with
+	// WW3D::Get_Texture_Filter()'s default (TEXTURE_FILTER_BILINEAR,
+	// ww3d_common.cpp), but checks 6a/6c below need this harness's original
+	// TEXTURE_FILTER_POINT to keep their point-sampled, unambiguous-margin
+	// design (see that check's own comment) - bilinear would blend across
+	// the WRAP seam and blow their +-2 Check_Pixel tolerance (confirmed:
+	// (21,212,0)/(52,145,194) actual vs (0,220,0)/(30,140,220) expected,
+	// caught by ctest when this harness first converged on the real chain).
 	TextureFilterClass::_Init_Filters(TextureFilterClass::TEXTURE_FILTER_POINT, TextureFilterClass::TEXTURE_FILTER_ANISOTROPIC_2X);
-	TextureLoader::Init();
+
 	// Real games set this from a video-quality option during startup; see
 	// the file header comment for why this is load-bearing, not boilerplate.
 	// Called on DX8Wrapper directly (fully inline in dx8wrapper.h) rather
@@ -677,9 +691,12 @@ int main()
 	vwrap_tex->Release_Ref();
 	vclamp_tex->Release_Ref();
 
-	TextureLoader::Deinit();
-	MissingTexture::_Deinit();
-
+	// Milestone 6: matching manual teardown removed - DX8Wrapper::Shutdown()
+	// below now runs Release_Device()'s Do_Onetime_Device_Dependent_
+	// Shutdowns() chain (TextureLoader::Deinit()/MissingTexture::_Deinit()
+	// among others), so calling them here too would double-deinit
+	// (MissingTexture::_Deinit() would Release() an already-null
+	// _MissingTexture, missingtexture.cpp).
 	DX8Wrapper::Shutdown();
 
 	unlink(solid_path.c_str());

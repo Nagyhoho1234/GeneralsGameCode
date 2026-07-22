@@ -299,121 +299,13 @@ void DX8Wrapper::Shutdown()
 	IsInitted = false;		// 010803 srj
 }
 
-void DX8Wrapper::Do_Onetime_Device_Dependent_Inits()
-{
-	/*
-	** Set Global render states (some of which depend on caps)
-	*/
-	Compute_Caps(D3DFormat_To_WW3DFormat(DisplayFormat));
-
-   /*
-	** Initialize any other subsystems inside of WW3D
-	*/
-	MissingTexture::_Init();
-	TextureFilterClass::_Init_Filters(
-		(TextureFilterClass::TextureFilterMode)WW3D::Get_Texture_Filter(),
-		(TextureFilterClass::AnisotropicFilterMode)WW3D::Get_Anisotropy_Level()
-	);
-	TheDX8MeshRenderer.Init();
-	SHD_INIT;
-	BoxRenderObjClass::Init();
-	VertexMaterialClass::Init();
-	PointGroupClass::_Init(); // This needs the VertexMaterialClass to be initted
-	ShatterSystem::Init();
-	TextureLoader::Init();
-
-	Set_Default_Global_Render_States();
-}
-
-inline DWORD F2DW(float f) { return *((unsigned*)&f); }
-void DX8Wrapper::Set_Default_Global_Render_States()
-{
-	DX8_THREAD_ASSERT();
-	const D3DCAPS8 &caps = Get_Current_Caps()->Get_DX8_Caps();
-
-	Set_DX8_Render_State(D3DRS_RANGEFOGENABLE, (caps.RasterCaps & D3DPRASTERCAPS_FOGRANGE) ? TRUE : FALSE);
-	Set_DX8_Render_State(D3DRS_FOGTABLEMODE, D3DFOG_NONE);
-	Set_DX8_Render_State(D3DRS_FOGVERTEXMODE, D3DFOG_LINEAR);
-	Set_DX8_Render_State(D3DRS_SPECULARMATERIALSOURCE, D3DMCS_MATERIAL);
-	Set_DX8_Render_State(D3DRS_COLORVERTEX, TRUE);
-	Set_DX8_Render_State(D3DRS_ZBIAS,0);
-	Set_DX8_Texture_Stage_State(1, D3DTSS_BUMPENVLSCALE, F2DW(1.0f));
-	Set_DX8_Texture_Stage_State(1, D3DTSS_BUMPENVLOFFSET, F2DW(0.0f));
-	Set_DX8_Texture_Stage_State(0, D3DTSS_BUMPENVMAT00,F2DW(1.0f));
-	Set_DX8_Texture_Stage_State(0, D3DTSS_BUMPENVMAT01,F2DW(0.0f));
-	Set_DX8_Texture_Stage_State(0, D3DTSS_BUMPENVMAT10,F2DW(0.0f));
-	Set_DX8_Texture_Stage_State(0, D3DTSS_BUMPENVMAT11,F2DW(1.0f));
-
-//	Set_DX8_Render_State(D3DRS_CULLMODE, D3DCULL_CW);
-	// Set dither mode here?
-}
-
-void DX8Wrapper::Invalidate_Cached_Render_States()
-{
-	render_state_changed=0;
-
-	int a;
-	for (a=0;a<sizeof(RenderStates)/sizeof(unsigned);++a) {
-		RenderStates[a]=0x12345678;
-	}
-	for (a=0;a<MAX_TEXTURE_STAGES;++a)
-	{
-		for (int b=0; b<32;b++)
-		{
-			TextureStageStates[a][b]=0x12345678;
-		}
-		//Need to explicitly set texture to null, otherwise app will not be able to
-		//set it to null because of redundant state checker. MW
-		if (_Get_D3D_Device8())
-			_Get_D3D_Device8()->SetTexture(a,nullptr);
-		if (Textures[a] != nullptr) {
-			Textures[a]->Release();
-		}
-		Textures[a]=nullptr;
-	}
-
-	ShaderClass::Invalidate();
-
-	//Need to explicitly set render_state texture pointers to null. MW
-	Release_Render_State();
-
-	// (gth) clear the matrix shadows too
-	memset(&DX8Transforms, 0, sizeof(DX8Transforms));
-}
-
-void DX8Wrapper::Do_Onetime_Device_Dependent_Shutdowns()
-{
-	/*
-	** Shutdown ww3d systems
-	*/
-	int i;
-	for (i=0;i<MAX_VERTEX_STREAMS;++i) {
-		if (render_state.vertex_buffers[i]) render_state.vertex_buffers[i]->Release_Engine_Ref();
-		REF_PTR_RELEASE(render_state.vertex_buffers[i]);
-	}
-	if (render_state.index_buffer) render_state.index_buffer->Release_Engine_Ref();
-	REF_PTR_RELEASE(render_state.index_buffer);
-	REF_PTR_RELEASE(render_state.material);
-	for (i=0;i<CurrentCaps->Get_Max_Textures_Per_Pass();++i) REF_PTR_RELEASE(render_state.Textures[i]);
-
-
-	TextureLoader::Deinit();
-	SortingRendererClass::Deinit();
-	DynamicVBAccessClass::_Deinit();
-	DynamicIBAccessClass::_Deinit();
-	ShatterSystem::Shutdown();
-	PointGroupClass::_Shutdown();
-	VertexMaterialClass::Shutdown();
-	BoxRenderObjClass::Shutdown();
-	SHD_SHUTDOWN;
-	TheDX8MeshRenderer.Shutdown();
-	MissingTexture::_Deinit();
-
-	delete CurrentCaps;
-	CurrentCaps=nullptr;
-
-}
-
+// DX8Wrapper::Do_Onetime_Device_Dependent_Inits/_Shutdowns,
+// Set_Default_Global_Render_States (and its F2DW helper), and
+// Invalidate_Cached_Render_States moved verbatim to dx8wrapper_draw.cpp
+// (native port plan Phase 5(a) Milestone 6, Draft 26 Steps 2+4 combined) -
+// see that file's comment for why, and dx8wrapper_gl.cpp for the GL
+// backend's Compute_Caps this closure now calls instead of the device-
+// querying DX8Caps constructor.
 
 bool DX8Wrapper::Create_Device()
 {

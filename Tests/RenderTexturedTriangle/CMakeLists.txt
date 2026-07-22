@@ -10,24 +10,23 @@
 # real D3D8 backend and its own CI; this only exercises the GL backend.
 #
 # Sibling to Tests/RenderDeviceInit, not an extension of it - keeps that
-# harness an untouched Milestone 1 regression test. Compiles
-# dx8wrapper_gl.cpp/dx8wrapper_common.cpp/gl_core33.cpp directly for the
-# same reason RenderDeviceInit does (see that CMakeLists.txt's comment):
-# ww3d.cpp/camera.cpp/formconv.cpp reference dozens of still-per-tree/
-# Windows-only WW3D2 subsystems this milestone deliberately doesn't touch.
+# harness an untouched Milestone 1 regression test.
+#
+# Milestone 6 (native port plan Phase 5(a), Draft 26 Steps 2+4 combined):
+# switched from a hand-picked file list to linking corei_ww3d2 directly -
+# see RenderDeviceInit/CMakeLists.txt's matching comment for why (GL
+# Create_Device/Release_Device now unconditionally call
+# Do_Onetime_Device_Dependent_Inits/_Shutdowns, ending Trap 1 completely).
 add_executable(RenderTexturedTriangleTest
     main.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/PortableD3D8/gl_core33.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3d_common.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/dx8caps.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/formconv.cpp
-    ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WW3D2/ww3dformat.cpp
+    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
+    ${CMAKE_SOURCE_DIR}/Tests/RenderW3DMesh/anim_sound_link_stub.cpp
 )
 
 target_link_libraries(RenderTexturedTriangleTest PRIVATE
     core_wwvegas
+    corei_ww3d2
+    core_wwstub
     portabled3d8_gl
     corei_always
 )
