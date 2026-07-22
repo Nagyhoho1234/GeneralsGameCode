@@ -111,6 +111,12 @@
 #ifndef GL_MIRRORED_REPEAT
 #define GL_MIRRORED_REPEAT               0x8370
 #endif
+#ifndef GL_READ_FRAMEBUFFER
+#define GL_READ_FRAMEBUFFER              0x8CA8
+#endif
+#ifndef GL_DRAW_FRAMEBUFFER
+#define GL_DRAW_FRAMEBUFFER              0x8CA9
+#endif
 
 #include <cstddef> // ptrdiff_t - MSVC pulls this in transitively via windows.h, GCC/Clang do not
 
@@ -165,6 +171,7 @@ typedef void      (APIENTRY* PFNGLGENSAMPLERSPROC)(GLsizei, GLuint*);
 typedef void      (APIENTRY* PFNGLDELETESAMPLERSPROC)(GLsizei, const GLuint*);
 typedef void      (APIENTRY* PFNGLBINDSAMPLERPROC)(GLuint, GLuint);
 typedef void      (APIENTRY* PFNGLSAMPLERPARAMETERIPROC)(GLuint, GLenum, GLint);
+typedef void      (APIENTRY* PFNGLBLITFRAMEBUFFERPROC)(GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLint, GLbitfield, GLenum);
 
 extern PFNGLGENVERTEXARRAYSPROC gl_GenVertexArrays;
 extern PFNGLBINDVERTEXARRAYPROC gl_BindVertexArray;
@@ -212,6 +219,10 @@ extern PFNGLGENSAMPLERSPROC gl_GenSamplers;
 extern PFNGLDELETESAMPLERSPROC gl_DeleteSamplers;
 extern PFNGLBINDSAMPLERPROC gl_BindSampler;
 extern PFNGLSAMPLERPARAMETERIPROC gl_SamplerParameteri;
+// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5) - real
+// Present's FBO-to-window blit (dx8wrapper_gl.cpp's IDirect3DDevice8::
+// Present).
+extern PFNGLBLITFRAMEBUFFERPROC gl_BlitFramebuffer;
 
 // Resolves all of the above via the given loader (glfwGetProcAddress).
 // Returns false (and leaves an unresolved pointer null) on first failure.

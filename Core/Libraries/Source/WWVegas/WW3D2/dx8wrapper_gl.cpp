@@ -17,21 +17,23 @@
 */
 
 // GL-backed implementation of DX8Wrapper's device-lifecycle methods for
-// non-Windows (native port plan Phase 5(a) Milestone 1: device init +
-// clear-to-color). Mutually exclusive with dx8wrapper_d3d8.cpp - exactly
-// one of the two is ever compiled into a given build.
+// non-Windows (native port plan Phase 5(a), now through Milestone 6).
+// Mutually exclusive with dx8wrapper_d3d8.cpp - exactly one of the two is
+// ever compiled into a given build.
 //
-// Deliberately minimal: only Init/Shutdown/Enumerate_Devices/
-// Set_Render_Device/Create_Device/Release_Device/Begin_Scene/End_Scene/Clear
-// get real bodies here. Everything else DX8Wrapper declares (texture
-// creation, shaders, mesh drawing, ...) is out of scope for this milestone -
-// see docs/native-port-plan.md's Phase 5(a) Milestone 1 plan for the full
-// non-goals list. Two traps called out by that plan are structurally
-// avoided by this file simply never doing what they warn about:
-// - Trap 1: Create_Device() below never calls
-//   Do_Onetime_Device_Dependent_Inits() (which would pull in real texture
-//   loading and a background TextureLoader thread).
+// As of Milestone 6 (Draft 26 Steps 2, 4, 5) this file's Create_Device runs
+// the same Do_Onetime_Device_Dependent_Inits/_Shutdowns chain the D3D8
+// backend runs (Trap 1, described below, ended in Task 2 of that
+// milestone), and Present/End_Scene/Set_Swap_Interval/Set_Device_Resolution
+// are real (Task 3) - see docs/native-port-plan.md's Milestone 6 plan.
+// Everything else DX8Wrapper declares that this milestone doesn't need
+// (real fullscreen/Toggle_Windowed, gamma ramps, registry persistence, ...)
+// stays a loud stub - see that plan's non-goals list. One trap called out
+// by the plan is still structurally avoided by this file simply never
+// doing what it warns about:
 // - Trap 2: Begin_Scene()/End_Scene() below never reference DX8WebBrowser.
+// (Trap 1 - Create_Device() never calling Do_Onetime_Device_Dependent_
+// Inits() - stood through Milestone 5 and ended in Milestone 6 Task 2.)
 #include "dx8wrapper.h"
 #include "formconv.h"
 #include "PortableD3D8/gl_core33.h"
@@ -50,6 +52,13 @@ namespace
 	GLuint g_DepthRB = 0;
 	int g_FBWidth = 0;
 	int g_FBHeight = 0;
+
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): real
+	// Set_Swap_Interval/Get_Swap_Interval state. GLFW applies a swap
+	// interval immediately via glfwSwapInterval (no swap-chain recreation
+	// like D3D8's Reset_Device dance), so this is the whole of the state -
+	// mirrors D3DPRESENT_INTERVAL_ONE's "vsync on" default.
+	int g_SwapInterval = 1;
 
 	DX8FrameStatistics g_LastFrameStatistics;
 
@@ -224,6 +233,44 @@ namespace
 		if (g_ColorTex) { glDeleteTextures(1, &g_ColorTex); g_ColorTex = 0; }
 		if (g_DepthRB) { gl_DeleteRenderbuffers(1, &g_DepthRB); g_DepthRB = 0; }
 	}
+
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): factored
+	// out of Create_Device's former inline FBO setup so Set_Device_
+	// Resolution (below, in the DX8Wrapper method section) can recreate the
+	// color/depth attachments at a new size without duplicating this logic
+	// - a GL renderbuffer/texture has no in-place "resize", only destroy +
+	// recreate at the new dimensions. Leaves g_FBO bound as the current
+	// GL_FRAMEBUFFER on success (matching Create_Device's prior inline
+	// behavior, which every draw call/Clear() depends on).
+	bool Create_Framebuffer(int width, int height)
+	{
+		g_FBWidth = width;
+		g_FBHeight = height;
+
+		gl_GenFramebuffers(1, &g_FBO);
+		gl_BindFramebuffer(GL_FRAMEBUFFER, g_FBO);
+
+		glGenTextures(1, &g_ColorTex);
+		glBindTexture(GL_TEXTURE_2D, g_ColorTex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, g_FBWidth, g_FBHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		gl_FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_ColorTex, 0);
+
+		gl_GenRenderbuffers(1, &g_DepthRB);
+		gl_BindRenderbuffer(GL_RENDERBUFFER, g_DepthRB);
+		gl_RenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, g_FBWidth, g_FBHeight);
+		gl_FramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, g_DepthRB);
+
+		if (gl_CheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+		{
+			Destroy_Framebuffer();
+			return false;
+		}
+
+		glViewport(0, 0, g_FBWidth, g_FBHeight);
+		return true;
+	}
 }
 
 // IDirect3DDevice8's real GL-backed method bodies. Declared in
@@ -259,8 +306,35 @@ HRESULT IDirect3DDevice8::Reset(D3DPRESENT_PARAMETERS* pPresentationParameters)
 
 HRESULT IDirect3DDevice8::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion)
 {
-	// Offscreen FBO only in this milestone (matching native-port-spike's
-	// verification approach) - nothing to swap to a visible window.
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): real
+	// present. g_FBO stays the sole render target - every existing pixel
+	// check reads it via glReadPixels, and this milestone does not change
+	// that - so this is purely additive: blit the already-rendered FBO
+	// color attachment to the GLFW window's own framebuffer, then swap.
+	// Only End_Scene(true) ever reaches here (see below); every one of
+	// this port's five pre-existing harnesses calls End_Scene(false), so
+	// this body never executes for them - the compatibility proof this
+	// task's design rests on.
+	if (g_Window)
+	{
+		gl_BindFramebuffer(GL_READ_FRAMEBUFFER, g_FBO);
+		gl_BindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+		gl_BlitFramebuffer(0, 0, g_FBWidth, g_FBHeight, 0, 0, g_FBWidth, g_FBHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+
+		// Restore g_FBO as the current GL_FRAMEBUFFER binding - Clear()/
+		// DrawIndexedPrimitive assume it stays bound across frames, and the
+		// blit above (via the split READ/DRAW targets) left the default
+		// framebuffer bound as the draw target.
+		gl_BindFramebuffer(GL_FRAMEBUFFER, g_FBO);
+
+		glfwSwapBuffers(g_Window);
+
+		// The message-pump analog until a real input phase exists (native
+		// port plan open question 4) - GLFW requires polling on the main
+		// thread, which every caller of End_Scene(true) satisfies today.
+		glfwPollEvents();
+	}
+
 	return D3D_OK;
 }
 
@@ -1476,7 +1550,22 @@ bool DX8Wrapper::Create_Device()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-	glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5, open
+	// question 1's resolution): visible iff the caller asked for windowed
+	// mode. All four pre-existing harnesses pass windowed=0 to
+	// Set_Render_Device (e.g. Tests/RenderW3DMesh/main.cpp), so this is
+	// zero behavioral change for them - hidden window, bit-identical.
+	// PORTABLE_D3D8_HIDDEN=<nonzero> force-hides the window regardless (a
+	// local-headless-run override for windowed=1 callers, e.g. over SSH/no
+	// Xvfb) - real fullscreen (GLFW monitor-attached mode) stays deferred,
+	// per this milestone's non-goals.
+	bool show_window = IsWindowed;
+	if (const char* hidden_env = std::getenv("PORTABLE_D3D8_HIDDEN"))
+	{
+		if (hidden_env[0] != '\0' && hidden_env[0] != '0') show_window = false;
+	}
+	glfwWindowHint(GLFW_VISIBLE, show_window ? GLFW_TRUE : GLFW_FALSE);
 	glfwWindowHint(GLFW_DEPTH_BITS, 0);
 	glfwWindowHint(GLFW_STENCIL_BITS, 0);
 	glfwWindowHint(GLFW_SAMPLES, 0);
@@ -1493,33 +1582,21 @@ bool DX8Wrapper::Create_Device()
 		return false;
 	}
 
-	g_FBWidth = ResolutionWidth;
-	g_FBHeight = ResolutionHeight;
-
-	gl_GenFramebuffers(1, &g_FBO);
-	gl_BindFramebuffer(GL_FRAMEBUFFER, g_FBO);
-
-	glGenTextures(1, &g_ColorTex);
-	glBindTexture(GL_TEXTURE_2D, g_ColorTex);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, g_FBWidth, g_FBHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	gl_FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_ColorTex, 0);
-
-	gl_GenRenderbuffers(1, &g_DepthRB);
-	gl_BindRenderbuffer(GL_RENDERBUFFER, g_DepthRB);
-	gl_RenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, g_FBWidth, g_FBHeight);
-	gl_FramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, g_DepthRB);
-
-	if (gl_CheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): FBO/
+	// depth-attachment creation factored out to Create_Framebuffer (above)
+	// so Set_Device_Resolution can recreate it at a new size; behavior here
+	// is unchanged from before that refactor.
+	if (!Create_Framebuffer(ResolutionWidth, ResolutionHeight))
 	{
-		Destroy_Framebuffer();
 		glfwDestroyWindow(g_Window);
 		g_Window = nullptr;
 		return false;
 	}
 
-	glViewport(0, 0, g_FBWidth, g_FBHeight);
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): apply the
+	// (possibly Set_Swap_Interval-changed, but reset to 1 by the last
+	// Release_Device) swap interval to this fresh context.
+	glfwSwapInterval(g_SwapInterval);
 
 	// Milestone 2, Step 6: the one persistent VAO DrawIndexedPrimitive
 	// reconfigures per draw call (see g_VAO's declaration above).
@@ -1717,6 +1794,13 @@ void DX8Wrapper::Release_Device()
 	g_DestBlend = GL_ZERO;
 	g_LightingEnabled = false;
 
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5, Draft 19
+	// watch-item discipline): reset the swap-interval state this task
+	// added, so it doesn't leak stale across a Release_Device/Create_Device
+	// cycle - Create_Device (below) re-applies this default via
+	// glfwSwapInterval the next time a context exists.
+	g_SwapInterval = 1;
+
 	Destroy_Framebuffer();
 
 	if (g_Window)
@@ -1724,6 +1808,48 @@ void DX8Wrapper::Release_Device()
 		glfwDestroyWindow(g_Window);
 		g_Window = nullptr;
 	}
+}
+
+// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): maps to
+// glfwSwapInterval, applied immediately to the live context - unlike the
+// D3D8 backend's Set_Swap_Interval (dx8wrapper_d3d8.cpp), which stores the
+// value into _PresentParameters and calls Reset_Device to recreate the
+// swap chain with it. GL has no such swap chain to recreate; the interval
+// takes effect on the very next glfwSwapBuffers.
+void DX8Wrapper::Set_Swap_Interval(int swap)
+{
+	g_SwapInterval = swap;
+	if (g_Window) glfwSwapInterval(g_SwapInterval);
+}
+
+int DX8Wrapper::Get_Swap_Interval()
+{
+	return g_SwapInterval;
+}
+
+// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): resizes the
+// GLFW window and recreates the FBO/depth attachments at the new size -
+// mirrors dx8wrapper_d3d8.cpp's Set_Device_Resolution in structure
+// (width/height==-1 sentinel, resize_window gate, D3DDevice==nullptr early
+// return) but recreates GL's fixed-size color texture/depth renderbuffer
+// instead of that backend's Reset_Device (there is no in-place GL
+// "resize", and D3D8's own bits/windowed handling here is itself a known
+// no-op - see that function's own TODO comment - so this does not attempt
+// it either).
+bool DX8Wrapper::Set_Device_Resolution(int width, int height, int bits, int windowed, bool resize_window)
+{
+	if (D3DDevice == nullptr) return false;
+
+	if (width != -1) ResolutionWidth = width;
+	if (height != -1) ResolutionHeight = height;
+
+	if (resize_window && g_Window)
+	{
+		glfwSetWindowSize(g_Window, ResolutionWidth, ResolutionHeight);
+	}
+
+	Destroy_Framebuffer();
+	return Create_Framebuffer(ResolutionWidth, ResolutionHeight);
 }
 
 void DX8Wrapper::Begin_Scene()
@@ -1736,6 +1862,30 @@ void DX8Wrapper::Begin_Scene()
 void DX8Wrapper::End_Scene(bool flip_frames)
 {
 	DX8CALL(EndScene());
+
+	// Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): adopts
+	// the full D3D8 End_Scene contract (dx8wrapper_d3d8.cpp's End_Scene) -
+	// Present-on-flip, FrameCount++, and the per-frame release block -
+	// minus device-lost handling (GL never loses the device;
+	// TestCooperativeLevel above always returns D3D_OK, matching D3D8's
+	// IsDeviceLost/Reset_Device dance having nothing to do here) and minus
+	// DX8WebBrowser::Render (Trap 2 stands, by construction). All five of
+	// this port's pre-existing harnesses call End_Scene(false), so this
+	// `if` never runs for them - Present (above) never executes, and this
+	// is exactly what keeps their pixel checks bit-identical.
+	if (flip_frames)
+	{
+		DX8CALL(Present(nullptr, nullptr, nullptr, nullptr));
+		FrameCount++;
+	}
+
+	// Each frame, release all of the buffers and textures (verbatim
+	// structure from dx8wrapper_d3d8.cpp's End_Scene, unconditional there
+	// too - not gated on flip_frames).
+	Set_Vertex_Buffer(nullptr);
+	Set_Index_Buffer(nullptr, 0);
+	for (int i = 0; i < CurrentCaps->Get_Max_Textures_Per_Pass(); ++i) Set_Texture(i, nullptr);
+	Set_Material(nullptr);
 }
 
 void DX8Wrapper::Clear(bool clear_color, bool clear_z_stencil, const Vector3& color, float dest_alpha, float z, unsigned int stencil)
