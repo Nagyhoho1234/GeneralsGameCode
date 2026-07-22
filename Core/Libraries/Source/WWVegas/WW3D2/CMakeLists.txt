@@ -5,15 +5,15 @@ if(WIN32)
 set(WW3D2_SRC
     aabtree.cpp
     aabtree.h
-    #aabtreebuilder.cpp
-    #aabtreebuilder.h
+    aabtreebuilder.cpp
+    aabtreebuilder.h
     agg_def.cpp
     agg_def.h
     animatedsoundmgr.cpp
     animatedsoundmgr.h
     animobj.cpp
     animobj.h
-    #assetmgr.cpp
+    assetmgr.cpp
     assetmgr.h
     assetstatus.cpp
     assetstatus.h
@@ -21,7 +21,7 @@ set(WW3D2_SRC
     #bitmaphandler.h
     bmp2d.cpp
     bmp2d.h
-    #boxrobj.cpp
+    boxrobj.cpp
     boxrobj.h
     bwrender.cpp
     bwrender.h
@@ -40,7 +40,7 @@ set(WW3D2_SRC
     dazzle.h
     #ddsfile.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #ddsfile.h
-    #decalmsh.cpp
+    decalmsh.cpp
     decalmsh.h
     decalsys.cpp
     decalsys.h
@@ -79,22 +79,22 @@ set(WW3D2_SRC
     framgrab.h
     hanim.cpp
     hanim.h
-    #hanimmgr.cpp
+    hanimmgr.cpp
     hanimmgr.h
     hcanim.cpp
     hcanim.h
-    #hlod.cpp
+    hlod.cpp
     hlod.h
     hmdldef.cpp
     hmdldef.h
-    #hmorphanim.cpp
+    hmorphanim.cpp
     hmorphanim.h
-    #hrawanim.cpp
+    hrawanim.cpp
     hrawanim.h
     htree.cpp
     htree.h
-    #htreemgr.cpp
-    #htreemgr.h
+    htreemgr.cpp
+    htreemgr.h
     intersec.cpp
     intersec.h
     intersec.inl
@@ -103,8 +103,8 @@ set(WW3D2_SRC
     layer.h
     light.cpp
     light.h
-    #lightenvironment.cpp
-    #lightenvironment.h
+    lightenvironment.cpp
+    lightenvironment.h
     line3d.cpp
     line3d.h
     #linegrp.cpp
@@ -117,26 +117,26 @@ set(WW3D2_SRC
     matpass.h
     #matrixmapper.cpp
     #matrixmapper.h
-    #mesh.cpp
-    #mesh.h
+    mesh.cpp
+    mesh.h
     meshbuild.cpp
-    #meshbuild.h
+    meshbuild.h
     meshdam.cpp
     meshdam.h
-    #meshgeometry.cpp
-    #meshgeometry.h
-    #meshmatdesc.cpp
+    meshgeometry.cpp
+    meshgeometry.h
+    meshmatdesc.cpp
     meshmatdesc.h
-    #meshmdl.cpp
-    #meshmdl.h
-    #meshmdlio.cpp
+    meshmdl.cpp
+    meshmdl.h
+    meshmdlio.cpp
     metalmap.cpp
     metalmap.h
     #missingtexture.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #missingtexture.h
     motchan.cpp
     motchan.h
-    #nullrobj.cpp
+    nullrobj.cpp
     nullrobj.h
     #part_buf.cpp
     #part_buf.h
@@ -168,7 +168,7 @@ set(WW3D2_SRC
     renderobjectrecycler.h
     rendobj.cpp
     rendobj.h
-    #rinfo.cpp
+    rinfo.cpp
     rinfo.h
     ringobj.cpp
     ringobj.h
@@ -223,7 +223,7 @@ set(WW3D2_SRC
     visrasterizer.h
     w3d_dep.cpp
     w3d_dep.h
-    #w3d_file.h
+    w3d_file.h
     w3d_obsolete.h
     w3d_util.cpp
     w3d_util.h

@@ -4,15 +4,12 @@ if(WIN32)
 set(WW3D2_SRC
     #aabtree.cpp
     #aabtree.h
-    aabtreebuilder.cpp
-    aabtreebuilder.h
     #agg_def.cpp
     #agg_def.h
     #animatedsoundmgr.cpp
     #animatedsoundmgr.h
     #animobj.cpp
     #animobj.h
-    assetmgr.cpp
     #assetmgr.h
     #assetstatus.cpp
     #assetstatus.h
@@ -20,7 +17,6 @@ set(WW3D2_SRC
     #bitmaphandler.h
     #bmp2d.cpp
     #bmp2d.h
-    boxrobj.cpp
     #boxrobj.h
     #bwrender.cpp
     #bwrender.h
@@ -39,7 +35,6 @@ set(WW3D2_SRC
     #dazzle.h
     #ddsfile.cpp
     #ddsfile.h
-    decalmsh.cpp
     #decalmsh.h
     #decalsys.cpp
     #decalsys.h
@@ -75,22 +70,16 @@ set(WW3D2_SRC
     #framgrab.h
     #hanim.cpp
     #hanim.h
-    hanimmgr.cpp
     #hanimmgr.h
     #hcanim.cpp
     #hcanim.h
-    hlod.cpp
     #hlod.h
     #hmdldef.cpp
     #hmdldef.h
-    hmorphanim.cpp
     #hmorphanim.h
-    hrawanim.cpp
     #hrawanim.h
     #htree.cpp
     #htree.h
-    htreemgr.cpp
-    htreemgr.h
     #intersec.cpp
     #intersec.h
     #intersec.inl
@@ -99,8 +88,6 @@ set(WW3D2_SRC
     #layer.h
     #light.cpp
     #light.h
-    lightenvironment.cpp
-    lightenvironment.h
     #line3d.cpp
     #line3d.h
     #matinfo.cpp
@@ -109,26 +96,16 @@ set(WW3D2_SRC
     #matpass.h
     matrixmapper.cpp
     matrixmapper.h
-    mesh.cpp
-    mesh.h
     #meshbuild.cpp
-    meshbuild.h
     #meshdam.cpp
     #meshdam.h
-    meshgeometry.cpp
-    meshgeometry.h
-    meshmatdesc.cpp
     #meshmatdesc.h
-    meshmdl.cpp
-    meshmdl.h
-    meshmdlio.cpp
     #metalmap.cpp
     #metalmap.h
     #missingtexture.cpp
     #missingtexture.h
     #motchan.cpp
     #motchan.h
-    nullrobj.cpp
     #nullrobj.h
     part_buf.cpp
     part_buf.h
@@ -160,7 +137,6 @@ set(WW3D2_SRC
     #renderobjectrecycler.h
     #rendobj.cpp
     #rendobj.h
-    rinfo.cpp
     #rinfo.h
     #ringobj.cpp
     #ringobj.h
@@ -210,7 +186,6 @@ set(WW3D2_SRC
     #visrasterizer.h
     #w3d_dep.cpp
     #w3d_dep.h
-    w3d_file.h
     #w3d_obsolete.h
     #w3d_util.cpp
     #w3d_util.h
