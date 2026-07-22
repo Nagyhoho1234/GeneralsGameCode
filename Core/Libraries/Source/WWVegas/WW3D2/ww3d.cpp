@@ -1939,20 +1939,9 @@ WW3D::MultiSampleModeEnum WW3D::Get_MSAA_Mode()
 	}
 }
 
-void WW3D::Add_To_Static_Sort_List(RenderObjClass *robj, unsigned int sort_level)
-{
-	CurrentStaticSortLists->Add_To_List(robj, sort_level);
-}
-
-void WW3D::Render_And_Clear_Static_Sort_Lists(RenderInfoClass & rinfo)
-{
-	// The ststic sort lists need to be disabled while we are rendering from them otherwise the
-	// Render() function will just dump the objects right back on the same lists.
-	bool old_enable = AreStaticSortListsEnabled;
-	AreStaticSortListsEnabled = false;
-	CurrentStaticSortLists->Render_And_Clear(rinfo);
-	AreStaticSortListsEnabled = old_enable;
-}
+// Add_To_Static_Sort_List/Render_And_Clear_Static_Sort_Lists moved to
+// ww3d_common.cpp (native port plan Phase 5(a) Milestone 5, Draft 24
+// Step 2) - see that file's comment for why.
 
 void WW3D::Enable_Sorting(bool onoff)
 {

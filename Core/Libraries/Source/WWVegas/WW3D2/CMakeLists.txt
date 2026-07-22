@@ -193,8 +193,8 @@ set(WW3D2_SRC
     soundrobj.h
     sphereobj.cpp
     sphereobj.h
-    static_sort_list.cpp
-    static_sort_list.h
+    #static_sort_list.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 2)
+    #static_sort_list.h
     statistics.cpp
     statistics.h
     streak.cpp
@@ -302,6 +302,15 @@ set(WW3D2_SRC_PORTABLE
     textureloader.h
     texturethumbnail.cpp
     texturethumbnail.h
+
+    # Milestone 5 (native port plan Phase 5(a), Draft 24 Step 2, finding
+    # 5): pure sort-list code over RenderObjClass/RenderInfoClass, zero
+    # Windows deps - moved here because WW3D::Add_To_Static_Sort_List/
+    # Render_And_Clear_Static_Sort_Lists (ww3d_common.cpp) now reference
+    # it, and mesh.cpp (soon-to-be-portable, Draft 24 Step 5) is this
+    # milestone's real caller of both.
+    static_sort_list.cpp
+    static_sort_list.h
 )
 
 if(WIN32)

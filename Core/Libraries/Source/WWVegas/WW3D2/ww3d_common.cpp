@@ -33,6 +33,8 @@
 #include "dx8wrapper.h"
 #include "shader.h"
 #include "texturefilter.h"
+#include "rendobj.h"
+#include "static_sort_list.h"
 
 #define DEFAULT_DEBUG_SHADER_BITS	(		SHADE_CNST(\
 												ShaderClass::PASS_LEQUAL,\
@@ -180,4 +182,27 @@ int	WW3D::Get_Texture_Min_Dimension()
 bool WW3D::Is_Large_Texture_Extra_Reduction_Enabled()
 {
 	return _LargeTextureExtraReductionEnabled;
+}
+
+// Add_To_Static_Sort_List/Render_And_Clear_Static_Sort_Lists, round 3 of the
+// static-extraction precedent above (native port plan Phase 5(a) Milestone
+// 5, Draft 24 Step 2, finding 5): mesh.cpp (portable as of this milestone)
+// calls both, and they were defined in monolithic ww3d.cpp over the
+// CurrentStaticSortLists/AreStaticSortListsEnabled statics already hosted
+// here since Milestone 3 - referencing either from mesh.cpp used to pull
+// ww3d.cpp's entire closure into the link, the exact trap this file exists
+// to kill at the root (see the file header comment).
+void WW3D::Add_To_Static_Sort_List(RenderObjClass *robj, unsigned int sort_level)
+{
+	CurrentStaticSortLists->Add_To_List(robj, sort_level);
+}
+
+void WW3D::Render_And_Clear_Static_Sort_Lists(RenderInfoClass & rinfo)
+{
+	// The ststic sort lists need to be disabled while we are rendering from them otherwise the
+	// Render() function will just dump the objects right back on the same lists.
+	bool old_enable = AreStaticSortListsEnabled;
+	AreStaticSortListsEnabled = false;
+	CurrentStaticSortLists->Render_And_Clear(rinfo);
+	AreStaticSortListsEnabled = old_enable;
 }
