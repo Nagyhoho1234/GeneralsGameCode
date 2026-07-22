@@ -1557,6 +1557,22 @@ bool DX8Wrapper::Create_Device()
 	// Description strings only.
 	D3DInterface->GetAdapterIdentifier(0, 0, &CurrentAdapterIdentifier);
 
+	// Real bug found in Milestone 4 (Draft 22 Step 6): on the real Windows
+	// path, D3DFormatToWW3DFormatConversionArray is populated by
+	// Init_D3D_To_WW3_Conversion(), called exactly once from WW3D::Init()
+	// (ww3d.cpp) before DX8Wrapper::Init() ever runs. Trap 1 (Milestone 1)
+	// deliberately keeps this GL Create_Device() out of ww3d.cpp's
+	// monolithic init chain, so that call never happened - the array
+	// stayed zero-initialized (all WW3D_FORMAT_UNKNOWN), which made
+	// D3DFormat_To_WW3DFormat(DisplayFormat) below return UNKNOWN, which
+	// in turn made every DX8Caps::Support_Texture_Format() check fail
+	// (Check_Texture_Format_Support's display_format==WW3D_FORMAT_UNKNOWN
+	// early-exit) and silently collapsed every real texture load down
+	// Get_Valid_Texture_Format's fallback chain to a 16-bit format. Fix:
+	// populate the table here, the same portable formconv.cpp function
+	// the real game uses, just called from the GL-analogous spot.
+	Init_D3D_To_WW3_Conversion();
+
 	delete CurrentCaps;
 	CurrentCaps = new DX8Caps(D3DInterface, caps, D3DFormat_To_WW3DFormat(DisplayFormat), CurrentAdapterIdentifier);
 
@@ -1745,5 +1761,42 @@ IDirect3DTexture8* DX8Wrapper::_Create_DX8_ZTexture
 IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture(const char *filename, MipCountType mip_level_count)
 {
 	WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_Texture(filename): not wired on GL until missingtexture.cpp is portable (Draft 22 Step 5)"));
+	return nullptr;
+}
+
+// Three more loud-nullptr stubs, found only by linking Milestone 4 Step 6's
+// new harness for the first time (its wider link closure - texture.cpp's
+// VolumeTextureClass ctor, textureloader.cpp's VolumeTextureLoadTaskClass,
+// surfaceclass.cpp's filename-based SurfaceClass ctor - reaches call sites
+// none of the M1-M3 harnesses' narrower closures ever did). Volume textures
+// are an explicit Milestone 4 non-goal (finding 6/the non-goals list:
+// nothing in Generals constructs one at runtime); the filename-based
+// _Create_DX8_Surface overload has no caller in this milestone's ported
+// closure either (SurfaceClass::SurfaceClass(const char*) is BMP-file-only
+// tooling, out of scope). Real GL bodies stay deferred, same "deferrals
+// gated loudly" convention as _Create_DX8_Cube_Texture/_Create_DX8_ZTexture.
+IDirect3DVolumeTexture8* DX8Wrapper::_Create_DX8_Volume_Texture
+(
+	unsigned int width,
+	unsigned int height,
+	unsigned int depth,
+	WW3DFormat format,
+	MipCountType mip_level_count,
+	D3DPOOL pool
+)
+{
+	WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_Volume_Texture: volume textures are a Milestone 4 non-goal on GL"));
+	return nullptr;
+}
+
+IDirect3DSurface8 * DX8Wrapper::_Create_DX8_Surface(const char *filename)
+{
+	WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_Surface(filename): no caller in the ported closure yet (Milestone 4 non-goal)"));
+	return nullptr;
+}
+
+IDirect3DTexture8 * DX8Wrapper::_Create_DX8_Texture(IDirect3DSurface8 *surface, MipCountType mip_level_count)
+{
+	WWDEBUG_SAY(("DX8Wrapper::_Create_DX8_Texture(surface): no caller in the ported closure yet (Milestone 4 non-goal)"));
 	return nullptr;
 }

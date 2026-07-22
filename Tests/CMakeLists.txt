@@ -46,3 +46,12 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderEngineDrawPath)
 endif()
+
+# Phase 5(a) Milestone 4 (native port plan, Draft 22) - the real texture
+# pipeline end-to-end (TextureClass/TextureLoader/TextureFilterClass/
+# MissingTexture/DDSFileClass), including the first real background-thread
+# texture load on POSIX, non-Windows only. See
+# RenderTexturePipeline/CMakeLists.txt.
+if(NOT WIN32)
+    add_subdirectory(RenderTexturePipeline)
+endif()

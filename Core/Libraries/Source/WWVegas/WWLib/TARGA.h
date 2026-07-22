@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include <cstdint>
+
 /****************************************************************************
 *
 *         C O N F I D E N T I A L --- W E S T W O O D   S T U D I O S
@@ -133,8 +135,16 @@ typedef struct _TGAHeader
  */
 typedef struct _TGA2Footer
 	{
-	long Extension;
-	long Developer;
+	// native port plan Phase 2 (64-bit pointer-width cleanliness), found by
+	// Milestone 4 Step 6's harness actually loading a real TGA for the first
+	// time on 64-bit Linux: `long` is 8 bytes under LP64 (Linux/macOS 64-bit)
+	// but 4 bytes under Windows' LLP64 - these two fields are genuinely
+	// on-disk TGA 2.0 format data (4-byte file offsets), and sizeof(TGA2Footer)
+	// being fed into a hardcoded-26-byte seek/read pair silently grew to 34
+	// bytes, making every real TGA load fail with TGAERR_READ on this
+	// platform. int32_t is exactly what the format specifies everywhere.
+	int32_t Extension;
+	int32_t Developer;
 	char Signature[16];
 	char RsvdChar;
 	char BZST;
@@ -224,12 +234,12 @@ typedef struct _TGA2Extension
 	TGA2TimeStamp JobTime;
 	char          SoftID[41];
 	TGA2SoftVer   SoftVer;
-	long          KeyColor;
+	int32_t       KeyColor; // on-disk TGA 2.0 format data - see TGA2Footer's comment
 	TGA2Ratio     Aspect;
 	TGA2Ratio     Gamma;
-	long          ColorCor;
-	long          PostStamp;
-	long          ScanLine;
+	int32_t       ColorCor;
+	int32_t       PostStamp;
+	int32_t       ScanLine;
 	char          Attributes;
 	} TGA2Extension;
 

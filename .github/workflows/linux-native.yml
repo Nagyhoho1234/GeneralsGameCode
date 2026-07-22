@@ -97,6 +97,17 @@ jobs:
         run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./build/linux-x64/Tests/RenderEngineDrawPath/RenderEngineDrawPathTest 2>&1 | tee -a configure-log.txt
         continue-on-error: true
 
+      - name: Build RenderTexturePipelineTest (Phase 5(a) Milestone 4 - texture pipeline end-to-end)
+        id: build-rendertexturepipeline
+        run: cmake --build --preset linux-x64 --target RenderTexturePipelineTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run RenderTexturePipelineTest (headless Mesa software rendering)
+        id: run-rendertexturepipeline
+        if: steps.build-rendertexturepipeline.outcome == 'success'
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ./build/linux-x64/Tests/RenderTexturePipeline/RenderTexturePipelineTest 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
       - name: Upload configure/build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -127,6 +138,11 @@ jobs:
           echo "Build outcome: ${{ steps.build-renderenginedrawpath.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Run outcome: ${{ steps.run-renderenginedrawpath.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Drives DX8VertexBufferClass/DX8IndexBufferClass through real WriteLockClass objects, DX8Wrapper::Set_Vertex_Buffer/Set_Index_Buffer/Set_Shader/Set_Material/Set_Transform/Draw_Triangles, real ShaderClass presets, a real D3D-style perspective projection, and a DynamicVBAccessClass/DynamicIBAccessClass second draw - asserts 6 real pixel-level checks (background integrity, projected-position + color, white-fallback diffuse exactness, additive-blend sum, depth occlusion, dynamic-buffer offset plumbing) against the offscreen FBO. This is Milestone 3's exit criterion." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 4: texture pipeline end-to-end (Tests/RenderTexturePipeline)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-rendertexturepipeline.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-rendertexturepipeline.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Drives the real TextureClass/TextureLoader/TextureFilterClass/MissingTexture/DDSFileClass/BitmapHandlerClass pipeline, including the first real cross-thread (pthread) background texture load on POSIX - asserts 6 real pixel-level checks (foreground TGA load, engine-generated mip chain, DDS/DXT1 software decode, missing-texture fallback, real background-thread load, WRAP/CLAMP sampler addressing) against the offscreen FBO." >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if unexpected error count
         if: always()

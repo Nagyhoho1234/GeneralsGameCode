@@ -268,6 +268,31 @@ void BitmapHandlerClass::Copy_Image(
 					if (has_hsv_shift) Recolor(b8g8r8a8,hsv_shift);
 					*(unsigned*)dest_surface=b8g8r8a8;
 				}
+				else if (dest_surface_height==1) {
+					// Real bug found in Milestone 4 (Draft 22 Step 6): non-square
+					// textures whose height has already bottomed out at 1 while
+					// width has not (e.g. a 2x1 texture) fell through to the
+					// dest_surface_height/2 loop below, which integer-divides
+					// 1/2 to 0 and never runs - the destination level and the
+					// in-place next-mip data both stayed uninitialized. Only
+					// dest_surface_width==1 was ever special-cased; this mirrors
+					// it for the height==1 case with a horizontal-only pairing
+					// (no next-row read, since there is no next row).
+					unsigned* dest_ptr=(unsigned*)dest_surface;
+					unsigned* src_ptr=(unsigned*)src_surface;
+					unsigned* mip_ptr=src_ptr;
+					for (unsigned x=0;x<dest_surface_width/2;x++) {
+						unsigned b8g8r8a8_00=*src_ptr++;
+						unsigned b8g8r8a8_01=*src_ptr++;
+						if (has_hsv_shift) {
+							Recolor(b8g8r8a8_00,hsv_shift);
+							Recolor(b8g8r8a8_01,hsv_shift);
+						}
+						*dest_ptr++=b8g8r8a8_00;
+						*dest_ptr++=b8g8r8a8_01;
+						*mip_ptr++=Combine_A8R8G8B8(b8g8r8a8_00,b8g8r8a8_01,b8g8r8a8_00,b8g8r8a8_01);
+					}
+				}
 				else {
 					for (unsigned y=0;y<dest_surface_height/2;++y) {
 						unsigned* dest_ptr=(unsigned*)dest_surface;
