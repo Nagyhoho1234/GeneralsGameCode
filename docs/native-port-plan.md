@@ -5049,3 +5049,154 @@ begins by constructing exactly this milestone's `W3DFileSystem`,
 - `GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DFileSystem.cpp` (unify with the Generals copy into `Core/GameEngineDevice`)
 - `Core/GameEngine/Source/Common/System/GameMemory.cpp` (allocator swap vs `Core/Libraries/Source/WWVegas/WWStub/wwallocstub.cpp`)
 - `Tests/RenderWW3DFrame/main.cpp` (template for the two new harnesses, `Tests/GameFileSystem` and `Tests/RenderGameAssets`)
+
+---
+
+## Draft 29: Milestone 7 achieved - the portable file-system stack runs
+on POSIX for the first time, and a pixel renders from bytes that exist
+only inside a real `.big` archive.
+
+All 5 tasks landed, task-reviewed clean (zero Critical/Important
+findings surviving any review), pushed to `fork/native-port-plan`, and
+confirmed on a real GitHub Actions `workflow_dispatch` run
+(https://github.com/Nagyhoho1234/GeneralsGameCode/actions/runs/29948117163)
+- all 9 `ctest` entries pass there, the 34-error scoped baseline is
+unchanged, and both new harnesses (`GameFileSystemTest`,
+`RenderGameAssetsTest`) build and run clean on genuine CI
+infrastructure, not just local WSL2/WSLg verification.
+
+**Task 1** (commits `31c30fc04`..`c567eb438`): fixed
+`StdLocalFileSystem.cpp:112`'s invalid `.string()` call on a
+`const Char*`, masked by `DEBUG_LOG` compiling away in every build
+configuration used to date; audited the other three Std TUs, found no
+second instance.
+
+**Task 2** (commit `5c2cd9268`): `Tests/GameFileSystem/` - the
+first-ever GameEngine (not WW3D2 rendering) code to actually *execute*,
+not merely compile, on POSIX. Six checks (Windows-style path fixup on a
+mixed-case tree, directory listing, real multi-file `.big` authoring +
+loaded-directory verification, archive reads via both `RAMFile` and
+`File::STREAMING`, local-shadows-archive precedence both directions,
+clean teardown) all pass, stable across 15+ local runs and now real CI.
+The link closure needed one unpredicted stub (`TheWritableGlobalData`)
+and a scoped `-ffunction-sections`/`--gc-sections` technique (verified
+sound by an independent review, not a masking risk) instead of the
+plan's predicted hand-stubbing for two dead-code-only symbols. Found
+and correctly left unfixed (real, out-of-scope gap, recorded below):
+`Debug.cpp`'s `ReleaseCrash`/`ReleaseCrashLocalized` call unconditional
+Win32 UI APIs (`MessageBox`/`ShowWindow`) with no portable path at all
+- an experimental fix was tried, found to regress the tracked baseline,
+and cleanly reverted.
+
+**Task 3** (commits `a71005622`, `a5fc3383b`): unified
+`W3DFileSystem.cpp`/`.h` from two diverged per-tree copies into
+`Core/GameEngineDevice/`. The real divergence (a localized-texture-
+lookup path that differs in *position and file-type scope* between
+trees, not just content) was reproduced exactly via a preprocessor
+technique, hand-verified correct in both `RTS_ZEROHOUR` resolutions by
+an independent review against the actual deleted original files - then
+refactored into two clearly-separated `#if`/`#else` blocks after review
+flagged the original technique as correct-but-fragile to maintain.
+Corrected a plan inaccuracy along the way: `reprioritizeTexturesBySize`
+was not actually diverged between trees (one trailing-whitespace
+character was the only difference). The old per-tree files were
+physically deleted, not just delisted (the `W3DView.cpp` precedent),
+after confirming a delisted-only header would create a real shadowing
+hazard.
+
+**Task 4** (commit `025e6cf62`): `Tests/RenderGameAssets/` - the
+milestone's payoff. A pixel rendered from bytes that exist *only*
+inside a real, test-authored `.big` archive, loaded through the
+engine's own `W3DFileSystem`'s `_TheFileFactory` swap →
+`TheFileSystem` → `StdBIGFile` → `RAMFile` chain - the first time this
+port has ever combined the file-system work with the rendering work.
+Four checks plus a negative control (archive renamed away, fresh
+file-system/asset-manager objects, load fails cleanly - guards against
+a silent fallback making the positive check pass for the wrong reason)
+all pass, independently re-verified including a hand-derivation of the
+predicted pixel position from the real camera/quad transform. Two
+genuine integration bugs found and fixed, both confirmed by an
+independent review against the actual engine source, not just the
+implementer's narrative:
+1. `dx8wrapper.h`'s `friend int main();` grants protected-member access
+   only to code lexically inside the literal `main()` function body -
+   confirmed via `dx8wrapper.h:708-711`'s own pre-existing comment,
+   which documents this was added for exactly this reason back in
+   Milestone 1. Fixed by making the checks a literal nested block
+   inside `main()`, not a helper function.
+2. `GameMemory.cpp`'s global `operator new`/`delete` override gets
+   ELF-interposed onto Mesa's `libLLVM.so` JIT (the software GL
+   renderer's shader compiler), causing a SIGSEGV, because a
+   `MemoryPoolSingleBlock` header (24 bytes under `MPSB_DLINK`) breaks
+   16-byte alignment LLVM's SIMD internals expect. Fixed with a linker
+   version script hiding the allocator's exported symbols, combined
+   with `-static-libstdc++ -static-libgcc` (the version script alone
+   broke `std::filesystem`'s alloc/free pairing across the
+   `libstdc++.so` boundary - `StdLocalFileSystem.cpp`'s real
+   case-insensitive path fixup uses `std::filesystem` on every archive
+   lookup, so this is not a corner case for this harness). GNU-only
+   guarded (`CMAKE_CXX_COMPILER_ID STREQUAL "GNU"`) - not independently
+   verified on Clang/macOS, a real caveat for whenever this harness (or
+   the same allocator-swap pattern) is attempted there. The underlying
+   `GameMemory.cpp` alignment gap was identified as the mechanistic
+   root cause but deliberately left unfixed in that foundational,
+   20+-year-old, both-tree-both-platform-shared file - recorded here as
+   a deferred risk for any future POSIX consumer sharing a process with
+   an alignment-sensitive foreign library the same way.
+
+**Task 5** (commit `bd205c2d9`): CI wiring for both new harnesses.
+Needed one deliberate deviation from the six older harnesses' pattern:
+`GameFileSystemTest`/`RenderGameAssetsTest` both declare a
+`WORKING_DIRECTORY` on their `add_test()` calls (they author their own
+`.big` archive into that directory at runtime, and `StdBIGFileSystem::
+init()` scans cwd for `*.big` files), so their CI run steps invoke via
+`ctest --test-dir ... -R '^<Name>$'` instead of a raw binary path -
+only `ctest` applies a declared `WORKING_DIRECTORY`. Verified correct
+by an independent review against both harnesses' `CMakeLists.txt`.
+
+**Open question 6 (retail-asset spot check) resolved** during this
+milestone's implementation, not deferred to it: rather than running the
+compiled `GameFileSystemTest` binary directly against the user's real
+game install (rejected - that harness wipes and re-authors its own test
+data in its working directory, an unacceptable risk to a real, valuable
+install), a standalone read-only Python header parse of the user's real
+`Textures.big` (333,031,108 bytes, 3,748 real entries) confirmed the
+`.big` format assumptions this milestone's harnesses rely on - `"BIGF"`
+magic, big-endian directory fields, backslashed nul-terminated
+`Art\Textures\`-prefixed paths, and offset/size fields that correctly
+locate real DDS file content - hold at genuine retail scale, not just
+the handful of entries any test-authored archive exercises.
+
+**Two independent second-opinion reviews confirmed the milestone as a
+whole**: one fable code review of the complete diff (no findings beyond
+what task reviews already caught), and every individual task review
+independently re-derived its central technical claims against actual
+source rather than accepting the implementer's narrative - notably
+Task 3's straddling-`#if` logic (hand-traced in both `RTS_ZEROHOUR`
+resolutions against the real deleted original files) and Task 4's two
+integration bugs (every version-script symbol checked against
+`GameMemory.cpp`'s real overload set; the pixel-position check
+hand-derived from real camera/quad inputs).
+
+**What Milestone 7 makes possible, honestly**: the complete asset path
+a real frame needs - archive discovery → BIG directory tree →
+`RAMFile`/streaming reads → `_TheFileFactory` → asset manager →
+pixels - is the engine's own code on both platforms, running on the
+real `GameMemory` allocator, not `core_wwstub`'s malloc stand-in. Still
+missing: no game executable on POSIX (no `main()`, no
+`GameEngine::execute`, no menus, no INI-driven subsystems, no text, no
+input, no audio) - a person sees two test harnesses, one of them
+rendering one quad whose texture came from a real archive format. Rung
+3 (`W3DDisplay`/`W3DScene`/`W3DView`, still per-tree, needing its own
+unify-first pass) is next; rung 2b (`main()`/`GameEngine::execute`)
+stays deferred until after it, per this milestone's own course
+correction on Draft 27's original sketch.
+
+**Deferred risks recorded, not fixed, this milestone** (in addition to
+the `GameMemory.cpp` alignment gap and the GNU-only guard above):
+`Debug.cpp`'s Win32-only crash-dialog gap (Task 2); the `INI.h` case-
+mismatch dormant risk found by the same repo-wide scan that caught the
+`RAWFILE.h` bug in Milestone 6, currently unreachable by anything built
+(recorded, not chased); the stale commented-out `W3DFileSystem`
+placeholder cleanup in `Core/GameEngineDevice/CMakeLists.txt`'s older
+scaffold block (Minor, found by Task 3's reviewer, cosmetic only).
