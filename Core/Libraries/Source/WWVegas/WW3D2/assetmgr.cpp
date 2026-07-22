@@ -111,8 +111,17 @@
 #include "metalmap.h"
 #include "w3dexclusionlist.h"
 #include <INI.h>
+// Milestone 5 Step 6 (native port plan Phase 5(a), Draft 24): <windows.h>
+// gated, not deleted - grep found zero actual Win32 API use in this file,
+// but leaving the include Windows-only rather than asserting a negative
+// matches this port's established caution (Draft 22 Step 5 precedent).
+// <d3dx8core.h> deleted outright - genuinely dead, zero D3DX symbols used;
+// this file's one D3D8 vocabulary use (D3DSURFACE_DESC/GetLevelDesc in
+// Log_Textures below) is plain D3D8, already in PortableD3D8 since
+// Milestone 4.
+#ifdef _WIN32
 #include <windows.h>
-#include <d3dx8core.h>
+#endif
 #include "wwprofile.h"
 #include "assetstatus.h"
 #include "ringobj.h"
@@ -800,7 +809,12 @@ RenderObjClass * WW3DAssetManager::Create_Render_Obj(const char * name)
 		char filename [MAX_PATH];
 		const char *mesh_name = ::strchr (name, '.');
 		if (mesh_name != nullptr) {
-			::lstrcpyn (filename, name, ((int)mesh_name) - ((int)name) + 1);
+			// Real 64-bit-unsafe bug (native port plan Phase 5(a) Milestone
+			// 5, Draft 24 Step 6, same class as surfaceclass.cpp's Milestone
+			// 4 fix): pointer-to-int casts truncate a real 64-bit pointer on
+			// LP64/LLP64 before subtracting; a genuine pointer difference is
+			// well-defined and exact regardless of pointer width.
+			::lstrcpyn (filename, name, static_cast<int>(mesh_name - name) + 1);
 			::lstrcat (filename, ".w3d");
 		} else {
 			snprintf( filename, ARRAY_SIZE(filename), "%s.w3d", name);

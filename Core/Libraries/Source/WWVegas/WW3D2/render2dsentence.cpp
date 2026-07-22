@@ -1313,6 +1313,15 @@ FontCharsClass::Blit_Char (WCHAR ch, uint16 *dest_ptr, int dest_stride, int x, i
 const FontCharsClassCharDataStruct *
 FontCharsClass::Store_GDI_Char (WCHAR ch)
 {
+#ifndef _WIN32
+	// Real GDI text rasterization has no non-Windows equivalent this
+	// milestone (native port plan Phase 5(a) Milestone 5, Draft 24 Step
+	// 6, finding 4) - Create_GDI_Font always returns false here, so
+	// nothing ever reaches this call on POSIX in practice; loud, not
+	// silent, if that assumption is ever wrong.
+	WWASSERT_PRINT(false, "FontCharsClass::Store_GDI_Char: GDI text rasterization is not ported to POSIX");
+	return nullptr;
+#else
 	int width	= PointSize * 2;
 	int height	= PointSize * 2;
 
@@ -1430,6 +1439,7 @@ FontCharsClass::Store_GDI_Char (WCHAR ch)
 	//	Return the index of the entry we just added
 	//
 	return char_data;
+#endif // !_WIN32
 }
 
 
@@ -1475,6 +1485,17 @@ FontCharsClass::Update_Current_Buffer (int char_width)
 bool
 FontCharsClass::Create_GDI_Font (const char *font_name)
 {
+#ifndef _WIN32
+	// Real GDI text rasterization has no non-Windows equivalent this
+	// milestone (native port plan Phase 5(a) Milestone 5, Draft 24 Step
+	// 6, finding 4) - honest "fonts not ported yet", not a silent gap:
+	// Initialize_GDI_Font (which calls this, unchanged, still portable)
+	// returns this same false, and assetmgr.cpp's Get_FontChars ends up
+	// returning nullptr. Also severs the only WW3D::Get_Window()
+	// reference in this closure.
+	(void)font_name;
+	return false;
+#else
 	HDC screen_dc = ::GetDC ((HWND)WW3D::Get_Window());
 
 	const char *fontToUseForGenerals = "Arial";
@@ -1568,6 +1589,7 @@ FontCharsClass::Create_GDI_Font (const char *font_name)
 	}
 
 	return GDIFont != nullptr && GDIBitmap != nullptr;
+#endif // !_WIN32
 }
 
 
@@ -1579,6 +1601,13 @@ FontCharsClass::Create_GDI_Font (const char *font_name)
 void
 FontCharsClass::Free_GDI_Font ()
 {
+#ifndef _WIN32
+	// Nothing to free - Create_GDI_Font never succeeds on POSIX, so
+	// GDIFont/GDIBitmap/MemDC stay nullptr for this class's whole
+	// lifetime (native port plan Phase 5(a) Milestone 5, Draft 24 Step
+	// 6, finding 4).
+	return;
+#else
 	//
 	//	Select the old font back into the DC and delete
 	// our font object
@@ -1606,6 +1635,7 @@ FontCharsClass::Free_GDI_Font ()
 		::DeleteDC( MemDC );
 		MemDC = nullptr;
 	}
+#endif // !_WIN32
 }
 
 

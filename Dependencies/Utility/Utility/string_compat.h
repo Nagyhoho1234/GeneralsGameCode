@@ -57,6 +57,7 @@ extern "C" inline char *_strlwr(char *str) {
 #define lstrcpy strcpy
 #define lstrlen strlen
 #define lstrcmpi strcasecmp
+#define lstrcat strcat
 #define _strdup strdup
 
 inline char* lstrcpyn(char* dest, const char* src, int max_length) {
@@ -67,5 +68,16 @@ inline char* lstrcpyn(char* dest, const char* src, int max_length) {
   }
   dest[i] = '\0';
   return dest;
+}
+
+// MSVC CRT's strupr (native port plan Phase 5(a) Milestone 5, Draft 24
+// Step 6) - font3d.cpp's uppercase-in-place font-name normalization; same
+// no-POSIX-equivalent-name situation as _strlwr above, mirrored the same
+// way (in place, returns the same pointer).
+inline char* strupr(char* str) {
+  for (int i = 0; str[i] != '\0'; i++) {
+    str[i] = toupper(str[i]);
+  }
+  return str;
 }
 

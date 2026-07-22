@@ -43,7 +43,11 @@
 #include "texture.h"
 #include "wwstring.h"
 
+// Milestone 5 Step 6 (native port plan Phase 5(a), Draft 24): gated, not
+// deleted - grep found zero actual Win32 API use in this file.
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 
 ///////////////////////////////////////////////////////////////////////////////////

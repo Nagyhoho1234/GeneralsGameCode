@@ -116,6 +116,20 @@ inline bool operator!=(const GUID& a, const GUID& b)
 struct HKEY__;
 typedef HKEY__* HKEY;
 
+// Opaque GDI handles (native port plan Phase 5(a) Milestone 5, Draft 24
+// Step 6) - render2dsentence.h's FontCharsClass holds HDC/HFONT/HBITMAP
+// members unconditionally; real GDI text rasterization has no non-Windows
+// equivalent this milestone (font3d.cpp/render2dsentence.cpp's actual GDI
+// call sites stay Windows-only, gated per-function in render2dsentence.cpp),
+// but the class itself still needs to compile everywhere its header is
+// reachable from, same reasoning as HWND/HKEY above.
+struct HDC__;
+typedef HDC__* HDC;
+struct HFONT__;
+typedef HFONT__* HFONT;
+struct HBITMAP__;
+typedef HBITMAP__* HBITMAP;
+
 // BITMAPFILEHEADER/BITMAPINFOHEADER are a stable on-disk file format (the
 // Windows BMP spec), not an OS API - WW3D::Make_Screen_Shot() only ever
 // memcpy/Write()s these structs to a file, so the real Windows field
@@ -148,6 +162,31 @@ typedef struct tagBITMAPINFOHEADER
 #pragma pack(pop)
 
 #define BI_RGB 0L
+
+// Win32 kernel32.dll file/path functions (native port plan Phase 5(a)
+// Milestone 5, Draft 24 Step 6) - agg_def.cpp/assetmgr.cpp build a real
+// on-disk .w3d path relative to the current working directory with these;
+// real POSIX equivalents, not stubs, since the actual behavior (does this
+// file exist, what's the cwd) matters wherever this code ever runs.
+#include <unistd.h>
+#include <sys/stat.h>
+#define MAX_PATH 260
+
+inline DWORD GetCurrentDirectory(DWORD buffer_length, char* buffer)
+{
+	if (::getcwd(buffer, buffer_length) == nullptr) return 0;
+	return static_cast<DWORD>(strlen(buffer));
+}
+
+#define INVALID_FILE_ATTRIBUTES 0xFFFFFFFFu
+#define FILE_ATTRIBUTE_DIRECTORY 0x00000010u
+
+inline DWORD GetFileAttributes(const char* path)
+{
+	struct stat st;
+	if (::stat(path, &st) != 0) return INVALID_FILE_ATTRIBUTES;
+	return S_ISDIR(st.st_mode) ? FILE_ATTRIBUTE_DIRECTORY : 0u;
+}
 
 #endif // !_WIN32
 

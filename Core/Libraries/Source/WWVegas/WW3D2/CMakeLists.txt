@@ -7,16 +7,16 @@ set(WW3D2_SRC
     #aabtree.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #aabtreebuilder.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #aabtreebuilder.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
-    agg_def.cpp
-    agg_def.h
+    #agg_def.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #agg_def.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     animatedsoundmgr.cpp
     animatedsoundmgr.h
     #animobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #animobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
-    assetmgr.cpp
-    assetmgr.h
-    assetstatus.cpp
-    assetstatus.h
+    #assetmgr.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #assetmgr.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #assetstatus.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #assetstatus.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #bitmaphandler.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #bitmaphandler.h
     bmp2d.cpp
@@ -28,24 +28,24 @@ set(WW3D2_SRC
     #camera.cpp
     #camera.h
     #classid.h # unused
-    collect.cpp
-    collect.h
+    #collect.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #collect.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     colorspace.h
     #coltest.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #coltest.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     coltype.h
     composite.cpp
     composite.h
-    dazzle.cpp
-    dazzle.h
+    #dazzle.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #dazzle.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #ddsfile.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #ddsfile.h
     #decalmsh.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #decalmsh.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #decalsys.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #decalsys.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
-    distlod.cpp
-    distlod.h
+    #distlod.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #distlod.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     dllist.h
     #dx8caps.cpp
     #dx8caps.h
@@ -71,8 +71,8 @@ set(WW3D2_SRC
     #dx8wrapper.h
     dynamesh.cpp
     dynamesh.h
-    font3d.cpp
-    font3d.h
+    #font3d.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #font3d.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #formconv.cpp
     #formconv.h
     FramGrab.cpp
@@ -130,8 +130,8 @@ set(WW3D2_SRC
     #meshmdl.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #meshmdl.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #meshmdlio.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
-    metalmap.cpp
-    metalmap.h
+    #metalmap.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #metalmap.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #missingtexture.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
     #missingtexture.h
     #motchan.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
@@ -160,21 +160,21 @@ set(WW3D2_SRC
     #proto.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     proxy.h
     rddesc.h
-    render2d.cpp
-    render2d.h
-    render2dsentence.cpp
-    render2dsentence.h
+    #render2d.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #render2d.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #render2dsentence.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #render2dsentence.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     renderobjectrecycler.cpp
     renderobjectrecycler.h
     #rendobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #rendobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #rinfo.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #rinfo.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
-    ringobj.cpp
-    ringobj.h
+    #ringobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #ringobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     robjlist.h
-    scene.cpp
-    scene.h
+    #scene.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #scene.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     segline.cpp
     segline.h
     seglinerenderer.cpp
@@ -184,15 +184,15 @@ set(WW3D2_SRC
     shattersystem.cpp
     shattersystem.h
     shdlib.h
-    snappts.cpp
-    snapPts.h
+    #snappts.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #snapPts.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #sortingrenderer.cpp
     #sortingrenderer.h
     soundlibrarybridge.h
     soundrobj.cpp
     soundrobj.h
-    sphereobj.cpp
-    sphereobj.h
+    #sphereobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #sphereobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #static_sort_list.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 2)
     #static_sort_list.h
     #statistics.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
@@ -228,8 +228,8 @@ set(WW3D2_SRC
     w3d_util.cpp
     w3d_util.h
     w3derr.h
-    w3dexclusionlist.cpp
-    w3dexclusionlist.h
+    #w3dexclusionlist.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
+    #w3dexclusionlist.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #ww3d.cpp
     #ww3d.h
     #ww3dformat.cpp
@@ -391,6 +391,48 @@ set(WW3D2_SRC_PORTABLE
     visrasterizer.cpp
     visrasterizer.h
     meshmdlio.cpp
+
+    # Portability wave B (native port plan Phase 5(a) Milestone 5, Draft 24
+    # Step 6) - the asset-manager closure: WW3DAssetManager's constructor
+    # directly references every one of these loader TUs (Box/Ring/Sphere/
+    # Dazzle/Collection/DistLOD/Aggregate/Null all link, Mesh/HLod are the
+    # ones this milestone actually exercises), plus MetalMapManagerClass and
+    # FontCharsClass (its three genuinely-GDI member functions - Create_GDI_
+    # Font/Free_GDI_Font/Store_GDI_Char - are individually #ifdef _WIN32
+    # gated inside render2dsentence.cpp; the rest of that TU, and all of
+    # render2d.cpp/scene.cpp/font3d.cpp/assetstatus.cpp/collect.cpp/
+    # w3dexclusionlist.cpp/snappts.cpp, is plain SurfaceClass/RenderObjClass
+    # code with zero Windows deps).
+    agg_def.cpp
+    agg_def.h
+    assetmgr.cpp
+    assetmgr.h
+    assetstatus.cpp
+    assetstatus.h
+    collect.cpp
+    collect.h
+    dazzle.cpp
+    dazzle.h
+    distlod.cpp
+    distlod.h
+    font3d.cpp
+    font3d.h
+    metalmap.cpp
+    metalmap.h
+    render2d.cpp
+    render2d.h
+    render2dsentence.cpp
+    render2dsentence.h
+    ringobj.cpp
+    ringobj.h
+    scene.cpp
+    scene.h
+    snappts.cpp
+    snapPts.h
+    sphereobj.cpp
+    sphereobj.h
+    w3dexclusionlist.cpp
+    w3dexclusionlist.h
 )
 
 if(WIN32)
