@@ -1196,23 +1196,9 @@ bool DX8Wrapper::Set_Device_Resolution(int width,int height,int bits,int windowe
 	}
 }
 
-void DX8Wrapper::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
-{
-	WWASSERT(IsInitted);
-
-	if (CurrentRenderTarget != nullptr) {
-		D3DSURFACE_DESC info;
-		CurrentRenderTarget->GetDesc (&info);
-
-		set_w				= info.Width;
-		set_h				= info.Height;
-		set_bits			= BitDepth;		// should we get the actual bit depth of the target?
-		set_windowed	= IsWindowed;	// this doesn't really make sense for render targets (shouldn't matter)...
-
-	} else {
-		Get_Device_Resolution (set_w, set_h, set_bits, set_windowed);
-	}
-}
+// Get_Render_Target_Resolution moved to dx8wrapper_draw.cpp (native port
+// plan Phase 5(a) Milestone 5, Draft 24 Step 7) - see that file's comment
+// for why.
 
 bool DX8Wrapper::Registry_Save_Render_Device( const char * sub_key )
 {
@@ -2978,33 +2964,9 @@ void DX8Wrapper::Set_Gamma(float gamma,float bright,float contrast,bool calibrat
 	}
 }
 
-namespace wrapper
-{
-void D3DMatrixIdentity(D3DMATRIX* dxm)
-{
-	memset(dxm, 0, sizeof(*dxm));
-	dxm->_11 = 1.0f;
-	dxm->_22 = 1.0f;
-	dxm->_33 = 1.0f;
-	dxm->_44 = 1.0f;
-}
-} // namespace wrapper
-
-void DX8Wrapper::Set_World_Identity()
-{
-	if (render_state_changed&(unsigned)WORLD_IDENTITY)
-		return;
-	wrapper::D3DMatrixIdentity(&render_state.world);
-	render_state_changed|=(unsigned)WORLD_CHANGED|(unsigned)WORLD_IDENTITY;
-}
-
-void DX8Wrapper::Set_View_Identity()
-{
-	if (render_state_changed&(unsigned)VIEW_IDENTITY)
-		return;
-	wrapper::D3DMatrixIdentity(&render_state.view);
-	render_state_changed|=(unsigned)VIEW_CHANGED|(unsigned)VIEW_IDENTITY;
-}
+// D3DMatrixIdentity/Set_World_Identity/Set_View_Identity moved to
+// dx8wrapper_draw.cpp (native port plan Phase 5(a) Milestone 5, Draft 24
+// Step 7) - see that file's comment for why.
 
 //**********************************************************************************************
 //! Resets render device to default state

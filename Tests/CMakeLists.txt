@@ -55,3 +55,10 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderTexturePipeline)
 endif()
+
+# Phase 5(a) Milestone 5 (native port plan, Draft 24) - real W3D meshes on
+# GL: mesh/HLod/assetmgr Core unification and portability, the dx8renderer
+# mesh pipeline, non-Windows only. See RenderW3DMesh/CMakeLists.txt.
+if(NOT WIN32)
+    add_subdirectory(RenderW3DMesh)
+endif()

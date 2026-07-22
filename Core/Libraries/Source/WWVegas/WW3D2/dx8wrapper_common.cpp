@@ -115,6 +115,39 @@ void DX8Wrapper::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bo
 	set_windowed = IsWindowed;
 }
 
+// Get_Render_Target_Resolution, same precedent one function up (native
+// port plan Phase 5(a) Milestone 5, Draft 24 Step 7): CameraClass::Apply()
+// calls this, and it used to live only in the Windows-only
+// dx8wrapper_d3d8.cpp despite touching nothing D3D8-backend-specific -
+// CurrentRenderTarget (this file), BitDepth/IsWindowed (static members),
+// D3DSURFACE_DESC/GetDesc (PortableD3D8 since Milestone 4), and
+// Get_Device_Resolution (just above) are all genuinely portable already.
+// Deliberately placed here, not dx8wrapper_draw.cpp (where an earlier
+// attempt put it, mirroring Step 2's Set_Light_Environment precedent
+// too literally): Set_Light_Environment genuinely calls Set_Light, a
+// draw-path function, but this function has no such dependency, and
+// Tests/RenderDeviceInit/RenderTexturedTriangle (Milestones 1-2's
+// harnesses, deliberately scoped to never need dx8wrapper_draw.cpp's
+// closure) link this file directly - putting it there broke their link
+// the moment ww3d_common.cpp's forwarder started calling it.
+void DX8Wrapper::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
+{
+	WWASSERT(IsInitted);
+
+	if (CurrentRenderTarget != nullptr) {
+		D3DSURFACE_DESC info;
+		CurrentRenderTarget->GetDesc (&info);
+
+		set_w				= info.Width;
+		set_h				= info.Height;
+		set_bits			= BitDepth;		// should we get the actual bit depth of the target?
+		set_windowed	= IsWindowed;	// this doesn't really make sense for render targets (shouldn't matter)...
+
+	} else {
+		Get_Device_Resolution (set_w, set_h, set_bits, set_windowed);
+	}
+}
+
 bool _DX8SingleThreaded = false;
 
 // Non-Windows fallback: the real D3DXGetErrorStringA (Windows D3DX-only)

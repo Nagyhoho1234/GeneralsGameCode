@@ -23,8 +23,8 @@ set(WW3D2_SRC
     bmp2d.h
     #boxrobj.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #boxrobj.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
-    bwrender.cpp
-    bwrender.h
+    #bwrender.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 7)
+    #bwrender.h
     #camera.cpp
     #camera.h
     #classid.h # unused
@@ -34,8 +34,8 @@ set(WW3D2_SRC
     #coltest.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #coltest.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     coltype.h
-    composite.cpp
-    composite.h
+    #composite.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 7)
+    #composite.h
     #dazzle.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #dazzle.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #ddsfile.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 22 Step 5)
@@ -154,8 +154,8 @@ set(WW3D2_SRC
     #predlod.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     prim_anim.cpp
     prim_anim.h
-    projector.cpp
-    projector.h
+    #projector.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 7)
+    #projector.h
     #proto.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #proto.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     proxy.h
@@ -225,13 +225,15 @@ set(WW3D2_SRC
     w3d_dep.h
     w3d_file.h
     w3d_obsolete.h
-    w3d_util.cpp
-    w3d_util.h
+    #w3d_util.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 7)
+    #w3d_util.h
     w3derr.h
     #w3dexclusionlist.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
     #w3dexclusionlist.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 6)
-    #ww3d.cpp
-    #ww3d.h
+    # ww3d.cpp: real WIN32-only compile (Draft 24 Step 7 - see the
+    # WW3D2_SRC_PORTABLE block's comment for the full reasoning); ww3d.h
+    # stays in the portable list above, included from both.
+    ww3d.cpp
     #ww3dformat.cpp
     #ww3dformat.h
     ww3dids.h
@@ -272,7 +274,24 @@ set(WW3D2_SRC_PORTABLE
     formconv.cpp
     formconv.h
     texture_common.cpp
-    ww3d.cpp
+    # ww3d.cpp deliberately NOT compiled into the portable set (native
+    # port plan Phase 5(a) Milestone 5, Draft 24 Step 7) - it's been
+    # listed here since Milestone 1, but WW3D::Init/Set_Any_Render_Device/
+    # Registry_Save_Render_Device/Set_Device_Resolution/Set_Gamma/
+    # Toggle_Windowed/Set_Swap_Interval/etc. call ~18 DX8Wrapper device-
+    # enumeration/registry/windowing methods that only exist in the
+    # Windows-only dx8wrapper_d3d8.cpp backend (Milestone 1's Trap 1
+    # deliberately never gave the GL device an equivalent - real
+    # multi-adapter enumeration, registry persistence, and gamma ramps
+    # are Phase 4/5(e) windowing-convergence territory, not this
+    # milestone's). Compiling ww3d.cpp into a *static library* target
+    # (g_ww3d2/z_ww3d2, g_gameenginedevice/z_gameenginedevice) never
+    # actually required these symbols to resolve - static libraries only
+    # demand link-completeness from whatever final executable consumes
+    # them, and no executable in this port ever linked corei_ww3d2
+    # directly until Tests/RenderW3DMesh (Draft 24 Step 7) did. ww3d.h
+    # stays includable everywhere (just a header, no CMake-list gating
+    # needed for #include resolution) - only the .cpp is excluded.
     ww3d.h
     ww3d_common.cpp
     ww3dformat.cpp
@@ -433,6 +452,27 @@ set(WW3D2_SRC_PORTABLE
     sphereobj.h
     w3dexclusionlist.cpp
     w3dexclusionlist.h
+
+    # Milestone 5 (native port plan Phase 5(a), Draft 24 Step 7): pure
+    # W3D-struct<->engine-type conversion helpers, zero Windows deps -
+    # moved here because sphereobj.cpp (portable since Step 6) calls
+    # W3dUtilityClass::Convert_Vector/Convert_Shader, a link-closure gap
+    # only surfaced by Tests/RenderW3DMesh actually linking an executable
+    # (g_gameenginedevice/z_gameenginedevice never link this far, being
+    # static libraries).
+    w3d_util.cpp
+    w3d_util.h
+
+    # Milestone 5 (native port plan Phase 5(a), Draft 24 Step 7):
+    # CompositeRenderObjClass, zero Windows deps - DistLODClass (portable
+    # since Step 6) inherits from it, another link-closure gap only
+    # surfaced by Tests/RenderW3DMesh actually linking an executable.
+    composite.cpp
+    composite.h
+    bwrender.cpp
+    bwrender.h
+    projector.cpp
+    projector.h
 )
 
 if(WIN32)

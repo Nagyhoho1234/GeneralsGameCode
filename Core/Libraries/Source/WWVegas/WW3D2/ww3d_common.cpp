@@ -137,6 +137,29 @@ void WW3D::Get_Device_Resolution(int & set_w,int & set_h,int & set_bits,bool & s
 	DX8Wrapper::Get_Device_Resolution(set_w,set_h,set_bits,set_windowed);
 }
 
+// WW3D::Get_Render_Target_Resolution, round 2 of the forwarder above
+// (native port plan Phase 5(a) Milestone 5, Draft 24 Step 7):
+// CameraClass::Apply() calls this - referencing it from a portable
+// harness used to require ww3d.cpp's whole link closure, the same trap
+// Get_Device_Resolution hit in Milestone 3.
+void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
+{
+	DX8Wrapper::Get_Render_Target_Resolution(set_w,set_h,set_bits,set_windowed);
+}
+
+// WW3D::Enable_Texturing, round 3 of the forwarder pattern above (native
+// port plan Phase 5(a) Milestone 5, Draft 24 Step 7): a pure setter over
+// IsTexturingEnabled (already hosted here) - some file in the now-portable
+// mesh render path calls it, another symbol only reachable now that
+// Tests/RenderW3DMesh is the first executable to actually link ww3d.cpp's
+// removal to its logical conclusion.
+void WW3D::Enable_Texturing(bool b)
+{
+	if (b==IsTexturingEnabled) return;
+	IsTexturingEnabled=b;
+//	_Invalidate_Textures();
+}
+
 int WW3D::Get_Texture_Bitdepth()
 {
 	return DX8Wrapper::Get_Texture_Bitdepth();

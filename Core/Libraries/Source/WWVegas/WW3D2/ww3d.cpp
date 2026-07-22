@@ -561,11 +561,11 @@ WW3DErrorType WW3D::Set_Device_Resolution(int width,int height,int bits,int wind
  *   3/24/98    GTH : Created.                                                                 *
  *   1/25/2001  gth : converted to dx8                                                         *
  *=============================================================================================*/
-void WW3D::Get_Render_Target_Resolution(int & set_w,int & set_h,int & set_bits,bool & set_windowed)
-{
-	DX8Wrapper::Get_Render_Target_Resolution(set_w,set_h,set_bits,set_windowed);
-}
-
+// WW3D::Get_Render_Target_Resolution moved to ww3d_common.cpp (native port
+// plan Phase 5(a) Milestone 5, Draft 24 Step 7) - CameraClass::Apply()
+// calls it, and referencing it from a real Step 7 harness used to require
+// this whole file's link closure, same trap Get_Device_Resolution hit in
+// Milestone 3.
 
 // WW3D::Get_Device_Resolution moved to ww3d_common.cpp (native port plan
 // Phase 5(a) Milestone 3, finding 2) - ww3dformat.cpp's Get_Valid_Texture_
@@ -1715,12 +1715,8 @@ void	WW3D::Set_Texture_Reduction( int value, int minDim )
 }
 
 
-void WW3D::Enable_Texturing(bool b)
-{
-	if (b==IsTexturingEnabled) return;
-	IsTexturingEnabled=b;
-//	_Invalidate_Textures();
-}
+// WW3D::Enable_Texturing moved to ww3d_common.cpp (native port plan Phase
+// 5(a) Milestone 5, Draft 24 Step 7) - see that file's comment for why.
 
 void WW3D::Enable_Coloring(unsigned int color)
 {

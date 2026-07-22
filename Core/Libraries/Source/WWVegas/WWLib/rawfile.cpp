@@ -1109,14 +1109,31 @@ int RawFileClass::Raw_Seek(int pos, int dir)
 		Error(EBADF, false, Filename);
 	}
 
-	pos=fseek(Handle, pos, dir);
+	// Real bug (native port plan Phase 5(a) Milestone 5, Draft 24 Step 7,
+	// found by ChunkSaveClass actually writing a real file for the first
+	// time - the engine's own mesh-saving code has sat disabled behind
+	// #if 0 for years, per meshmdlio.cpp's own comment, so this was never
+	// exercised): fseek() returns 0 on success / -1 on failure, a status
+	// code - NOT the resulting file position, despite this function's own
+	// doc comment above promising "the new position of the file". The old
+	// code assigned fseek's return value straight into `pos` and returned
+	// that, so every successful seek silently returned 0 regardless of
+	// where it actually moved to. Callers that use Seek()'s return value
+	// as a Tell()-style position query (ChunkSaveClass::Begin_Chunk/
+	// End_Chunk, backpatching a chunk's size once its content is written)
+	// got 0 back for the file's real, nonzero position every time,
+	// corrupting the backpatch offsets and losing everything written
+	// after the first chunk's worth of real bytes.
+	int seek_status = fseek(Handle, pos, dir);
 
 	/*
 	**	If there was an error in the seek, then bail with an error condition.
 	*/
-	if (pos == 0xFFFFFFFF) {
+	if (seek_status != 0) {
 		Error(errno, false, Filename);
 	}
+
+	pos = ftell(Handle);
 
 	/*
 	**	Return with the new position of the file. This will range between zero and the number of

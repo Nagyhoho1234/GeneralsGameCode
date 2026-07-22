@@ -692,6 +692,40 @@ void DX8Wrapper::Set_Light_Environment(LightEnvironmentClass* light_env)
 */
 }
 
+// D3DMatrixIdentity/Set_World_Identity/Set_View_Identity, moved verbatim
+// out of dx8wrapper_d3d8.cpp (native port plan Phase 5(a) Milestone 5,
+// Draft 24 Step 7): render2d.cpp (portable since Step 6) calls
+// Set_World_Identity/Set_View_Identity, and both used to live only in the
+// Windows-only backend file despite being pure D3DMATRIX bit-twiddling -
+// D3DMATRIX itself has been in PortableD3D8 since Milestone 1.
+namespace wrapper
+{
+void D3DMatrixIdentity(D3DMATRIX* dxm)
+{
+	memset(dxm, 0, sizeof(*dxm));
+	dxm->_11 = 1.0f;
+	dxm->_22 = 1.0f;
+	dxm->_33 = 1.0f;
+	dxm->_44 = 1.0f;
+}
+} // namespace wrapper
+
+void DX8Wrapper::Set_World_Identity()
+{
+	if (render_state_changed&(unsigned)WORLD_IDENTITY)
+		return;
+	wrapper::D3DMatrixIdentity(&render_state.world);
+	render_state_changed|=(unsigned)WORLD_CHANGED|(unsigned)WORLD_IDENTITY;
+}
+
+void DX8Wrapper::Set_View_Identity()
+{
+	if (render_state_changed&(unsigned)VIEW_IDENTITY)
+		return;
+	wrapper::D3DMatrixIdentity(&render_state.view);
+	render_state_changed|=(unsigned)VIEW_CHANGED|(unsigned)VIEW_IDENTITY;
+}
+
 const char* DX8Wrapper::Get_DX8_Render_State_Name(D3DRENDERSTATETYPE state)
 {
 	switch (state) {
