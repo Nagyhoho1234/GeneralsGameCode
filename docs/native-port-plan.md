@@ -5202,3 +5202,470 @@ placeholder cleanup in `Core/GameEngineDevice/CMakeLists.txt`'s older
 scaffold block, previously listed here, was fixed in `a5fc3383b`
 ("drop stale CMake lines") - verified: only the active, non-commented
 registration lines remain.)
+
+---
+
+## Draft 30: Milestone 8 plan - rung 3a, the game's real scene
+layer (`RTS3DScene`) unified into Core and rendering on GL - with rung 3
+split into 3a (scene) / 3b (display + view), planned against Milestone 7's
+actual delivered code (branch `native-port-plan`, clean at `f3fdc1327`,
+all of Draft 28/29's work landed).
+
+**Reviewed and approved by the user.** Scope confirmed as rung 3a only
+(unify W3DScene.cpp, one new harness rendering through a real
+RTS3DScene) - rung 3b (W3DDisplay/W3DView) deferred, not attempted in
+parallel. The plan's pre-committed link-closure fallback (if
+W3DScene.o's closure explodes, scope the harness down to GlobalData +
+RTS3DScene construction + Visibility_Check only, skip the Render call,
+move the render check to a later milestone) is accepted as the agreed
+shape - apply it automatically if that risk materializes, do not stop
+to ask again.
+
+**Why rung 3 as Drafts 27/29 named it is NOT one milestone, stated up
+front with the code as evidence.** Draft 29's forward reference names
+rung 3 as "`W3DDisplay`/`W3DScene`/`W3DView`, still per-tree, needing
+its own unify-first pass". The code says that bundle is three
+different-sized things:
+
+- `W3DDisplay.cpp` is the whole-game display driver: 3172 lines
+  (Generals) / 3294 (GeneralsMD), per-tree, 394-line diff; it includes
+  `<windows.h>` (`GeneralsMD/.../W3DDisplay.cpp:39`), `<io.h>` (`:40`)
+  and per-tree `"WinMain.h"` (`:112`, for `ApplicationHWnd`). Its
+  `draw()` (`:1799-2124`) dereferences, unguarded: `TheGameLogic`
+  (`:1934`, `WW3D::Sync(TheGameLogic->hasUpdated())`),
+  `TheGameLODManager` (`:1817-1822`), `TheFramePacer` (`:1894`),
+  `TheScriptEngine` (`:1900`), `TheTacticalView` (`:1939`),
+  `TheParticleSystemManager` (`:1957`, `:1983`), `TheWaterTransparency`
+  (`:2001`), `TheInGameUI` (`:2006`). Its `init()` (`:736-977`) needs
+  `TheGameLODManager` (`:919-928`), `TheGameClient` (`:927`),
+  `TheFontLibrary` (`:952-958`) beyond what Milestones 6/7 delivered
+  (it constructs `W3DFileSystem` at `:754` and drives
+  `WW3D::Init`/`Set_Render_Device` at `:821`/`:887` - both already
+  proven). Porting it means porting most of GameClient - multiple
+  milestones.
+- `W3DView.cpp` is already Core-unified (3818 lines,
+  `Core/GameEngineDevice/CMakeLists.txt:183`, WIN32-gated) but includes
+  `<windows.h>` (`W3DView.cpp:37`) and leans on `TheTerrainLogic` (27
+  refs), `TheDisplay` (29), `TheRadar`, `TheWindowManager` - the
+  camera/scroll/pick layer is coupled to terrain and logic. Also not
+  this milestone.
+- `W3DScene.cpp` - the scene manager the whole game renders through -
+  is the one coherent, severable rung: 1950 (G) / 2022 (ZH) lines,
+  358-line diff, NO `windows.h` anywhere in its include list
+  (`GeneralsMD/.../W3DScene.cpp:34-67`); its render path is almost
+  entirely already-portable WW3D2 code (`camera`/`dx8renderer`/
+  `sortingrenderer`/`dx8wrapper`/`light`/`matpass`/`shader`), and
+  `RTS3DScene::draw()` (`:1757-1764`) is literally
+  `WW3D::Render(this, m_camera)` - the exact call Milestone 6's
+  harness proved on GL. `W3DDisplay::init()` constructs `RTS3DScene`
+  at `:771`; putting the real scene class under the proven frame loop
+  is the natural next converging step from below.
+
+So rung 3 splits, the same way Draft 28 split rung 2:
+
+- **rung 3a (THIS milestone)**: `W3DScene.cpp`/`.h` unified into Core
+  plus its small closure siblings; the one missing GL device method it
+  needs; a harness rendering M7's archive-loaded quad through a real
+  `RTS3DScene` with a real `GlobalData`.
+- **rung 3b (LATER)**: `W3DDisplay` unification + port, `W3DView`
+  port, `RTS2DScene`/`W3DStatusCircle` rendering, and the GameClient
+  singletons they require - after (or alongside) more of GameClient
+  exists.
+
+## Milestone 8 scope statement
+
+Four jobs: (1) unify `W3DScene.cpp`/`.h` from two diverged per-tree
+copies into `Core/GameEngineDevice/`, plus the five trivially-diverged
+sibling files its closure touches - the rung-3 unify-first pass, scene
+half; (2) fill the single verified GL device-surface gap the scene
+layer calls: `DX8Wrapper::Has_Stencil()`; (3) the exit harness,
+`Tests/RenderRTS3DScene/`: Milestone 7's engine-driven frame loop and
+archive-loaded textured quad, rendered through the game's own
+`RTS3DScene` (constructed against a real, defaults-constructed
+`GlobalData`) instead of a bare `SimpleSceneClass` - the first
+GameClient scene object and the first `GlobalData` ever constructed
+and executed on POSIX - pixel-verified, plus behavioral checks that
+exercise the scene's actual value-add (visibility culling, light
+environments, the Flush ordering, `drawTerrainOnly`); (4) CI wiring +
+a genuine `workflow_dispatch` run (the standing exit-criterion rule).
+
+Goal-state: the pixels on screen are produced by the game's real scene
+class running the game's real per-object render path
+(`RTS3DScene::Render` → `updateFixedLightEnvironments` →
+`Customized_Render` → `Visibility_Check` → `renderOneObject` →
+`Flush`) on both platforms - so that when rung 3b arrives,
+`W3DDisplay::init()`'s `NEW_REF(RTS3DScene, ())` (`W3DDisplay.cpp:771`)
+constructs something already proven beneath it.
+
+## Key findings, verified against current code (file:line)
+
+1. **The rung-3 per-tree divergence inventory, measured.**
+   `W3DScene.cpp`: 1950 (G) / 2022 (ZH), diff 358 lines. `W3DScene.h`:
+   181/182, diff 17 - one real member (`m_frenzyMaterialPass`, ZH
+   `W3DScene.h:125`) plus branding. `W3DDisplay.cpp`: 3172/3294, diff
+   394. `W3DDisplay.h`: 218/218, diff 27 - **comments/typos only**, no
+   API divergence (good news for rung 3b). Siblings (cpp diff/header
+   diff in lines, 9 = license-branding-only): `W3DDynamicLight` 9/17,
+   `W3DShroud` 9/9, `W3DStatusCircle` 26/9, `Shadow/W3DShadow` 9/9,
+   `W3DCustomScene.h` -/9, `W3DParticleSys` 111/9, `W3DAssetManager`
+   175/37, `W3DGameClient` 40/51. Already Core-unified and relevant
+   here: `W3DView.cpp`, `BaseHeightMap.cpp`, `HeightMap.cpp`,
+   `W3DShaderManager.cpp`, `W3DFileSystem.cpp` (M7).
+
+2. **`W3DScene.cpp`'s real divergences are ~10 substantive hunks, all
+   RTS_ZEROHOUR-guardable - bigger than `W3DFileSystem`'s single
+   diverged piece (M7 Task 3), same technique.** Enumerated from the
+   actual diff: (a) ZH-only `#include "WW3D2/shdlib.h"` + `SHD_FLUSH`
+   at 4 sites (`:67`, `:867`, `:1445`, `:1451`) - macro-empty unless
+   `USE_WWSHADE` (`shdlib.h:57-66`), which a repo-wide grep shows is
+   never defined; (b) a genuine cross-tree Drawable API rename:
+   Generals calls `draw->getHeatVisionOpacity()` (Generals
+   `Drawable.h:527`) where ZH calls
+   `draw->getSecondMaterialPassOpacity()` (ZH `Drawable.h:545`) - the
+   unified TU MUST guard these call sites per-tree; (c) ZH-only
+   translucency/occlusion bugfix logic (`Visibility_Check`
+   `:472-519`; translucent-object stencil handling `:1441-1459`;
+   occludee-translucency skip `:1531-1541`, a dated TheSuperHackers
+   @bugfix present only in ZH); (d) ZH-only dynamic-light gating on
+   `draw->getReceivesDynamicLights()` (`:780` - the accessor exists in
+   BOTH trees' `Drawable.h` (G:559/ZH:576), but the gating behavior
+   differs, so it stays guarded); (e) ZH-only infantry-light clamping
+   (`:909-925`); (f) the ZH-only commented-out frenzy-pass block
+   (`:136-147`) and its header member; plus cosmetic
+   whitespace/loop-index hunks. `RTS2DScene`/`RTS3DInterfaceScene`
+   parts of the file are identical apart from branding.
+
+3. **`RTS3DScene`'s runtime dependency surface is narrow, and the
+   dangerous parts are provably unreachable in the harness
+   configuration.** Verified: the ctor requires a NON-null
+   `TheGlobalData` (`:107-113` shroud flag; `:153-176` the four
+   `m_maxVisible*` buffer sizes); `Visibility_Check` dereferences
+   `TheGlobalData` unguarded (`:413`) but null-guards `TheGameLogic`
+   (`:412`, `:490`); `Render()` dereferences `TheWritableGlobalData`
+   unguarded and calls `DX8Wrapper::Has_Stencil()` (`:978`) - so both
+   globals must be real, null is not an option. `Flush()`'s four
+   engine externs are all null-guarded trampolines: `PrepareShadows`
+   (`Shadow/W3DShadow.cpp:66-70`, guards
+   `TheW3DProjectedShadowManager`), `DoShadows` (`:73+`, guards the
+   projected/volumetric managers), `DoTrees` (Core
+   `BaseHeightMap.cpp:120-125`, guards `TheTerrainRenderObject` -
+   whose null definition is `BaseHeightMap.cpp:116`), `DoParticles`
+   (`W3DParticleSys.cpp:99-103`, guards `TheParticleSystemManager`).
+   The stencil-only functions (which DO deref `TheW3DShadowManager`
+   unguarded, `:1367`) sit behind `if (DX8Wrapper::Has_Stencil())`
+   (`:862`), unreachable when it returns false.
+   `USE_NON_STENCIL_OCCLUSION` is never defined anywhere (repo grep),
+   so `updatePlayerColorPasses` (`:947-969`) compiles to an empty
+   function and its `ThePlayerList` use never exists in the object
+   file. `rts::getObservedOrLocalPlayerIndex_Safe`
+   (`Core/GameEngine/Source/Common/GameUtility.cpp:94-100`) returns 0
+   with null `TheControlBar`/`ThePlayerList` by design.
+
+4. **Exactly one DX8Wrapper method the scene layer needs is missing
+   from the GL backend: `Has_Stencil()`.** It is defined only in
+   `dx8wrapper_d3d8.cpp:1023`; nothing in `dx8wrapper_gl.cpp`/
+   `dx8wrapper_common.cpp` defines it (verified by grep), so the
+   unified TU would be an unresolved external on GL. The honest GL
+   answer today is `false`: the GL window requests
+   `glfwWindowHint(GLFW_STENCIL_BITS, 0)` (`dx8wrapper_gl.cpp:1811`)
+   and the FBO carries no stencil attachment. Everything else
+   `W3DScene.cpp` calls is already portable: `Set_Fog` is a
+   `dx8wrapper.h:802` inline, `Set_DX8_Render_State` is
+   GL-implemented, `TheDX8MeshRenderer.Flush`,
+   `SortingRendererClass::Flush` (`sortingrenderer.cpp:662`) and
+   `WW3D::Render_And_Clear_Static_Sort_Lists` (`ww3d.cpp:970`) are in
+   the portable set since M4-M6.
+
+5. **A real `GlobalData` is constructible on POSIX without the INI
+   closure.** The ctor (`GeneralsMD/.../GlobalData.cpp:562-1092`) is
+   set-defaults-only and already carries POSIX alternatives in-tree
+   (`#else mkdir(...)` `:1074-1076`; non-Win32 `m_doubleClickTimeMS`
+   `:1052-1057`); its registry path
+   (`BuildUserDataPathFromRegistry()`, `:1070`) rides `registry.cpp`'s
+   fail-soft POSIX contract that M7 already exercised. INI loading is
+   a separate, later step (`GameEngine.cpp:456`) - construction alone
+   gives real defaults, including the non-zero `m_maxVisible*` sizes
+   the `RTS3DScene` ctor needs. One real closure cost: the ctor's
+   `newInstance(WeaponBonusSet)` (`:1026`) needs `WeaponBonusSet`'s
+   memory-pool glue from `GameLogic/Object/Weapon.cpp` (declared
+   `Weapon.h:310-323`) - the linker decides the real cost (open
+   question 1; M7's scoped `--gc-sections` technique is the proven
+   tool). Note: M7's `Tests/RenderGameAssets/link_stubs.cpp` comment
+   describes `GlobalData.cpp` as "needing the full INI-driven settings
+   closure" - reading the actual ctor shows that overstates it;
+   INI-loading is `GameEngine::init`'s job, not the constructor's.
+   `GlobalData.cpp` is per-tree (1432/1450 lines, 164-line diff);
+   this milestone COMPILES the GeneralsMD copy in the harness (the
+   established per-tree-flavor pattern), it does not unify it.
+
+6. **The link closure for `W3DScene.o` is honestly bounded but only
+   the linker can enumerate it.** Verified header-inline (no link
+   cost): `Drawable::isDrawableEffectivelyHidden` (`Drawable.h:337`),
+   `getEffectiveOpacity` (`:541`), `getSecondMaterialPassOpacity`
+   (`:545`), `getReceivesDynamicLights` (`:576`),
+   `getFullyObscuredByShroud` (`:389`), `getStealthLook` (`:345`),
+   `getObject` (`:327`), `testTintStatus` (`:316`),
+   `get/setShroudClearFrame` (`:379-380`); `GameLogic::getFrame`
+   (`GameLogic.h:498`), `getShowBehindBuildingMarkers` (`:200`);
+   `Player::getPlayerIndex`/`getPlayerColor` (`Player.h:257`/`:251`).
+   Verified out-of-line (real link deps from kept functions):
+   `Drawable::getAmbientLight`/`getTintColor`/`getSelectionColor`
+   (declared `Drawable.h:530-534`, bodies in the heavy per-tree
+   `Drawable.cpp`), `Thing::isKindOf` (`Thing.h:104`),
+   `Object::getShroudedStatus` (`Object.h:585`), the
+   `Object::getControllingPlayer` chain (`:1383`, `:1424`, `:1603` -
+   inside stencil-path functions that are kept by the linker even
+   though unreachable at runtime), and - via `W3DShroud.cpp` -
+   `W3DShaderManager::setShader`/`resetShader`/`setTexture`
+   (`W3DShaderManager.cpp` includes `d3dx8tex.h` at `:73`: NOT
+   POSIX-compilable today, so these three get stubs; they are only
+   reached when a shroud/mask material pass actually renders, which
+   the harness's scene never triggers). Singleton pointer definitions
+   needed: `TheGameLogic`, `TheW3DShadowManager`, `TheTacticalView`
+   (+ whatever the linker adds). Expected stub file ~10-15 entries -
+   larger than M7's 3-global `link_stubs.cpp`, same pattern, every
+   entry with the loud-comment discipline. `--gc-sections` does NOT
+   remove these (the referencing functions are live); it only helps
+   with genuinely dead paths, as in M7.
+
+7. **The harness slice exists without `GameEngine::init()`, and the
+   scaffold is already built.** Entry: `RTS3DScene::doRender(cam)` →
+   `DRAW()` → `draw()` → `WW3D::Render(this, m_camera)`
+   (`W3DScene.cpp:1744-1764`); `SubsystemInterface::DRAW()` is Core
+   `SubsystemInterface.cpp:92`, a TU already direct-listed in M7's
+   harnesses, and `RTS3DScene`'s `SubsystemInterface` base ctor
+   null-guards `TheSubsystemList` (M7's stub). The whole
+   prologue/link skeleton - CriticalSections + `initMemoryManager`,
+   file systems, `W3DFileSystem`, `.big` authoring, allocator swap,
+   `--gc-sections`, the GNU-only version script + static libstdc++ -
+   is `Tests/RenderGameAssets/CMakeLists.txt` + `link_stubs.cpp` +
+   `main.cpp` wholesale.
+
+8. **`RTS2DScene`/`RTS3DInterfaceScene` (same TU): constructible, not
+   renderable, this milestone.** `RTS2DScene`'s ctor NEW_REFs a
+   `W3DStatusCircle` (`W3DScene.cpp:1779`) whose `draw()` derefs
+   `TheGameLogic` unguarded (`W3DStatusCircle.cpp:303`) and
+   `TheScriptEngine` (`:337`) - rendering them is rung 3b.
+   `RTS3DInterfaceScene` adds nothing beyond `SimpleSceneClass`.
+   Since they live in the unified TU, `W3DStatusCircle.cpp` (26-line
+   diff) joins the sibling-unification set for link closure.
+
+9. **A latent defect found while reading, in the M7 tradition of
+   fixing what the milestone makes reachable:** ZH's
+   `m_frenzyMaterialPass` (`W3DScene.h:125`) is declared but its only
+   initialization is commented out (`W3DScene.cpp:136-147`) and the
+   dtor never releases it - an uninitialized pointer member that is
+   currently never read anywhere (verified by grep). Benign today;
+   the unification should either null it in the ctor (behavior-
+   preserving) or record it - decide at implementation (open
+   question 6).
+
+## Design decisions
+
+- **Split rung 3 into 3a/3b (this draft's main structural call),**
+  exactly the shape of Draft 28's 2a/2b split and for the same reason:
+  the code proves the full bundle is not one milestone (finding
+  "why-not-one-milestone" above), and the scene layer is the
+  severable, independently-verifiable half that converges the
+  existing harness stack onto the game's real code path.
+- **Unify-then-port for `W3DScene`, GeneralsMD-wins with
+  `RTS_ZEROHOUR` guards** (finding 2) - Draft 21's sorted-multiset
+  no-loss method, MSVC-verified on both trees before any POSIX
+  compile depends on it; old per-tree files physically deleted (M7
+  Task 3's shadowing lesson).
+- **The unified `W3DScene.cpp` registers in the WIN32-gated Core
+  block (like `W3DView.cpp`, `Core/GameEngineDevice/CMakeLists.txt:
+  183`), and the harness direct-lists the TU** - NOT the un-gated
+  portable block yet. Un-gating would grow the POSIX-reachable set of
+  the game targets through per-tree GameClient/GameLogic headers this
+  plan has only grep-verified, not compile-verified (mirror of Draft
+  28's open question 7 fallback, adopted up front this time).
+- **`Has_Stencil()` on GL returns false, honestly** (finding 4). No
+  fake stencil: the ZH behind-building-marker feature then degrades
+  exactly as the real game does on stencil-less hardware - `Render()`
+  itself turns it off (`W3DScene.cpp:978`). Adding real stencil bits
+  to the GL FBO is deliberately deferred (non-goal) - it is a
+  rendering-feature decision, not a porting seam.
+- **A real `GlobalData` object, not a stub** (findings 3, 5): the
+  unguarded derefs make null impossible, and defaults-construction is
+  itself a deliverable - the first GameEngine settings object on
+  POSIX. The harness asserts a few known defaults post-construction
+  so a silently-wrong `GlobalData` fails loudly, not as "wrong
+  pixels".
+- **The four `Flush()` externs get harness-local stubs with verbatim
+  equivalence comments** (finding 3): each real body is a 2-4-line
+  null-guarded trampoline over a singleton that is null in this
+  harness; the stub comments quote the real body to make the
+  behavioral identity reviewable. Linking the real TUs instead would
+  drag `BaseHeightMap.cpp` (terrain), `W3DVolumetricShadow.cpp`/
+  `W3DProjectedShadow.cpp` (via `W3DShadow.cpp:117-118`), and the
+  ParticleSystemManager closure - all rung-3b-or-later. Revisit when
+  those singletons exist for real.
+- **Sibling unification is scoped to `W3DScene`'s closure only**
+  (finding 1): `W3DDynamicLight`, `W3DShroud`, `W3DCustomScene.h`,
+  `Shadow/W3DShadow`, `W3DStatusCircle` (all 9-26-line diffs).
+  `W3DParticleSys` (111), `W3DAssetManager` (175), `W3DGameClient`
+  (40/51) are NOT needed by this harness and wait for rung 3b - the
+  "smaller, real, verifiable" preference applied within the
+  milestone.
+- **Behavioral checks beyond the pixel check** - the scene's
+  value-add over M7 is logic (culling, light environments, flush
+  ordering), so the harness proves logic: a culling check (mesh
+  translated outside the frustum must NOT render - proves
+  `Visibility_Check`'s `Cull_Sphere` path really ran) and a
+  `drawTerrainOnly(true)` check (quad must NOT render - proves the
+  game's own control at `:1163-1165`), alongside the M7-style
+  pixel-position check.
+- **Standing conventions unchanged**: test-authored assets only,
+  `NOT WIN32` harness gating, GeneralsMD + `RTS_ZEROHOUR=1` flavor,
+  `workflow_dispatch` CI, the Draft 25/26 verification rules after
+  every step.
+
+## Explicit non-goals (deliberately NOT this milestone)
+
+Rung 3b: `W3DDisplay.cpp`/`.h` unification AND port (its `draw()`'s
+unconditional GameClient closure, `:1799-2124`, is the evidence);
+`W3DView` port; `RTS2DScene`/`RTS3DInterfaceScene`/`W3DStatusCircle`
+RENDERING (construction-only smoke checks allowed, open question 5);
+`W3DGameClient`/`TheGameClient`. Terrain (`BaseHeightMap`/`HeightMap`
+port), shadows (`W3DVolumetricShadow`/`W3DProjectedShadow`),
+particles (`W3DParticleSys` + ParticleSystemManager), shroud
+rendering (`W3DShaderManager` is d3dx8-bound, finding 6) - all stay
+null singletons behind the engine's own guards. GL stencil support
+(honest false, see design decisions). Porting/unifying
+`GlobalData.cpp`, `Drawable.cpp`, `Object.cpp`, `Thing.cpp`,
+`GameLogic.cpp` (stubs/inline-only usage). INI loading, `CommandLine`,
+`TheGameText`. Rung 2b (`main()`/`GameEngine::execute` - still after
+rung 3, per Draft 28's ordering). Input, text, audio, fullscreen,
+networking (standing deferrals). Retail-asset validation in CI (no
+assets to ship; M7's open question 6 already retired the format
+claim).
+
+## Implementation ordering
+
+(After every step: WSL2 scoped baseline `--target g_gameenginedevice
+z_gameenginedevice -- -k 0` holds 34/34, real MSVC win32 rebuild at 0
+new errors, all 9 existing `ctest` entries re-run when anything they
+link is touched - Drafts 25/26 standing rules.)
+
+1. **Trivial-sibling unification** (finding 1): `W3DDynamicLight`
+   (.cpp/.h), `W3DShroud` (.cpp/.h), `W3DCustomScene.h`,
+   `Shadow/W3DShadow` (.cpp/.h), `W3DStatusCircle` (.cpp/.h) →
+   `Core/GameEngineDevice/`, WIN32-gated block, multiset no-loss,
+   per-tree copies deleted, both MSVC trees 0-error. Mechanical
+   (diffs are 9-26 lines each; verify each is branding-only/trivial
+   during the move - the 17- and 26-line diffs have small real
+   content to guard or reconcile). Independently buildable and
+   severable from everything below.
+2. **`W3DScene.cpp`/`.h` unification** (finding 2): GeneralsMD-wins,
+   `RTS_ZEROHOUR` guards for hunks (a)-(f) - the
+   `getHeatVisionOpacity`/`getSecondMaterialPassOpacity` API split is
+   the load-bearing one; decide `m_frenzyMaterialPass` handling (open
+   question 6); delete originals; both MSVC trees 0-error,
+   byte-identical behavior. Independently buildable; no harness
+   depends on it yet. Can proceed in parallel with step 1 in
+   principle, but landing step 1 first keeps this diff smaller.
+3. **GL `Has_Stencil()`** (finding 4): implement in the GL backend
+   (`dx8wrapper_gl.cpp` or common), returning false with a loud
+   comment citing `GLFW_STENCIL_BITS 0` (`:1811`) and the deferral;
+   audit (by compiling the unified TU in the harness context, step 4)
+   that no OTHER DX8Wrapper method W3DScene calls is missing -
+   this plan's static read found none, but only the compiler proves
+   it. Small, independently buildable.
+4. **`Tests/RenderRTS3DScene/` - the exit harness. Depends on steps
+   2 and 3** (step 1 only via link closure of `W3DStatusCircle` for
+   the same-TU `RTS2DScene` ctor). Clone
+   `Tests/RenderGameAssets/`'s prologue/link structure wholesale
+   (finding 7), then: construct `TheWritableGlobalData = NEW
+   GlobalData` (GeneralsMD TU compiled directly; finding 5); assert
+   known defaults (`m_maxVisibleTranslucentObjects` > 0 etc.);
+   construct `RTS3DScene` (first GameClient scene object on POSIX);
+   `setGlobalLight` one directional light + `Set_Ambient_Light`;
+   load M7's quad from the test-authored `.big` and
+   `Add_Render_Object`; drive frames via the scene's own
+   `doRender(camera)` (open question 3). Checks: (1) `GlobalData`
+   defaults sane; (2) pixel-verified quad at the predicted position
+   through the full `Render → updateFixedLightEnvironments →
+   Customized_Render → Visibility_Check → renderOneObject → Flush`
+   chain (material/lighting chosen so the expected color stays
+   hand-derivable - open question 4); (3) culling: transform the
+   quad outside the frustum, next frame reads background at the old
+   position; (4) `drawTerrainOnly(true)`: quad not rendered
+   (`:1163-1165`); (5) teardown - scene released (dtor's REF_PTR
+   chain), `GlobalData` destroyed, M7's file-system/W3D teardown,
+   clean `ctest` exit, stable across 5+ runs. Link stubs enumerated
+   by the linker (finding 6, open question 1), each loud-commented;
+   `-ffunction-sections`/`--gc-sections` + the GNU-only
+   version-script/static-libstdc++ combo carried over from M7
+   verbatim.
+5. **CI wiring + the real run**: `RenderRTS3DSceneTest` into
+   `linux-native.yml` behind `xvfb-run`, `ctest --test-dir`
+   invocation if a `WORKING_DIRECTORY` is declared (M7 Task 5's
+   lesson), `workflow_dispatch` posture; all 10 `ctest` entries
+   green on an actual GitHub Actions run - this milestone's exit
+   criterion, per the standing rule (and M6's case-sensitivity
+   lesson: WSL2/NTFS local verification is not sufficient proof).
+
+**What this milestone does NOT yet make possible, honestly**: still no
+game executable, no `W3DDisplay`, no camera/view logic, no terrain, no
+shadows, no particles, no 2D overlay - a person sees one more test
+harness rendering the same quad, now through the game's real scene
+manager with real visibility/lighting/flush logic and a real
+`GlobalData` under it. What it does make possible: rung 3b starts with
+its scene floor (and its unify-first pile for the scene half) already
+done, and every `RTS3DScene` behavior the harness checks is pinned
+against regression on both platforms.
+
+## Open questions for the implementer
+
+1. **The true link closure** (findings 5, 6): `WeaponBonusSet`'s pool
+   glue (link `Weapon.cpp` with `--gc-sections` vs other options);
+   the out-of-line `Drawable`/`Thing`/`Object`/`Team` accessors
+   (harness-local member-function stubs - legal only while the real
+   TU is absent from the link; loud comments; runtime-unreached
+   because the harness's scene contains no `DrawableInfo` user data);
+   whatever else the linker names. Policy per Drafts 24/28: compile
+   small clean TUs, stub heavyweight ones. **Fallback if the closure
+   explodes** (the honest smaller cut): scope the harness to
+   `GlobalData` + `RTS3DScene` construction + `Visibility_Check`
+   only (no `Render`), record it, and move the render check to rung
+   3b - stated now so a mid-milestone correction has a pre-agreed
+   shape.
+2. Stub-vs-real for the four `Flush()` trampolines - this plan says
+   stub with verbatim-equivalence comments (design decisions); if the
+   implementer instead ports `Shadow/W3DShadow.cpp` for real (step 1
+   unifies it anyway), verify `W3DVolumetricShadowManager`/
+   `W3DProjectedShadowManager` link deps don't cascade
+   (`W3DShadow.cpp:117-118`).
+3. Harness entry: `doRender(camera)` (game-real, exercises
+   `SubsystemInterface::DRAW()`) vs `WW3D::Render(scene, camera)`
+   directly (M6/M7 pattern). Recommend `doRender`; verify the
+   `DRAW()` profiling path is harmless in the release-style config.
+4. Pixel-check determinism under the scene's light-environment path:
+   reuse M7's material with `Set_Ambient_Light(1,1,1)` and no global
+   lights for check 2 (expected color identical to M7), with the
+   directional-light variant as a separate, tolerance-free-if-possible
+   sub-check - or hand-derive the lit color. Decide against the real
+   `LightEnvironmentClass` math, not by tweaking until green.
+5. Whether to add construction-only smoke checks for `RTS2DScene`
+   (drags `W3DStatusCircle.o` - fine after step 1) and
+   `RTS3DInterfaceScene` (free). Cheap coverage of the same TU;
+   rendering them stays rung 3b.
+6. `m_frenzyMaterialPass` (finding 9): null-initialize in the ctor
+   during unification (behavior-preserving fix, M7 finding-6
+   precedent) vs record-only. Recommend fix + record.
+7. Windows-run coverage for the new harness: default `NOT WIN32` per
+   convention; the D3D8 backend has real `Has_Stencil` - a Windows
+   run would be the scene layer's first harness coverage there, but
+   breaks the convention; revisit deliberately (Draft 28 open
+   question 4's unresolved thread).
+8. Clang/macOS: the version-script/static-libstdc++ allocator
+   mitigation remains GNU-only and unverified on Clang (M7's recorded
+   caveat) - this harness inherits that caveat verbatim.
+
+### Critical Files for Implementation
+- `GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/GameClient/W3DScene.cpp` (and the Generals copy + both `W3DScene.h` - the unification's subject)
+- `Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp` (the `Has_Stencil` gap; `dx8wrapper_d3d8.cpp:1023` is the Windows original)
+- `Tests/RenderGameAssets/CMakeLists.txt` (+ `link_stubs.cpp`, `main.cpp` - the harness template to clone)
+- `GeneralsMD/Code/GameEngine/Source/Common/GlobalData.cpp` (the defaults-constructed `GlobalData`, `:562-1092`, `newInstance(WeaponBonusSet)` at `:1026`)
+- `Core/GameEngineDevice/CMakeLists.txt` (WIN32-gated Core block `:7-204`, `W3DView.cpp` precedent `:183`, un-gated `W3DFileSystem` block `:234`)
