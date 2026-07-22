@@ -71,3 +71,15 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderWW3DFrame)
 endif()
+
+# Phase 5(a) Milestone 7 Task 2 (native port plan, Draft 28) - the headless
+# file-system harness: the first GameEngine code (not WW3D2 rendering code)
+# ever to RUN, not merely compile, on POSIX. No GL/display dependency at
+# all. NOT WIN32 for consistency with its five rendering siblings (open
+# question 4: the Std layer compiles on Windows too, but Windows already
+# gets its own coverage via the real D3D8/Win32 backend and CI - default
+# to NOT WIN32 here, revisit deliberately if that changes). See
+# GameFileSystem/CMakeLists.txt and main.cpp for the full plan.
+if(NOT WIN32)
+    add_subdirectory(GameFileSystem)
+endif()
