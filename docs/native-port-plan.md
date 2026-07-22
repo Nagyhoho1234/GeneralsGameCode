@@ -3922,3 +3922,417 @@ camera wiring and windowing (the Phase 4/5(e) convergence), and this
 port's own catalogued Windows-only deferrals (ATL/winsock/imagehlp/
 d3dx8math/mbstring-dependent subsystems, WWAudio/Miles Sound System,
 the MFC-based Tools).
+
+## Draft 26: Milestone 6 plan - the engine's own frame loop on GL
+(ww3d.cpp portable, the GL device-management surface, the
+Do_Onetime_Device_Dependent_Inits convergence, a real visible window +
+Present) - the WW3D-side half of the Phase 4/5(e) convergence, planned
+against Milestone 5's actual delivered code (HEAD `0efc908f2` at
+planning time).
+
+**Why this is half a convergence, stated up front.** The Phase 4/5(e)
+convergence as forward-referenced since Draft 16 ("`W3DDisplay`/scene/
+camera wiring + windowing") is not one milestone, and the code says so
+concretely. `W3DDisplay` is the full game-client display layer:
+`GeneralsMD/.../W3DDisplay.cpp` (3294 lines; Generals' copy 3172 -
+still per-tree, genuinely diverged) includes `<windows.h>` directly
+(`W3DDisplay.cpp:39`) and its `init()`/`draw()` are wired into
+`TheGlobalData`/`TheGameLODManager`/`TheFontLibrary`/`TheGameLogic`/
+`TheInGameUI`/`TheParticleSystemManager`/`TheScriptEngine`/`W3DView`/
+terrain/water/shadows (`W3DDisplay.cpp:736-977, 1799-2124`) - the
+entire GameEngine/GameClient closure, which is exactly where the
+34-error catalogued baseline (winsock/imagehlp/d3dx8math/mbstring)
+lives. And *none* of it has ever compiled on POSIX: both per-tree
+`GameEngineDevice/CMakeLists.txt` files gate their whole source list
+behind `if(WIN32)` (GeneralsMD's: lines 3-191; on non-Windows
+`z_gameenginedevice` contributes zero own sources, `CMakeLists.txt:
+193-195`), and `Core/GameEngineDevice/CMakeLists.txt:7-206` is gated
+the same way. Likewise the real entry chain is whole-game-shaped:
+`WinMain.cpp:855` (window class + `CreateWindow` at `:753-789`, WndProc
+at `:521-628`, `GameMain()` at `:986`) and `Win32GameEngine`, whose
+factories construct `W3DGameLogic`/`W3DGameClient`/networking/radar/
+audio (`Win32GameEngine.h:89-117`) with the Win32 message pump in
+`serviceWindowsOS()` (`Win32GameEngine.cpp:134-143`). Pulling that in
+means porting most of GameEngine - multiple milestones by itself, with
+its own unify-before-porting work (`W3DDisplay.cpp` and `W3DScene.cpp`
+are still per-tree; `W3DView.cpp` is already Core-unified,
+`Core/GameEngineDevice/CMakeLists.txt:185`).
+
+What IS one coherent rung - and is precisely the deferral this port's
+own comments point at - is the WW3D-side convergence.
+`Core/.../WW3D2/CMakeLists.txt:277-294` documents why `ww3d.cpp` is the
+one WW3D2 monolith still excluded from `WW3D2_SRC_PORTABLE`: its
+`WW3D::Init/Set_Any_Render_Device/Registry_*/Set_Device_Resolution/
+Set_Gamma/Toggle_Windowed/Set_Swap_Interval` call ~18 `DX8Wrapper`
+device-management methods that exist only in the Windows-only
+`dx8wrapper_d3d8.cpp`, "Phase 4/5(e) windowing-convergence territory."
+Meanwhile every existing harness hand-drives the pipeline: RenderW3DMesh
+calls `TheDX8MeshRenderer.Flush()` itself and hand-initializes
+`MissingTexture/_Init_Filters/TextureLoader/TheDX8MeshRenderer`
+(`Tests/RenderW3DMesh/main.cpp:585-595`) because Milestone 1's Trap 1
+deliberately keeps GL `Create_Device()` from calling
+`Do_Onetime_Device_Dependent_Inits()` (`dx8wrapper_gl.cpp:1558-1561`).
+The engine's own frame loop - `WW3D::Init` -> `WW3D::Set_Render_Device`
+-> `WW3D::Begin_Render` -> `WW3D::Render(SceneClass*, CameraClass*)` ->
+`WW3D::End_Render(flip)` -> `WW3D::Shutdown` - has never once executed
+on GL, and neither has a visible window or a real Present: the GL
+device's `Present` is a documented no-op ("nothing to swap to a visible
+window", `dx8wrapper_gl.cpp:260-265`), the GLFW window is created
+`GLFW_VISIBLE=GLFW_FALSE` (`:1479`), and GL `End_Scene` ignores
+`flip_frames` entirely (`:1690-1693`) where the D3D8 original Presents,
+counts frames, and does the per-frame buffer/texture/material release
+(`dx8wrapper_d3d8.cpp:1573-1625`).
+
+**Milestone 6 scope statement.** Four jobs: (1) make `ww3d.cpp` the
+last WW3D2 TU to join `WW3D2_SRC_PORTABLE`, giving the GL backend the
+~18 missing device-management methods honestly (real where GL has a
+real answer, loud documented stubs where the concept is Windows-only);
+(2) end Trap 1 - `Do_Onetime_Device_Dependent_Inits`/`_Shutdowns` and
+`Set_Default_Global_Render_States`/`Invalidate_Cached_Render_States`
+become shared portable code called by GL `Create_Device`/
+`Release_Device` exactly as on Windows, which drags exactly three more
+TUs portable (`pointgr.cpp`, `shattersystem.cpp`, `dynamesh.cpp`); (3)
+real windowing/present at the device seam - visible GLFW window,
+`Present` = FBO blit + `glfwSwapBuffers` + event pump, `End_Scene(true)`
+faithful to the D3D8 contract; (4) the exit harness: the engine's own
+scene/camera frame loop (`SimpleSceneClass` + `CameraClass` + a real
+authored W3D mesh) through `WW3D::Render`, multi-frame, in a real
+window, pixel-verified. Goal-state: the first frame ever rendered on GL
+where the harness calls only `WW3D::`-level entry points - the same six
+calls `W3DDisplay::init()`/`draw()` makes (`W3DDisplay.cpp:821, 887,
+2001, 2100`) - so that when the GameEngine-side rungs later arrive,
+the rendering side beneath them is already proven.
+
+**Key findings, verified against current code (file:line):**
+
+1. **The missing-symbol set is exactly enumerable, and smaller than it
+   looks.** Diffing `ww3d.cpp`'s `DX8Wrapper::` references against the
+   union of definitions in `dx8wrapper_gl.cpp` + `dx8wrapper_common.cpp`
+   + `dx8wrapper_draw.cpp` + `dx8wrapper.h` inlines: the GL backend
+   lacks `Set_Render_Device(const char*, ...)` (name overload,
+   `ww3d.cpp:313`), `Set_Any_Render_Device`, `Set_Next_Render_Device`,
+   `Toggle_Windowed`, `Get_Render_Device`, `Get_Render_Device_Count`,
+   `Get_Render_Device_Name`, `Get_Render_Device_Desc`,
+   `Set_Device_Resolution`, `Registry_Save_Render_Device` (2 overloads),
+   `Registry_Load_Render_Device` (2), `Reset_Device`,
+   `Set_Swap_Interval`, `Get_Swap_Interval`,
+   `Invalidate_Cached_Render_States`, `Flip_To_Primary`, `Set_Gamma`,
+   `_Get_DX8_Back_Buffer` - 18 method names, matching the CMake
+   comment's count. Everything else `ww3d.cpp` touches is already
+   portable: `Set_Viewport`/`Set_Light_Environment` in
+   `dx8wrapper_draw.cpp` (`:54, :617`), `Get_Render_Target_Resolution`
+   in `dx8wrapper_common.cpp:133`, `Set_Ambient`
+   (`dx8wrapper.h:818`)/`Is_Windowed` (`dx8wrapper.h:603`) inline, and
+   `_Copy_DX8_Rects` is an inline over `IDirect3DDevice8::CopyRects`,
+   which the GL device has had since M4 (`dx8wrapper_gl.cpp:934`).
+   Non-DX8Wrapper gaps in `ww3d.cpp` are two: `timeBeginPeriod`/
+   `timeEndPeriod`/`MMRESULT`/`TIMERR_NOERROR` (`ww3d.cpp:197-199,
+   256-258`; verified absent from `win32_compat.h`) and
+   `AnimatedSoundMgrClass::Initialize/Shutdown` (`ww3d.cpp:224, 292`) -
+   finding 4. Movie capture is already covered by M1's portable
+   `FrameGrabClass` stand-in; the dazzle-INI block degrades gracefully
+   when `_TheFileFactory->Get_File` returns null (`ww3d.cpp:206-211`);
+   `Make_Screen_Shot`'s `BITMAPFILEHEADER` types exist in
+   `win32_compat.h` since M1.
+
+2. **Ending Trap 1 is now cheap - the subsystem list is 90% portable
+   already, and the un-ported remainder is exactly three files.**
+   `Do_Onetime_Device_Dependent_Inits` (`dx8wrapper_d3d8.cpp:302-326`)
+   calls: `Compute_Caps` (GL equivalent already exists in substance -
+   `Create_Device`'s honest caps fabrication, `dx8wrapper_gl.cpp:
+   1574-1640` - it just isn't factored as `Compute_Caps`),
+   `MissingTexture::_Init`, `TextureFilterClass::_Init_Filters`,
+   `TheDX8MeshRenderer.Init`, `SHD_INIT` (no-op), `BoxRenderObjClass::
+   Init`, `VertexMaterialClass::Init` (all portable since M4/M5),
+   `PointGroupClass::_Init`, `ShatterSystem::Init`, `TextureLoader::
+   Init` (portable). The stragglers: `pointgr.cpp` has exactly one
+   Windows dependency - `d3dx8math.h` for one `D3DXMatrixRotationZ` +
+   `D3DX_PI` (`pointgr.cpp:89, 1219`), a trivial hand-rolled Z-rotation
+   replacement; `shattersystem.cpp` has zero Windows includes but needs
+   `dynamesh.cpp`, which is verified clean (831 lines, zero
+   windows.h/D3DX/GDI hits). `Set_Default_Global_Render_States`
+   (`:329-349`) is pure `Set_DX8_Render_State`/
+   `Set_DX8_Texture_Stage_State` vocabulary over `Get_Current_Caps()` -
+   the GL state cache accepts all of it. `Invalidate_Cached_Render_
+   States` (`:351-382`) is pure state-cache + `SetTexture(a, nullptr)`
+   code. `Do_Onetime_Device_Dependent_Shutdowns` (`:384-415`) is the
+   mirror. All four move verbatim to a portable TU (Draft 21's
+   multiset no-loss/no-duplicate method), and GL `Create_Device`/
+   `Release_Device` call them at the same points the D3D8 backend does
+   (`Create_Device` end; `Release_Device` after the buffer-release
+   preamble, `dx8wrapper_d3d8.cpp:590-627`).
+
+3. **Ending Trap 1 breaks two existing harnesses by design - the fix
+   is deletion, and the assert that catches it is already loud.**
+   `MissingTexture::_Init` has `WWASSERT(!_MissingTexture)`
+   (`missingtexture.cpp:67`), so the moment GL `Create_Device` runs the
+   real init chain, the hand-init lines in
+   `Tests/RenderTexturePipeline/main.cpp:443-445` and
+   `Tests/RenderW3DMesh/main.cpp:585-595` double-init and die loudly;
+   their manual teardown (`RenderW3DMesh/main.cpp:801-804`) likewise
+   double-deinits once `Release_Device` runs `Do_Onetime_Shutdowns`.
+   Those lines must be deleted in the same commit that ends Trap 1,
+   and all five harnesses re-run - this is a deliberate,
+   contract-level change to the harness init sequence, not scope
+   creep: the harnesses converge onto the game's real init path, which
+   is the whole point of the milestone. (RenderDeviceInit/
+   RenderTexturedTriangle/RenderEngineDrawPath hand-init none of these
+   subsystems - verified by grep - but the re-run is the proof.)
+
+4. **AnimatedSoundMgr: the stub graduates from harness-local to
+   engine-level.** `animatedsoundmgr.cpp` genuinely needs `WWAudio.h`
+   (`animatedsoundmgr.cpp:48-49`, Miles - a catalogued Phase 6
+   deferral). Today `Tests/RenderW3DMesh/anim_sound_link_stub.cpp`
+   quietly no-ops the two statics `animobj.cpp` calls. Once `ww3d.cpp`
+   is portable, `WW3D::Init(!lite)`/`Shutdown` also call
+   `AnimatedSoundMgrClass::Initialize()`/`Shutdown()` at runtime
+   (`ww3d.cpp:224, 292`) - the stub must grow those two no-ops and
+   move into the engine's portable source list (a
+   `animatedsoundmgr_null.cpp` compiled on `NOT WIN32`), deleting the
+   harness-local copy in the same change (duplicate-symbol collision
+   otherwise - the same self-correcting failure mode as M5's
+   `mapper.cpp` stub). Quiet no-op is the right semantic: sounds
+   simply don't trigger, audio is deferred wholesale, and the call
+   sites stay real on both platforms.
+
+5. **The windowing/present design falls out of what already exists.**
+   The GL device owns a real GLFW window today - hidden, with the FBO
+   as the sole render target (`dx8wrapper_gl.cpp:1479, 1484,
+   1499-1520`). The milestone keeps the FBO as the render target
+   (every existing pixel check reads it; `glReadPixels` verification
+   is this port's spine) and makes `Present` real: blit `g_FBO` to the
+   default framebuffer (`glBlitFramebuffer`), `glfwSwapBuffers`,
+   `glfwPollEvents` (the message-pump analog until a real input phase
+   exists; GLFW requires it on the main thread, which every harness
+   satisfies). GL `End_Scene(flip_frames)` adopts the faithful D3D8
+   contract (`dx8wrapper_d3d8.cpp:1580-1624`): Present-on-flip,
+   `FrameCount++`, and the per-frame
+   `Set_Vertex_Buffer(nullptr)`/`Set_Index_Buffer`/`Set_Texture`/
+   `Set_Material(nullptr)` release (all portable draw-TU calls),
+   minus `DX8WebBrowser::Render` (Trap 2 stands, by construction).
+   Window visibility: existing harnesses all pass `windowed=0` to
+   `Set_Render_Device` (e.g. `RenderW3DMesh/main.cpp:573`) - keying
+   `glfwShowWindow` off `windowed != 0` leaves all four old harnesses
+   bit-identical (hidden window, no behavioral change) while the new
+   harness passes `windowed=1` and gets a real visible window; real
+   fullscreen (GLFW monitor-attached mode) stays deferred with a loud
+   comment. Xvfb hosts visible windows fine - CI needs no new
+   infrastructure beyond the existing `xvfb-run` pattern
+   (`linux-native.yml:75`).
+
+6. **Device enumeration has a context-ordering wrinkle worth pinning
+   now.** D3D8 enumerates adapters in `DX8Wrapper::Init` before any
+   device exists; GL can't ask `glGetString(GL_RENDERER)` until
+   `Create_Device` makes a context current. So GL `Enumerate_Devices`
+   (currently an empty documented hook, `dx8wrapper_gl.cpp:1447-1455`)
+   fabricates its single-entry device table at `Init` time with a
+   static name ("OpenGL 3.3"), and `Create_Device` refreshes the
+   entry's description strings from the live context.
+   `Get_Render_Device_Count()==1`, index 0, name non-empty - enough
+   for `ww3d.cpp`'s pass-throughs (`ww3d.cpp:465-523`) and for
+   `W3DDisplay::init()`'s eventual `Set_Render_Device(0, ...)` call
+   pattern (`W3DDisplay.cpp:887-893`). `Registry_Save/Load_Render_
+   Device` return false with documenting comments (registry
+   persistence is Phase 7's config-file work - a false return is the
+   API's own "no saved settings" path); `Set_Gamma` is an accept-stub
+   (no gamma ramps in core GL - a documented deferral, same class as
+   NORMALIZENORMALS); `Reset_Device` returns success trivially (a GL
+   context is never "lost" in the D3D8 sense -
+   `TestCooperativeLevel` already always returns `D3D_OK`,
+   `dx8wrapper_gl.cpp:241-244`); `Flip_To_Primary` no-ops;
+   `Set_Swap_Interval` maps to `glfwSwapInterval`;
+   `Set_Device_Resolution` resizes the GLFW window and recreates the
+   FBO/depth attachments at the new size; `_Get_DX8_Back_Buffer`
+   returns a lockable surface filled by FBO readback (which also makes
+   `WW3D::Make_Screen_Shot`'s TARGA path real for free,
+   `ww3d.cpp:1268-1274`).
+
+**Design decisions:**
+
+- **The platform seam stays at the DX8Wrapper backend, not in
+  ww3d.cpp** (findings 1, 6): `ww3d.cpp` gets zero `#ifdef`s for
+  device management - every one of the 18 methods gets a GL-backend
+  body (real or loud stub), preserving the M1 design ("the platform
+  split lives at the D3D8 vocabulary seam, not around the shared
+  header"). The only `ww3d.cpp`-side platform touch is the
+  `timeBeginPeriod`/`timeEndPeriod` compat no-ops going into
+  `win32_compat.h` like every prior generic-Win32 type.
+- **Trap 1 ends completely, not partially** (findings 2-3): GL
+  `Create_Device` runs the same `Do_Onetime_Device_Dependent_Inits`
+  the D3D8 backend runs, with the same subsystem list - no
+  POSIX-gated subset (registering less would silently diverge eventual
+  game behavior, the Draft 24 no-gating principle). That is what
+  forces `pointgr.cpp`/`shattersystem.cpp`/`dynamesh.cpp` portable
+  now rather than "someday."
+- **Present is real but the FBO remains the render target** (finding
+  5): rendering correctness stays verifiable by `glReadPixels` from
+  the FBO exactly as in M1-M5; the blit-to-window is additive. This
+  also keeps all four old harnesses' verification untouched.
+- **Harness init sequences converge onto the engine's own**
+  (finding 3): deleting the hand-init from the two affected harnesses
+  is the milestone working as intended - after this, no harness in
+  the tree hand-initializes device-dependent subsystems ever again.
+- **Move-then-port discipline continues**: the four
+  `Do_Onetime`/`Set_Default`/`Invalidate` moves out of
+  `dx8wrapper_d3d8.cpp` land as their own MSVC-verified step (sorted-
+  line multiset comparison, Draft 21's method) before any POSIX
+  compile depends on them.
+
+**Explicit non-goals (the GameEngine-side rungs, later milestones):**
+`W3DDisplay`/`W3DGameClient`/`RTS3DScene`(`W3DScene.cpp`)/`W3DView`
+wiring and the `TheGlobalData`-rooted GameEngine closure (that rung
+should start with its own unify-before-porting pass:
+`W3DDisplay.cpp`/`W3DScene.cpp` are still per-tree); `WinMain`
+replacement / portable `main()` / `GameEngine::execute` loop /
+`Win32GameEngine` factory equivalents; `.big` archives
+(`Win32BIGFileSystem`) and any shipped-game asset; input
+(keyboard/mouse - `glfwPollEvents` runs but no events are consumed);
+IME; real fullscreen + `Toggle_Windowed` mode switching; gamma ramps;
+fonts/text on POSIX (the GDI gap stands); audio (the null
+AnimatedSoundMgr is a stub, not a port); lighting emulation beyond
+M5's white rule; particles (`part_buf`/`part_emt`/`part_ldr` stay
+per-tree - note `pointgr.cpp` going portable is *not* the particle
+system, just the point-group renderer its Do_Onetime slot demands);
+`DX8WebBrowser` (Trap 2 stands); device-loss semantics (GL never
+loses the device).
+
+**Implementation ordering** (each step independently buildable; after
+every step: scoped WSL2 linux-x64 `--target g_gameenginedevice
+z_gameenginedevice -- -k 0` holds 34/34 (the Draft 25 scoped-invocation
+rule), real MSVC win32 rebuild of all four targets at 0 errors, and
+every existing harness RE-RUN via `ctest` (the Draft 25 ctest rule)
+whenever a step touches anything they link):
+
+1. **Compat plumbing**: `MMRESULT`/`TIMERR_NOERROR`/`timeBeginPeriod`/
+   `timeEndPeriod` succeed-no-op equivalents into `win32_compat.h`
+   (POSIX schedulers don't have the 1ms-timer-resolution concept;
+   returning `TIMERR_NOERROR` is honest). Small, unblocking, verified
+   by the step-6 compile.
+2. **Move hygiene**: `Do_Onetime_Device_Dependent_Inits`,
+   `Do_Onetime_Device_Dependent_Shutdowns`,
+   `Set_Default_Global_Render_States`,
+   `Invalidate_Cached_Render_States` move verbatim from
+   `dx8wrapper_d3d8.cpp` to `dx8wrapper_draw.cpp` (the established
+   home for shared device-vocabulary code - the
+   `Set_Light_Environment` precedent). MSVC rebuild + multiset
+   no-loss/no-duplicate verification. Windows behavior byte-identical.
+3. **Portability wave**: `pointgr.cpp` (replace the one
+   `D3DXMatrixRotationZ`/`D3DX_PI` use with a portable Z-rotation -
+   open question 5), `shattersystem.cpp`, `dynamesh.cpp` into
+   `WW3D2_SRC_PORTABLE`. Budget for LP64/const compile fixes found
+   only by GCC/Clang, per M4/M5 precedent.
+4. **GL device-management surface + Trap 1 ends** (findings 2, 3, 6):
+   the 18 missing methods per finding 6's per-method dispositions;
+   `Compute_Caps` factored out of `Create_Device`'s existing caps
+   fabrication; `Create_Device`/`Release_Device` call the (now
+   portable) `Do_Onetime` pair; delete the hand-init/teardown lines
+   from `Tests/RenderTexturePipeline` and `Tests/RenderW3DMesh` in
+   the same commit; re-run all five harnesses green.
+5. **Windowing/present** (finding 5): visible window iff
+   `windowed != 0`; `Present` = FBO blit + `glfwSwapBuffers` +
+   `glfwPollEvents`; `End_Scene(flip_frames)` adopts the full D3D8
+   contract including the per-frame release block; `Set_Swap_Interval`
+   -> `glfwSwapInterval`; `Set_Device_Resolution` resizes window +
+   FBO; `Release_Device` resets all new state (Draft 19 watch-item
+   discipline). Re-run all five harnesses - `windowed=0` keeps them
+   bit-identical, which is the compatibility proof.
+6. **`ww3d.cpp` joins `WW3D2_SRC_PORTABLE`** (findings 1, 4): move it
+   out of the WIN32-gated list (`CMakeLists.txt:236`), delete the
+   277-294 exclusion comment; `animatedsoundmgr_null.cpp` (the four
+   no-op statics) added for `NOT WIN32`, harness-local
+   `anim_sound_link_stub.cpp` deleted. The linker then enumerates any
+   residual closure gaps against the new harness skeleton -
+   `layer.cpp`/`light.cpp` are the known candidates (pure-looking,
+   currently WIN32-gated at `CMakeLists.txt:102-104`); add to the
+   portable list rather than stubbing, per Draft 24 open-question-2
+   precedent.
+7. **`Tests/RenderWW3DFrame/` harness + CI - the exit criterion.**
+   Sibling harness; links `corei_ww3d2` like RenderW3DMesh. Init is
+   the engine's own, and nothing else: one `WW3DAssetManager` on the
+   stack, `WW3D::Init(nullptr)` (lite=false - the real path; note
+   `IsInitted` only becomes true on the non-lite branch,
+   `ww3d.cpp:223-226`), `WW3D::Set_Render_Device(0, 640, 480, 32,
+   windowed=1, resize_window=true)` - no manual subsystem init of any
+   kind (the structural proof that Do_Onetime ran through the real
+   chain). Checks: **(1) init round-trip** - both calls return
+   `WW3D_ERROR_OK`; `WW3D::Get_Render_Device_Count()==1` with a
+   non-empty name; `DX8Wrapper::Get_Current_Caps()` non-null
+   (structural preconditions, not the exit proof); **(2) the
+   engine-driven frame** - author a textured two-triangle quad mesh
+   as real `.w3d` bytes (M5's authoring code as template), load
+   through the real `WW3DAssetManager`, `Create_Render_Obj`, add to a
+   live `SimpleSceneClass` (the first `SceneClass` instance ever
+   constructed on POSIX), aim a real `CameraClass` (mind Draft 25's
+   -Z-forward lesson), then `WW3D::Begin_Render(true, true,
+   known-color)` -> `WW3D::Render(scene, camera)` ->
+   `WW3D::End_Render(true)`: FBO readback shows background == clear
+   color and authored texel colors at CPU-predicted projected
+   positions - the same pixel bar as M5, but every call above the
+   device is `WW3D::`'s own; **(3) the loop** - 30 frames with the
+   mesh's transform animated per frame, pixel-verified at frame 0 and
+   frame 29 at distinct predicted positions: proves repeated
+   `Begin_Render`'s `DynamicVBAccessClass::_Reset` (`ww3d.cpp:
+   736-737`), repeated `End_Render`'s
+   `Invalidate_Cached_Render_States` + per-frame release, and
+   `FrameCount` advancing by exactly 30 - the first multi-frame
+   engine loop on GL ever; **(4) present really happened** - after
+   the final `End_Render`, verify the window-side framebuffer
+   matches the FBO (readback approach is open question 3); **(5)
+   resolution change** - `WW3D::Set_Device_Resolution(800, 600)`
+   mid-run, next frame's FBO readback is 800x600 with the mesh at
+   re-predicted positions (proves the resize path recreates
+   attachments); **(6) teardown** - scene/camera released,
+   `Free_Assets`, `WW3D::Shutdown()` (the first full
+   `WW3D::Init`->`Shutdown` cycle on POSIX, driving
+   `Do_Onetime_Device_Dependent_Shutdowns` through the real chain),
+   clean `ctest` exit. Wire into `linux-native.yml` behind `xvfb-run`
+   (same advisory posture); re-run ALL SIX harnesses in CI. A real
+   CI run is the exit criterion - findings 3 and 5 are exactly the
+   class of thing only the run proves.
+
+**What this milestone does NOT yet make possible, honestly:** still no
+image from shipped game assets (nothing reads a `.big`), no
+`W3DDisplay`/`RTS3DScene`/`W3DView`, no input, no text, no audio, no
+fullscreen - a person launching this sees a test harness's window, not
+a game. What it does make possible: after Milestone 6, the entire
+rendering stack from `WW3D::Init` down to pixels-in-a-real-window is
+the engine's own code on both platforms, `ww3d.cpp` is portable (the
+last WW3D2 holdout), and the remaining convergence work is purely
+GameEngine-side: rung 2 is the portable engine skeleton
+(`main()`/`GameEngine::execute`/`Win32GameEngine`-equivalent factories
++ `Win32BIGFileSystem`/`Win32LocalFileSystem` for real assets), rung 3
+is the `W3DDisplay`/`W3DScene`/`W3DView` client layer (unify-first:
+both still per-tree) - each with this milestone's frame loop already
+proven beneath it.
+
+**Open questions for the implementer, not yet resolved:**
+1. **Window-visibility policy**: `windowed != 0` => visible is
+   recommended (zero old-harness impact, verified they all pass 0),
+   but confirm no existing caller semantics conflict; an env-var
+   override (`PORTABLE_D3D8_HIDDEN=1`) may be worth adding for local
+   headless runs - decide at implementation.
+2. **`Toggle_Windowed`/fullscreen**: recommend honest `return false`
+   + comment this milestone (GLFW monitor-attached fullscreen is a
+   later, input-phase-adjacent feature); if it turns out something in
+   the harness path calls it, don't fake success.
+3. **Check 4's window-side readback**: `glReadBuffer(GL_FRONT)` after
+   swap is deterministic under llvmpipe/Xvfb in practice but formally
+   undefined-ish; the fallback is reading `GL_BACK` after a
+   harness-triggered extra blit (weaker - it re-proves the blit, not
+   the swap). Try FRONT first, document whichever survives 5
+   consecutive CI runs (Draft 25 stability bar).
+4. **Event-pump placement**: `glfwPollEvents` inside `Present` is the
+   recommendation (matches where the game services messages relative
+   to presentation closely enough for now); if GLFW main-thread
+   constraints or reentrancy bite, the fallback is a
+   `DX8Wrapper`-level explicit pump the harness calls per frame -
+   decide by what the run shows.
+5. **`pointgr.cpp`'s rotation replacement**: verify the hand-rolled Z
+   rotation against D3DX's row-major layout convention before
+   deciding whether the portable expression also replaces the D3DX
+   call on Windows (preferred - one code path) or sits behind
+   `#ifndef _WIN32` (safer for MSVC bit-identity claims).
+6. **Step 6's final closure list**: `layer.cpp`/`light.cpp` are
+   predictions, not facts - the linker enumerates the truth once
+   `ww3d.cpp` compiles into the harness; expect 0-3 additions, add
+   them portable rather than stubbing.
