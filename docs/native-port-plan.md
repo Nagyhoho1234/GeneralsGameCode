@@ -5003,13 +5003,38 @@ begins by constructing exactly this milestone's `W3DFileSystem`,
    Windows behavior relies on external serialization was NOT
    determined by this planning pass — flagged as an honest unknown to
    resolve before that milestone, not now.
-6. **Retail-asset spot check** — **RESOLVED**: the user has a
-   legitimate installed copy of the game available. A local-only,
-   manual (never CI) run of `Tests/GameFileSystem` against its real
-   `Textures.big` should be done once during implementation (step 2)
-   to retire the "test-authored archives only" caveat cheaply. Ask the
-   user for the install path when step 2 lands; record the result
-   either way in the close-out draft.
+6. **Retail-asset spot check** — **DONE**. User's install:
+   `C:\Program Files\EA Games\Command and Conquer Generals Zero Hour\
+   Command and Conquer Generals\Textures.big` (333,031,108 bytes,
+   confirmed present alongside `TexturesZH.big` and 17 other real
+   `.big` archives). Rather than running `Tests/GameFileSystem`'s
+   compiled binary directly against the real install (rejected: that
+   harness wipes and re-authors its own test data in its working
+   directory on every run — running it with cwd pointed at a real,
+   valuable game install risked touching files that don't belong to
+   it), verification was done via a standalone, read-only Python
+   header parse of the real archive - zero risk, same underlying
+   format claim tested. Result: format assumptions hold exactly
+   against real, much-larger-scale retail data. `"BIGF"` magic present;
+   header's raw (little-endian, "read raw and unused" per finding 7)
+   `archive_size` field happens to equal the real 333,031,108-byte file
+   size; `entry_count`/`dir_size` are big-endian as assumed; the
+   directory holds **3,748 real entries** (a scale no test-authored
+   archive in this milestone approaches - directly retires the
+   "multi-thousand-entry directories" untested-quirk caveat from the
+   Design Decisions section); every sampled entry's path is
+   nul-terminated and backslashed, e.g.
+   `Art\Textures\aametalwall.dds` - exactly the `Art\Textures\` prefix
+   `GameFileClass`'s mapping (finding 3) assumes. Cross-checked one
+   entry's `offset`+`size` fields by seeking directly to the computed
+   byte offset in the real file: the four bytes there are `"DDS "`,
+   the real DDS file magic - confirming the directory's offset/size
+   fields genuinely locate real file content, not just a
+   well-formed-looking header. The "test-authored archives only"
+   caveat is retired for the *format-parsing* claim; running the
+   engine's full load pipeline against real retail assets end-to-end
+   remains future work (this milestone's harnesses still only load
+   test-authored content through the engine).
 7. **`W3DFileSystem` POSIX game-target inclusion** (step 3): adding
    it to the un-gated Core block grows the POSIX-reachable set of the
    *game* targets, not just the harness — if any transitively-included
