@@ -1,5 +1,5 @@
 /*
-**	Command & Conquer Generals(tm)
+**	Command & Conquer Generals Zero Hour(tm)
 **	Copyright 2025 Electronic Arts Inc.
 **
 **	This program is free software: you can redistribute it and/or modify
@@ -32,6 +32,23 @@
 // Author: John Ahlquist, Sept 2001
 //				 Colin Day, November 2001
 //
+// TheSuperHackers @info Unified from the per-tree Generals/GeneralsMD copies
+// (native port plan, Draft 28, Milestone 7 Task 3). The two trees' only real
+// divergence was the localized-directory lookup in Set_Name() (ZH tries the
+// localized W3D/Textures directories FIRST, for both .w3d and image types;
+// vanilla Generals only tries a localized Textures lookup LAST, as a final
+// fallback, and never for .w3d). That divergence is preserved exactly via the
+// RTS_ZEROHOUR guards below - the shared "normal lookup" block runs either
+// wrapped in "if (m_fileExists == FALSE)" (ZH, after the localized-first
+// check already ran) or unconditionally as the first check (vanilla),
+// exactly reproducing each tree's original control flow.
+// reprioritizeTexturesBySize() itself was NOT actually diverged between the
+// trees (verified by diff - identical apart from one trailing whitespace
+// character on a comment line); its existing RTS_ZEROHOUR &&
+// PRIORITIZE_TEXTURES_BY_SIZE call-site guard (already present verbatim in
+// both original files) is carried over unchanged and is sufficient on its
+// own.
+//
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 // INCLUDES ///////////////////////////////////////////////////////////////////////////////////////
@@ -49,7 +66,10 @@
 #include "Common/Registry.h"
 #include "W3DDevice/GameClient/W3DFileSystem.h"
 
-#include <io.h>
+// TheSuperHackers @info <io.h> was dead-include residue in both original
+// per-tree files - zero _access/io.h-API callers anywhere in this file
+// (verified by grep), and it does not exist on POSIX. Dropped rather than
+// _WIN32-gated since nothing in the file ever needed it.
 
 // DEFINES ////////////////////////////////////////////////////////////////////////////////////////
 
@@ -140,7 +160,22 @@ static GameFileType getFileType( char const *filename )
 }
 
 //-------------------------------------------------------------------------------------------------
-/** Sets the file name, and finds the GDI asset if present. */
+/**
+	Sets the file name, and finds the GDI asset if present.
+
+
+	Well, that is the worst comment ever for the most important function there is.
+	Everything comes through this.  This builds the directory and tests for the file
+	in several different places.
+
+	First we look in Language subfolders so that our Perforce	build can handle files that have
+	been localized but were in Generals.
+
+	Then we do the normal TheFileSystem lookup.  In there it does LocalFile (Art/Textures) then it does
+	big files (which internally are also Art/Textures).
+
+	Finally we try UserData.
+*/
 //-------------------------------------------------------------------------------------------------
 char const * GameFileClass::Set_Name( char const *filename )
 {
@@ -153,28 +188,58 @@ char const * GameFileClass::Set_Name( char const *filename )
 
 	GameFileType fileType = getFileType(filename);
 
-	// all .w3d files are in W3D_DIR_PATH, all .tga files are in TGA_DIR_PATH
+#if RTS_ZEROHOUR
+	// We need to be able to grab w3d's from a localization dir, since Germany hates exploding people units.
 	if( fileType == FILE_TYPE_W3D )
 	{
-
-		static_assert(ARRAY_SIZE(m_filePath) >= ARRAY_SIZE(W3D_DIR_PATH), "Incorrect array size");
-		strcpy( m_filePath, W3D_DIR_PATH );
+		static const char *localizedPathFormat = "Data/%s/Art/W3D/";
+		sprintf(m_filePath,localizedPathFormat, GetRegistryLanguage().str());
 		strlcat(m_filePath, filename, ARRAY_SIZE(m_filePath));
 
 	}
+	// We need to be able to grab images from a localization dir, because Art has a fetish for baked-in text.  Munkee.
 	else if( isImageFileType(fileType) )
 	{
-
-		static_assert(ARRAY_SIZE(m_filePath) >= ARRAY_SIZE(TGA_DIR_PATH), "Incorrect array size");
-		strcpy( m_filePath, TGA_DIR_PATH );
+		static const char *localizedPathFormat = "Data/%s/Art/Textures/";
+		sprintf(m_filePath,localizedPathFormat, GetRegistryLanguage().str());
 		strlcat(m_filePath, filename, ARRAY_SIZE(m_filePath));
 
 	}
-	else
-		strlcpy(m_filePath, filename, ARRAY_SIZE(m_filePath));
 
 	// see if the file exists
 	m_fileExists = TheFileSystem->doesFileExist( m_filePath );
+
+
+
+	// Now try the main lookup of hitting local files and big files
+	if( m_fileExists == FALSE )
+#endif
+	{
+		// all .w3d files are in W3D_DIR_PATH, all .tga files are in TGA_DIR_PATH
+		if( fileType == FILE_TYPE_W3D )
+		{
+
+			static_assert(ARRAY_SIZE(m_filePath) >= ARRAY_SIZE(W3D_DIR_PATH), "Incorrect array size");
+			strcpy( m_filePath, W3D_DIR_PATH );
+			strlcat(m_filePath, filename, ARRAY_SIZE(m_filePath));
+
+		}
+		else if( isImageFileType(fileType) )
+		{
+
+			static_assert(ARRAY_SIZE(m_filePath) >= ARRAY_SIZE(TGA_DIR_PATH), "Incorrect array size");
+			strcpy( m_filePath, TGA_DIR_PATH );
+			strlcat(m_filePath, filename, ARRAY_SIZE(m_filePath));
+
+		}
+		else
+			strlcpy(m_filePath, filename, ARRAY_SIZE(m_filePath));
+
+		// see if the file exists
+		m_fileExists = TheFileSystem->doesFileExist( m_filePath );
+	}
+
+
 
 	// maintain legacy compatibility directories for now
 	#ifdef MAINTAIN_LEGACY_FILES
@@ -203,6 +268,8 @@ char const * GameFileClass::Set_Name( char const *filename )
 
 	}
 	#endif
+
+
 
 	// if file is still not found, try the test art folders
 	#ifdef LOAD_TEST_ASSETS
@@ -269,6 +336,7 @@ char const * GameFileClass::Set_Name( char const *filename )
 
 	}
 
+#if !RTS_ZEROHOUR
 	// We need to be able to grab images from a localization dir, because Art has a fetish for baked-in text.  Munkee.
 	if( m_fileExists == FALSE )
 	{
@@ -286,6 +354,8 @@ char const * GameFileClass::Set_Name( char const *filename )
 	}
 
 
+
+#endif
 
 	return m_filename;
 

@@ -47,7 +47,7 @@ set(GAMEENGINEDEVICE_SRC
     Include/W3DDevice/GameClient/W3DDisplayString.h
     Include/W3DDevice/GameClient/W3DDisplayStringManager.h
     Include/W3DDevice/GameClient/W3DDynamicLight.h
-    Include/W3DDevice/GameClient/W3DFileSystem.h
+#    Include/W3DDevice/GameClient/W3DFileSystem.h # unified into Core/GameEngineDevice (native port plan, Milestone 7 Task 3)
 #    Include/W3DDevice/GameClient/W3DGadget.h
     Include/W3DDevice/GameClient/W3DGameClient.h
     Include/W3DDevice/GameClient/W3DGameFont.h
@@ -153,7 +153,7 @@ set(GAMEENGINEDEVICE_SRC
     Source/W3DDevice/GameClient/W3DDisplayString.cpp
     Source/W3DDevice/GameClient/W3DDisplayStringManager.cpp
     Source/W3DDevice/GameClient/W3DDynamicLight.cpp
-    Source/W3DDevice/GameClient/W3DFileSystem.cpp
+#    Source/W3DDevice/GameClient/W3DFileSystem.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 7 Task 3)
     Source/W3DDevice/GameClient/W3DGameClient.cpp
     Source/W3DDevice/GameClient/W3DInGameUI.cpp
 #    Source/W3DDevice/GameClient/W3DMouse.cpp

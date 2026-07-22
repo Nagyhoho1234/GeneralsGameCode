@@ -219,6 +219,23 @@ if(NOT IS_VS6_BUILD)
     )
 endif()
 
+# W3DFileSystem: the WW3D<->GameEngine file-I/O seam (native port plan,
+# Draft 28 finding 3, Milestone 7 Task 3). Unified from the per-tree
+# Generals/GeneralsMD copies (GeneralsMD wins, RTS_ZEROHOUR-guarded for the
+# one genuinely-diverged piece, the localized-directory lookup - see the
+# .cpp's own header comment). Deliberately NOT inside the WIN32 gate above,
+# same "already portable" reasoning as the StdDevice block just above it:
+# its only real deps are TheFileSystem/TheArchiveFileSystem/TheGlobalData
+# (all null-guarded or already POSIX-clean) and GetRegistryLanguage()
+# (portable, Core/GameEngine/Source/Common/System/registry.cpp). This grows
+# the POSIX-reachable set of the game targets themselves, not just a test
+# harness - verified against the 34-error WSL2 baseline (still 34/34 after
+# this addition).
+list(APPEND GAMEENGINEDEVICE_SRC
+    Include/W3DDevice/GameClient/W3DFileSystem.h
+    Source/W3DDevice/GameClient/W3DFileSystem.cpp
+)
+
 add_library(corei_gameenginedevice_private INTERFACE)
 add_library(corei_gameenginedevice_public INTERFACE)
 
