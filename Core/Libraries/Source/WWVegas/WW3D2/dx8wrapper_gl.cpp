@@ -204,6 +204,20 @@ namespace
 	GLenum g_SrcBlend = GL_ONE;
 	GLenum g_DestBlend = GL_ZERO;
 
+	// D3DRS_LIGHTING tracking (native port plan Phase 5(a) Milestone 5,
+	// Draft 24 Step 4, finding 6). Initial value MUST be false, matching
+	// DX8Wrapper::RenderStates[]'s zero-initialization (dx8wrapper_common.
+	// cpp) - Set_DX8_Render_State (dx8wrapper.h) skips the actual device
+	// call whenever RenderStates[state] already equals the requested
+	// value, and every real draw's first D3DRS_LIGHTING call is FALSE
+	// (VertexMaterialClass::Apply_Null()/Apply()'s UseLighting default,
+	// vertmaterial.cpp) - matching the cached 0 exactly, so that first
+	// call would silently never reach SetRenderState below, leaving this
+	// flag stuck at whatever it was initialized to. See
+	// Build_Fixed_Function_Program's uForceWhiteDiffuse comment for what
+	// this flag actually does downstream.
+	bool g_LightingEnabled = false;
+
 	void Destroy_Framebuffer()
 	{
 		if (g_FBO) { gl_DeleteFramebuffers(1, &g_FBO); g_FBO = 0; }
@@ -718,23 +732,40 @@ namespace
 	{
 		GLuint Program;
 		GLint LocMVP;
+		GLint LocForceWhiteDiffuse;
 	};
 
 	FixedFunctionProgram Build_Fixed_Function_Program()
 	{
-		FixedFunctionProgram result{ 0, -1 };
+		FixedFunctionProgram result{ 0, -1, -1 };
 
+		// uForceWhiteDiffuse (native port plan Phase 5(a) Milestone 5,
+		// Draft 24 Step 4, finding 6): real D3D8 ignores whatever vertex-
+		// diffuse bytes are present - or aren't - whenever D3DRS_LIGHTING
+		// is TRUE, computing color from lights+material instead. This
+		// backend has no light math yet, so when lighting is on the
+		// honest placeholder is opaque white (vDiffuse itself is left
+		// alone - this overrides only what reaches FragColor, in the
+		// vertex shader rather than the fragment shader purely so the one
+		// branch replaces the one place vDiffuse is produced). Covers two
+		// real Milestone 5 cases uniformly: a diffuse-less FVF (whose
+		// vDiffuse would otherwise be GL's generic-attribute default,
+		// black) and a diffuse-bearing FVF the engine itself filled with
+		// literal zero for skinned meshes with no per-vertex color
+		// (dx8renderer.cpp) - D3D8 would ignore that value too under
+		// lighting, for the same reason.
 		const char* vs_src =
 			"#version 330 core\n"
 			"layout(location=0) in vec3 aPosition;\n"
 			"layout(location=2) in vec4 aDiffuse;\n"
 			"layout(location=3) in vec2 aTexCoord0;\n"
 			"uniform mat4 uMVP;\n"
+			"uniform bool uForceWhiteDiffuse;\n"
 			"out vec4 vDiffuse;\n"
 			"out vec2 vTexCoord0;\n"
 			"void main() {\n"
 			"    gl_Position = uMVP * vec4(aPosition, 1.0);\n"
-			"    vDiffuse = aDiffuse;\n"
+			"    vDiffuse = uForceWhiteDiffuse ? vec4(1.0, 1.0, 1.0, 1.0) : aDiffuse;\n"
 			"    vTexCoord0 = aTexCoord0;\n"
 			"}\n";
 
@@ -775,6 +806,7 @@ namespace
 
 		result.Program = program;
 		result.LocMVP = gl_GetUniformLocation(program, "uMVP");
+		result.LocForceWhiteDiffuse = gl_GetUniformLocation(program, "uForceWhiteDiffuse");
 
 		// uTex is permanently bound to texture unit 0 (the only stage this
 		// shader reads) - set once here rather than every draw call, since a
@@ -1023,13 +1055,17 @@ HRESULT IDirect3DDevice8::SetTransform(D3DTRANSFORMSTATETYPE State, CONST D3DMAT
 
 HRESULT IDirect3DDevice8::SetRenderState(D3DRENDERSTATETYPE State, DWORD Value)
 {
-	// Only the render states Step 7's verification plan actually exercises
-	// (cull-mode, depth-test, and alpha-blend plumbing) get real bodies.
-	// Everything else this milestone's fixed-function shader has no use for
-	// (lighting, fog, alpha test, texture-stage states, ...) is silently
-	// accepted, matching real D3D8's tolerance of state a given draw call
-	// simply never observes - not a gap, since nothing in this milestone
-	// reads it.
+	// Cull-mode/depth-test/alpha-blend plumbing (Milestone 3 step 7) plus
+	// D3DRS_LIGHTING (Milestone 5 step 4, see g_LightingEnabled's comment)
+	// get real bodies. Everything else this milestone's fixed-function
+	// shader has no use for (fog, alpha test, texture-stage states, ...)
+	// is silently accepted, matching real D3D8's tolerance of state a
+	// given draw call simply never observes - not a gap, since nothing in
+	// this milestone reads it. Two real meshes states specifically fall
+	// here deliberately, not by omission: D3DRS_NORMALIZENORMALS (this
+	// backend has no per-pixel/per-vertex lighting math for a normal to
+	// feed into - nothing to normalize) and D3DRS_ZBIAS (decal rendering
+	// is an explicit Milestone 5 non-goal, Draft 24).
 	switch (State)
 	{
 	case D3DRS_CULLMODE:
@@ -1095,6 +1131,19 @@ HRESULT IDirect3DDevice8::SetRenderState(D3DRENDERSTATETYPE State, DWORD Value)
 		glBlendFunc(g_SrcBlend, g_DestBlend);
 		break;
 
+	// Diffuse-source rule (native port plan Phase 5(a) Milestone 5, Draft
+	// 24 Step 4, finding 6) - real D3D8 ignores vertex diffuse entirely
+	// when D3DRS_LIGHTING is TRUE, computing color from lights+material
+	// instead; this backend has no light math yet (SetLight/LightEnable
+	// stay accept-stubs), so the honest placeholder is "unlit renders as
+	// fully-lit" - opaque white, applied in the fixed-function shader via
+	// uForceWhiteDiffuse (see Build_Fixed_Function_Program). Tracked here
+	// rather than read live off RenderStates[] so DrawIndexedPrimitive's
+	// per-draw uniform upload doesn't need a render-state table lookup.
+	case D3DRS_LIGHTING:
+		g_LightingEnabled = (Value != 0);
+		break;
+
 	default:
 		break;
 	}
@@ -1132,6 +1181,15 @@ HRESULT IDirect3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, U
 	if (!ffp.Program) return D3DERR_INVALIDCALL;
 	gl_UseProgram(ffp.Program);
 
+	// Diffuse-source rule (native port plan Phase 5(a) Milestone 5, Draft
+	// 24 Step 4, finding 6) - uploaded every draw since g_LightingEnabled
+	// can change between draws within the same frame (a real material's
+	// Apply() call per mesh, same as SRCBLEND/DESTBLEND above).
+	if (ffp.LocForceWhiteDiffuse >= 0)
+	{
+		gl_Uniform1i(ffp.LocForceWhiteDiffuse, g_LightingEnabled ? 1 : 0);
+	}
+
 	gl_BindVertexArray(g_VAO);
 
 	// static_cast, not dynamic_cast: every IDirect3DVertexBuffer8/
@@ -1167,12 +1225,16 @@ HRESULT IDirect3DDevice8::DrawIndexedPrimitive(D3DPRIMITIVETYPE PrimitiveType, U
 	}
 	else
 	{
-		// No per-vertex diffuse stream in this FVF: GL's generic-attribute
-		// default is (0,0,0,1), which would MODULATE the texture to black -
-		// a known deferred gap, not exercised by Step 7's harness (which
-		// always uses a diffuse-bearing FVF, per its R/B byte-order canary
-		// check).
+		// No per-vertex diffuse stream in this FVF (native port plan Phase
+		// 5(a) Milestone 5, Draft 24 Step 4, finding 6(i)): GL's generic-
+		// attribute default is (0,0,0,1), which would MODULATE the texture
+		// to black. Real D3D8's own default for a diffuse-less, unlit draw
+		// is opaque white, so set the generic attribute's current value to
+		// that directly - this is what a diffuse-less FVF actually
+		// resolves to whenever uForceWhiteDiffuse's lit case doesn't
+		// already override it downstream.
 		gl_DisableVertexAttribArray(GL_ATTRIB_DIFFUSE);
+		gl_VertexAttrib4f(GL_ATTRIB_DIFFUSE, 1.0f, 1.0f, 1.0f, 1.0f);
 	}
 
 	if (layout.TexCoordCount >= 1)
@@ -1606,6 +1668,7 @@ void DX8Wrapper::Release_Device()
 	g_TransformsEverSet = false;
 	g_SrcBlend = GL_ONE;
 	g_DestBlend = GL_ZERO;
+	g_LightingEnabled = false;
 
 	Destroy_Framebuffer();
 

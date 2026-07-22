@@ -128,6 +128,7 @@ typedef void      (APIENTRY* PFNGLBUFFERDATAPROC)(GLenum, GLsizeiptr, const void
 typedef void      (APIENTRY* PFNGLBUFFERSUBDATAPROC)(GLenum, GLintptr, GLsizeiptr, const void*);
 typedef void      (APIENTRY* PFNGLDELETEBUFFERSPROC)(GLsizei, const GLuint*);
 typedef void      (APIENTRY* PFNGLVERTEXATTRIBPOINTERPROC)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
+typedef void      (APIENTRY* PFNGLVERTEXATTRIB4FPROC)(GLuint, GLfloat, GLfloat, GLfloat, GLfloat);
 typedef void      (APIENTRY* PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint);
 typedef void      (APIENTRY* PFNGLDISABLEVERTEXATTRIBARRAYPROC)(GLuint);
 typedef void      (APIENTRY* PFNGLDRAWELEMENTSBASEVERTEXPROC)(GLenum, GLsizei, GLenum, const void*, GLint);
@@ -174,6 +175,7 @@ extern PFNGLBUFFERDATAPROC gl_BufferData;
 extern PFNGLBUFFERSUBDATAPROC gl_BufferSubData;
 extern PFNGLDELETEBUFFERSPROC gl_DeleteBuffers;
 extern PFNGLVERTEXATTRIBPOINTERPROC gl_VertexAttribPointer;
+extern PFNGLVERTEXATTRIB4FPROC gl_VertexAttrib4f;
 extern PFNGLENABLEVERTEXATTRIBARRAYPROC gl_EnableVertexAttribArray;
 extern PFNGLDISABLEVERTEXATTRIBARRAYPROC gl_DisableVertexAttribArray;
 extern PFNGLDRAWELEMENTSBASEVERTEXPROC gl_DrawElementsBaseVertex;
