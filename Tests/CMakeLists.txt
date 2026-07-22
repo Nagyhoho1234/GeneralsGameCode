@@ -83,3 +83,14 @@ endif()
 if(NOT WIN32)
     add_subdirectory(GameFileSystem)
 endif()
+
+# Phase 5(a) Milestone 7 Task 4 (native port plan, Draft 28) - the
+# milestone's exit harness: combines Task 2's file-system stack + Task 3's
+# unified W3DFileSystem with Milestone 6's engine-driven frame loop - every
+# byte on screen comes out of a real BIG archive through the engine's own
+# file stack. NOT WIN32 for the same reasons as its six rendering siblings
+# and GameFileSystem. See RenderGameAssets/CMakeLists.txt and main.cpp for
+# the full plan.
+if(NOT WIN32)
+    add_subdirectory(RenderGameAssets)
+endif()

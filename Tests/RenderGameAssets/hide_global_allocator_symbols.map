@@ -1,0 +1,78 @@
+# Native port plan, Draft 28, Milestone 7 Task 4 - a genuine, hard-evidence-
+# confirmed integration finding, NOT a speculative precaution.
+#
+# The problem (found via a real crash, isolated to a minimal repro): this
+# harness links Core/GameEngine/Source/Common/System/GameMemory.cpp, which
+# defines the global operator new/new[]/delete/delete[] (routing every
+# allocation through TheDynamicMemoryAllocator). On a normal dynamically-
+# linked Linux executable (this repo's default PIE build), those global,
+# default-visibility symbols get exported into the executable's OWN dynamic
+# symbol table - and because of how ELF symbol interposition works, that
+# makes EVERY other shared object loaded into the SAME process resolve ITS
+# OWN calls to "operator new"/"operator delete" against OUR definition too,
+# not just this harness's own code. This is process-wide, not scoped to
+# WW3D2/GameEngine code.
+#
+# This harness creates a real GLX/OpenGL context (DX8Wrapper::Create_Device
+# -> glfwCreateWindow), which on this port's verification environment (WSL2,
+# no GPU passthrough for GLX - the same is true of a headless CI runner
+# under xvfb-run) falls back to Mesa's llvmpipe software rasterizer, which
+# JIT-compiles shaders via libLLVM.so on its own worker threads. libLLVM.so
+# is dynamically loaded into the SAME process and also calls plain
+# "operator new"/"delete" internally for its own IR/codegen data structures.
+# Once those calls get silently redirected into TheDynamicMemoryAllocator
+# (whose pools guarantee only MEM_BOUND_ALIGNMENT=4-byte alignment -
+# GameMemory.cpp's own "@todo srj -- make this work for 8" comment already
+# flags this as coarser than a real malloc's - vs. glibc malloc's 16-byte
+# guarantee that LLVM's SIMD-using internals implicitly rely on), the
+# result is a real, 100%-reproducible SIGSEGV deep inside
+# llvm::MCJIT::generateCodeForModule, confirmed via gdb backtraces and an
+# isolated minimal repro (a bare initMemoryManager() + glfwCreateWindow(),
+# with NO WW3D2/file-system code at all, reproduces the identical crash;
+# removing GameMemory.cpp from that same repro removes the crash).
+#
+# The fix: this version script (GNU ld's --version-script) marks exactly
+# GameMemory.cpp's global-allocator symbols as "local" in the FINAL
+# executable's dynamic symbol table - i.e. no longer exported for other,
+# separately-loaded shared objects (Mesa's driver .so's, libLLVM.so) to
+# interpose onto. This does NOT change how this harness's OWN code resolves
+# these symbols: intra-executable symbol resolution (every .o file directly
+# linked into this same binary - WW3D2, the GameEngine file-system TUs, this
+# harness's own main.cpp) is settled by the static linker at link time,
+# before dynamic-export visibility is even consulted, so
+# WW3D2/GameEngine/main.cpp's own "new"/"delete" calls are completely
+# unaffected and still route through TheDynamicMemoryAllocator exactly as
+# intended (verified: initMemoryManager/shutdownMemoryManager and every
+# AsciiString/std::string/std::vector allocation throughout this harness's
+# checks still succeed). Confirmed via a real rebuild+run of the full
+# harness after this fix, not just the isolated repro. Applied ONLY to this
+# one target (target_link_options in this directory's CMakeLists.txt) - no
+# other harness links GameMemory.cpp, so none of them need or get this
+# script.
+#
+# IMPORTANT: this script must be combined with -static-libstdc++/
+# -static-libgcc (see this target's CMakeLists.txt target_link_options
+# comment for the second half of this story) - the version script alone
+# also breaks std::filesystem (a real "free(): invalid pointer" SIGABRT,
+# also confirmed via an isolated minimal repro), because std::filesystem's
+# own implementation straddles the inline/libstdc++.so boundary the same
+# way, and once our allocator symbols are hidden from dynamic export,
+# libstdc++.so's own internal calls to them can no longer find our
+# override either - splitting one logical alloc/free pair across two
+# different allocators. Statically linking libstdc++/libgcc removes that
+# split entirely for this one executable.
+{
+  global: *;
+  local:
+    _Znwm;
+    _Znam;
+    _ZdlPv;
+    _ZdaPv;
+    _ZnwmPKci;
+    _ZdlPvPKci;
+    _ZnamPKci;
+    _ZdaPvPKci;
+    createW3DMemPool;
+    allocateFromW3DMemPool*;
+    freeFromW3DMemPool;
+};
