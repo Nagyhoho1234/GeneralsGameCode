@@ -37,11 +37,15 @@
 // divergence was the localized-directory lookup in Set_Name() (ZH tries the
 // localized W3D/Textures directories FIRST, for both .w3d and image types;
 // vanilla Generals only tries a localized Textures lookup LAST, as a final
-// fallback, and never for .w3d). That divergence is preserved exactly via the
-// RTS_ZEROHOUR guards below - the shared "normal lookup" block runs either
-// wrapped in "if (m_fileExists == FALSE)" (ZH, after the localized-first
-// check already ran) or unconditionally as the first check (vanilla),
-// exactly reproducing each tree's original control flow.
+// fallback, and never for .w3d). That divergence is preserved exactly via a
+// "#if RTS_ZEROHOUR ... #else ... #endif" pair in Set_Name() (Milestone 7
+// Task 3 follow-up fix): each branch spells out its tree's full localized-vs-
+// normal lookup order in one uninterrupted block, at the cost of duplicating
+// the ~20-line shared "normal lookup" body once, rather than an earlier
+// version of this file that straddled an "if (m_fileExists == FALSE)"
+// statement's opening brace with a bare "#if RTS_ZEROHOUR ... #endif" -
+// logically equivalent, but unreadable without mentally resolving the
+// preprocessor first.
 // reprioritizeTexturesBySize() itself was NOT actually diverged between the
 // trees (verified by diff - identical apart from one trailing whitespace
 // character on a comment line); its existing RTS_ZEROHOUR &&
@@ -213,7 +217,6 @@ char const * GameFileClass::Set_Name( char const *filename )
 
 	// Now try the main lookup of hitting local files and big files
 	if( m_fileExists == FALSE )
-#endif
 	{
 		// all .w3d files are in W3D_DIR_PATH, all .tga files are in TGA_DIR_PATH
 		if( fileType == FILE_TYPE_W3D )
@@ -238,6 +241,33 @@ char const * GameFileClass::Set_Name( char const *filename )
 		// see if the file exists
 		m_fileExists = TheFileSystem->doesFileExist( m_filePath );
 	}
+#else
+	// Normal lookup of hitting local files and big files runs first for vanilla
+	// Generals; the localized-directory lookup only runs as a fallback, later,
+	// and only for images (see the "#if !RTS_ZEROHOUR" block below).
+	// all .w3d files are in W3D_DIR_PATH, all .tga files are in TGA_DIR_PATH
+	if( fileType == FILE_TYPE_W3D )
+	{
+
+		static_assert(ARRAY_SIZE(m_filePath) >= ARRAY_SIZE(W3D_DIR_PATH), "Incorrect array size");
+		strcpy( m_filePath, W3D_DIR_PATH );
+		strlcat(m_filePath, filename, ARRAY_SIZE(m_filePath));
+
+	}
+	else if( isImageFileType(fileType) )
+	{
+
+		static_assert(ARRAY_SIZE(m_filePath) >= ARRAY_SIZE(TGA_DIR_PATH), "Incorrect array size");
+		strcpy( m_filePath, TGA_DIR_PATH );
+		strlcat(m_filePath, filename, ARRAY_SIZE(m_filePath));
+
+	}
+	else
+		strlcpy(m_filePath, filename, ARRAY_SIZE(m_filePath));
+
+	// see if the file exists
+	m_fileExists = TheFileSystem->doesFileExist( m_filePath );
+#endif
 
 
 
