@@ -6541,3 +6541,163 @@ Given the evidence above, rung 3b-ii itself splits, the same way rung 3 (Draft 3
 - `GeneralsMD/Code/GameEngine/Source/GameLogic/System/GameLogic.cpp` (`:257-304`) and `Source/GameLogic/ScriptEngine/ScriptEngine.cpp` (`:447-479`, `:8426-8490`)
 - `Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DScene.cpp` (`RTS3DScene::castRay` `:411+`, `RTS2DScene::RTS2DScene` `:2168-2173`) and `W3DStatusCircle.cpp` (`:301-304`)
 - `Tests/RenderCameraTransform/` — the harness this milestone extends, not rebuilds
+
+
+## Draft 36: Milestone 12 plan — rung 2b, the real `GameEngine::init()`/`update()`/`execute()` on POSIX
+
+**Status: PROPOSED, research-backed by a real compile spike, not yet
+approved for implementation.** Milestone 10 ("rung 2b-lite") deliberately
+bypassed the real `GameEngine` class entirely - its harness never called
+`init()`/`update()`/`execute()`, using a hand-written stand-in only to
+satisfy the one call site (`isTimeFrozen()`) `GameLogic::update()`
+needed. Draft 34 section 5 assessed the real thing as too large for that
+milestone and deferred it, unscoped, as "rung 2b-ii." This draft is a
+deep, evidence-based re-assessment (an independent Fable research pass,
+2026-07-24) of that deferred scope, run now that two pieces of
+groundwork exist that didn't when Draft 34 was written: Milestone 10's
+DEFER-closure link technique, and Milestone 11's real `GameClient`/
+`InGameUI`/`Display`/`FontLibrary`/`Mouse` stub-subclass construction.
+
+**Verdict: rung 2b is now tractable, roughly Milestone-11-retry-sized -
+not the unscoped monster Draft 34 deferred.** All three of Draft 34's
+original blockers were re-examined with real evidence (grep, code
+reading, and a real WSL2 `-fsyntax-only` compile spike run from scratch
+files, no tracked file touched) and retired or recast:
+
+1. **The `WebBrowser.h` ATL/COM blocker (Draft 34's original, load-bearing
+   finding) - retired, proven by a real compile spike.** `GameEngine.h`
+   only forward-declares `WebBrowser` for the pure-virtual
+   `createWebBrowser()` factory - a subclass overriding it to return
+   `nullptr` needs no header at all. `GameEngine.cpp`'s only two
+   references to `WebBrowser` symbols are the `#include` itself
+   (`:107`) and one line already commented out (`:684`); every other
+   includer of `WebBrowser.h` in the whole tree is already outside
+   this milestone's real call path. A real spike (an empty shadow
+   header simulating a 2-line `#ifdef _WIN32` guard on that include,
+   plus the known-working `CComModule`/`HINSTANCE` shim) compiled the
+   real, unmodified `GameEngine.cpp` down to exactly two remaining
+   errors - `::SetWindowText`/`::SetWindowTextW` inside
+   `updateWindowTitle()`, already runtime-dead when `ApplicationHWnd`
+   is null. Two more no-op shims (same pattern as `time_compat.h`'s
+   `timeBeginPeriod`) close it. **Total compile fix: ~14 lines across
+   two shim headers plus one guarded include** - the M10 spike never
+   saw past this because compilation aborted at line 107 before
+   reaching anything else.
+2. **`TheAudio`'s Miles SDK dependency - retired; the factory-override
+   route works, the problem was never structural.** `AudioManager`
+   (the abstract base, not `MilesAudioManagerDummy`) has 43 pure
+   virtuals - more than M11's `DisplayStub` but the same mechanical
+   shape M11 already proved tractable. Its base `init()` is fully
+   portable (10 `loadFileDirectory` calls + two `NEW` allocations,
+   `m_audioSettings` constructor-allocated so no null-deref risk even
+   with empty INI). Its base `update()` unconditionally dereferences
+   `TheTacticalView`, which is fine because the real `InGameUI::init()`
+   already creates a portable `ViewDummy` for exactly this case. A
+   harness-local `AudioManagerStub` (not `MilesAudioManagerDummy`) is
+   the fix - a concrete `GameEngine` subclass overriding
+   `createAudioManager()` to return it, rather than needing to solve
+   anything Miles-SDK-specific at all.
+3. **`GameClient::update()`'s ~13-singleton dependency (Draft 34's
+   stated reason to avoid calling it) - recast, not a blocker.** The
+   codebase has picked up real upstream headless-mode work since Draft
+   34 (a `GameWindowManagerDummy` designed to be non-null-safe, a
+   `MouseDummy`, keyboard skipped entirely in headless `init()`). The
+   decisive reframe: this milestone should not hand-construct 13
+   singletons the way Milestone 10 did for its five target subsystems -
+   it should let the REAL `GameEngine::init()`/`GameClient::init()`
+   chain construct them itself, through portable factory overrides.
+   Exact current dereference list in `GameClient::update()`
+   (`GameClient.cpp:518-765`, re-verified against current source, not
+   assumed from Draft 34's stale list): `TheMessageStream`, `m_intro`,
+   `TheAnim2DCollection`, `TheEva`, `TheWindowManager`,
+   `TheVideoPlayer`, `TheGameEngine`,
+   `rts::getObservedOrLocalPlayer()`, `TheTerrainVisual`, `TheDisplay`,
+   `TheDisplayStringManager`, `TheShell`, `TheInGameUI` (plus
+   `TheGhostObjectManager`/`ThePlayerList`/`TheParticleSystemManager`
+   under `!freezeTime`). Coverage confirmed per-symbol: M11's five
+   stub classes cover `GameClient`/`InGameUI`/`Display`/`FontLibrary`/
+   `Mouse` directly; engine-provided dummies cover mouse/window-manager/
+   view/radar/particles/ghost-objects; `VideoPlayer`/`ThingFactory`/
+   `ModuleFactory`/`FunctionLexicon` are concrete base classes with
+   zero pure virtuals (verified, not assumed); `StdLocalFileSystem`/
+   `StdBIGFileSystem` are the same proven-running POSIX classes
+   Milestone 7 shipped; `rts::getObservedOrLocalPlayer()` is safe since
+   `PlayerList`'s own constructor sets a local player and `InGameUI::init`
+   constructs `TheControlBar`. **Genuinely new stub work**:
+   `AudioManagerStub` (43 pure virtuals), `TerrainVisualStub` (~20),
+   `DisplayStringManagerStub` (4, plus a small `DisplayString` stub) -
+   and upgrading `GameClientStub`'s factories from `nullptr` returns to
+   real instances of these three, since `TheDisplayStringManager->
+   postProcessLoad()` (`GameClient.cpp:433`) is unconditionally
+   dereferenced with no null guard.
+4. **`CComModule`/`HINSTANCE` shim - confirmed sufficient**, unchanged
+   from Milestone 10's design; it's literally what today's spike
+   compiled `GameEngine.cpp` against.
+
+**The one real, honestly-sized remaining cost: an INI scaffold.**
+`INI::loadFileDirectory` only throws when a directory contains ZERO
+files (confirmed by reading `INI.cpp:220-223`) and accepts a single
+`<dirname>.ini` file per directory - so the real `init()` chain's ~35
+referenced INI directories (the 19 `GameEngine::init()` already
+enumerated, plus `DrawGroupInfo`/`InGameUI`/`CommandButton`/
+`CommandSet`/`ControlBarScheme`/`ShellMenuScheme`/`Eva`/`Animation2D`/
+`Video`/`Mouse`/`Campaign`/`AudioSettings`/`Music`/`Speech`/`Voice`/
+`SoundEffects`/`MiscAudio`/`HeaderTemplate`/`CommandMap`) each cost one
+near-empty test-authored `.ini` file, not real content authorship. Two
+genuinely need real pre-seeded values, not just presence: the
+`WaterTransparency`/`WeatherSetting` construction Draft 34 already
+found and fixed once for Milestone 10 (`GameLogic.cpp:501-506`'s null-
+`deleteOverrides()` crash) - same fix, same place, this milestone hits
+it too. Pre-`init()` prologue the harness must supply (all precedented
+by earlier milestones): the memory manager + CriticalSections (M7),
+`TheWritableGlobalData` with `m_headless = TRUE`, `TheVersion`
+(unguarded deref in release builds, `GameEngine.cpp:196`),
+`TheFramePacer` (used at `:706`, never created by `init()` itself,
+same object M9 already builds real). `execute()`'s exit is clean: a
+harness-local message translator calling the real, public
+`setQuitting(TRUE)` after N real frames. M10's own hand-written
+`GameEngine::isTimeFrozen()`/`isGameHalted()` stubs must be REMOVED
+once the real `GameEngine.cpp` joins this milestone's link (they'd
+collide).
+
+**Not verified this pass, token-budget-bounded, each flagged as
+individually small and of the same "asset-tolerance" class as
+everything above** - `MetaMap::generateMetaMap`/`verifyMetaMap`,
+`MapCache::updateCache`, `GameState`/`GameStateMap` init (user-data
+directories), `CreateGameTextInterface` with no `.csf` file present,
+`Intro`'s behavior with `m_playIntro = FALSE`, `Shell::showShell`
+under the dummy window manager, base `TerrainVisual::init`, `Player`'s
+constructor's possible `DisplayString` use. **Recommended Milestone 12
+step 0**: a real spike that simply runs the real `init()` under the
+DEFER-closure link and enumerates whatever these actually throw,
+exactly the same "step 0 link/run spike before writing real
+implementation" discipline that made Milestone 10 and Milestone 11's
+retry both land clean on comparatively-few surprises.
+
+## Milestone 12 scope statement (supersedes Draft 34 section 5's
+deferred, unscoped "rung 2b-ii")
+
+A harness-local `PosixGameEngine : GameEngine` overriding the 11 pure
+factory methods: `createLocalFileSystem`/`createArchiveFileSystem`
+(the real, proven `StdLocalFileSystem`/`StdBIGFileSystem`),
+`createGameLogic` (plain `GameLogic`, matching M10's own choice),
+`createGameClient` (M11's `GameClientStub`, upgraded to real-instance
+factories for `AudioManagerStub`/`TerrainVisualStub`/
+`DisplayStringManagerStub` rather than `nullptr`), `createRadar`
+(`RadarDummy`, already proven portable), `createParticleSystemManager`
+(`ParticleSystemManagerDummy`, same precedent), `createThingFactory`/
+`createModuleFactory`/`createFunctionLexicon` (concrete base classes,
+zero pure virtuals), `createWebBrowser` (`nullptr`, now legitimately
+unneeded once the include is guarded). Plus: the 3 tiny compile shims
+(`CComModule`/`HINSTANCE`, the two `SetWindowText`/`SetWindowTextW`
+no-ops), a test-authored `Data/INI` scaffold of ~35 near-empty files,
+the DEFER-closure link with `GameEngine.cpp` itself now included in
+the closure (removing M10's hand-written `isTimeFrozen`/`isGameHalted`
+stubs). Payoff: the REAL, unmodified `GameEngine::init()`, `update()`
+called N times, and `execute()` with a real quit-message exit - not a
+bypass, not hand-constructed singletons, the actual engine entry point
+this whole port has been building toward since Phase 5 began.
+
+**Not yet approved for implementation** - this is Draft 36's plan,
+pending user sign-off on scope, same approval gate as every prior
+milestone.
