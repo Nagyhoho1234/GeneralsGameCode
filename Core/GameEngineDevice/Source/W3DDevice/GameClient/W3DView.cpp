@@ -34,7 +34,9 @@
 
 // SYSTEM INCLUDES ////////////////////////////////////////////////////////////////////////////////
 #include <stdlib.h>
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 // USER INCLUDES //////////////////////////////////////////////////////////////////////////////////
 #include "Lib/BaseType.h"
@@ -85,7 +87,9 @@
 #include "W3DDevice/GameClient/W3DDisplay.h"
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/GameClient/W3DView.h"
+#ifdef _WIN32
 #include "d3dx8math.h"
+#endif
 #include "W3DDevice/GameClient/W3DShaderManager.h"
 #include "W3DDevice/GameClient/Module/W3DModelDraw.h"
 #include "W3DDevice/GameClient/W3DCustomScene.h"
