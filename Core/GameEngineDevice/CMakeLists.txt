@@ -235,9 +235,11 @@ endif() # WIN32
 # Generals/GeneralsMD copies into the WIN32-gated block above (native port
 # plan, Draft 32, Milestone 9 Task 1). The header's divergence is confirmed
 # cosmetic (branding + two comment typo fixes) - no guard needed. The .cpp has
-# nine real GeneralsMD-only hunks, all guarded with "#if RTS_ZEROHOUR ... #else
-# ... #endif" two-block guards (not a straddling #if) - see the .cpp's own
-# header comment for the full enumeration. This is a PURE REFACTOR:
+# nine real GeneralsMD-only hunks, each guarded with "#if RTS_ZEROHOUR ...
+# #endif" (where Generals has no code at that spot) or the two-block
+# "#if RTS_ZEROHOUR ... #else ... #endif" (where both trees genuinely
+# diverge) - never a straddling #if either way. See the .cpp's own header
+# comment for the full enumeration. This is a PURE REFACTOR:
 # W3DDisplay.cpp still only compiles on Windows (WIN32-gated, as before); no
 # POSIX portability work was attempted or is in scope here.
 

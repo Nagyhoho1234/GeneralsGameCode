@@ -30,10 +30,12 @@
 // Author: Colin Day, April 2001
 //
 // TheSuperHackers @info Unified from the per-tree Generals/GeneralsMD copies
-// (native port plan, Draft 32, Milestone 9 Task 1) - GeneralsMD-wins, with
-// "#if RTS_ZEROHOUR ... #else ... #endif" two-block guards (Milestone 7 Task 3
-// follow-up style: each branch spells out its tree's full logic in one
-// uninterrupted block, never a straddling preprocessor conditional). This is
+// (native port plan, Draft 32, Milestone 9 Task 1) - GeneralsMD-wins, guarded
+// with "#if RTS_ZEROHOUR ... #endif" (Generals has no code at that spot) or
+// "#if RTS_ZEROHOUR ... #else ... #endif" where both trees genuinely diverge
+// (Milestone 7 Task 3 follow-up style either way: each branch spells out its
+// tree's full logic in one uninterrupted block, never a straddling
+// preprocessor conditional). This is
 // a PURE REFACTOR: W3DDisplay.cpp still only compiles on WIN32 (see
 // Core/GameEngineDevice/CMakeLists.txt); no POSIX portability work was
 // attempted here. Real divergences found by direct diff, all GeneralsMD-only
