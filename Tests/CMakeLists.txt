@@ -105,3 +105,14 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderRTS3DScene)
 endif()
+
+# Phase 5(a) Milestone 9 Task 3 (native port plan, Draft 32) - the
+# milestone's payoff task: the game's own real camera-transform math
+# (W3DView::updateCameraTransform()) on top of a real, base TerrainLogic -
+# the first TerrainLogic and the first W3DView ever constructed and executed
+# on POSIX. NOT WIN32 for the same reasons as its eight rendering siblings
+# and GameFileSystem. See RenderCameraTransform/CMakeLists.txt and main.cpp
+# for the full plan.
+if(NOT WIN32)
+    add_subdirectory(RenderCameraTransform)
+endif()

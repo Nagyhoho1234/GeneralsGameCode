@@ -133,6 +133,25 @@ typedef struct
 // ------------------------------------------------------------------------------------------------
 class W3DView : public View, public SubsystemInterface
 {
+	// TheSuperHackers @test Milestone 9 Task 3 (native port plan, Draft 32):
+	// grants Tests/RenderCameraTransform access to the private camera-
+	// transform-core method it exercises directly (updateCameraTransform()),
+	// so the harness can drive the SAME real math the game's own per-frame
+	// View::updateView() -> UPDATE() -> W3DView::update() call chain reaches
+	// (open question 3), without invoking update() itself - update() (like
+	// draw()/drawView()/pickDrawable()/iterateDrawablesInRegion()) also
+	// unconditionally dereferences TheGameClient/TheScriptEngine/
+	// TheGameLogic with NO null guard (":1577,:1717" - confirmed by direct
+	// reading, a gap the plan's finding 5 did not enumerate), which would
+	// crash a harness that deliberately leaves those singletons unconstructed
+	// (Draft 32 design decisions: camera-transform-core only). This is the
+	// plan's own pre-approved "isolate a smaller subset of W3DView.h's API
+	// surface... without touching the render/pick methods" fallback (open
+	// question 1) - a single, minimal, test-only grant; no behavior change,
+	// no new PUBLIC API, and draw()/drawView()/update()/pickDrawable()/
+	// iterateDrawablesInRegion() remain completely uncalled by the harness.
+	friend class RenderCameraTransformTestAccess;
+
 	enum Scripted
 	{
 		Scripted_Rotate = 1<<0, // Set when rotating the camera
