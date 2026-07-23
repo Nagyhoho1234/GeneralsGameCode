@@ -6545,8 +6545,8 @@ Given the evidence above, rung 3b-ii itself splits, the same way rung 3 (Draft 3
 
 ## Draft 36: Milestone 12 plan — rung 2b, the real `GameEngine::init()`/`update()`/`execute()` on POSIX
 
-**Status: PROPOSED, research-backed by a real compile spike, not yet
-approved for implementation.** Milestone 10 ("rung 2b-lite") deliberately
+**Status: APPROVED and IN PROGRESS** (user sign-off 2026-07-24).
+Milestone 10 ("rung 2b-lite") deliberately
 bypassed the real `GameEngine` class entirely - its harness never called
 `init()`/`update()`/`execute()`, using a hand-written stand-in only to
 satisfy the one call site (`isTimeFrozen()`) `GameLogic::update()`
@@ -6698,6 +6698,7 @@ called N times, and `execute()` with a real quit-message exit - not a
 bypass, not hand-constructed singletons, the actual engine entry point
 this whole port has been building toward since Phase 5 began.
 
-**Not yet approved for implementation** - this is Draft 36's plan,
-pending user sign-off on scope, same approval gate as every prior
-milestone.
+**APPROVED for implementation** (2026-07-24) - dispatched as a single
+worktree-isolated implementer, step 0 (the real `init()` link/run spike)
+first per this draft's own recommendation, same discipline that made
+Milestone 10 and Milestone 11's retry both land clean.
