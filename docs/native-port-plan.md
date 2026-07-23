@@ -5668,4 +5668,135 @@ against regression on both platforms.
 - `Core/Libraries/Source/WWVegas/WW3D2/dx8wrapper_gl.cpp` (the `Has_Stencil` gap; `dx8wrapper_d3d8.cpp:1023` is the Windows original)
 - `Tests/RenderGameAssets/CMakeLists.txt` (+ `link_stubs.cpp`, `main.cpp` - the harness template to clone)
 - `GeneralsMD/Code/GameEngine/Source/Common/GlobalData.cpp` (the defaults-constructed `GlobalData`, `:562-1092`, `newInstance(WeaponBonusSet)` at `:1026`)
+
+---
+
+## Draft 31: Milestone 8 achieved - the game's real scene manager runs
+on POSIX, rendering a pixel through a real `RTS3DScene` and a real
+`GlobalData` for the first time.
+
+All 5 tasks landed, task-reviewed clean (one follow-up fix applied
+after a review found a factual misnaming in a shared-infrastructure
+comment - not a code defect), pushed to `fork/native-port-plan`, and
+confirmed on a real GitHub Actions `workflow_dispatch` run
+(https://github.com/Nagyhoho1234/GeneralsGameCode/actions/runs/29987651585)
+- all 10 `ctest` entries pass there, the 34-error scoped baseline is
+unchanged, and `RenderRTS3DSceneTest` builds and runs clean on genuine
+CI infrastructure.
+
+**Task 1** (commit `b1bb333df`): five small per-tree-diverged sibling
+files (`W3DDynamicLight`, `W3DShroud`, `W3DCustomScene.h`,
+`Shadow/W3DShadow`, `W3DStatusCircle`) unified into `Core/`,
+GeneralsMD-wins verbatim - every divergence turned out to be either
+pure branding or a harmless GeneralsMD-superset (an extra `friend`
+declaration, a macro-vs-include swap with identical numeric values),
+no `RTS_ZEROHOUR` guard needed anywhere. Old per-tree files physically
+deleted.
+
+**Task 2** (commit `690b9eee4`): the milestone's most delicate
+unification - `W3DScene.cpp`/`.h`, the game's real per-frame scene
+render path (`RTS3DScene`), unified from two genuinely diverged
+per-tree copies. Six real divergence classes correctly guarded with
+clean two-block `#if RTS_ZEROHOUR ... #else ... #endif` sections (not
+the fragile straddling-`#if` style Milestone 7 had to fix after the
+fact) - including a genuine cross-tree Drawable API rename
+(`getHeatVisionOpacity` vs `getSecondMaterialPassOpacity`),
+translucency/occlusion bugfix logic, dynamic-light gating, and
+infantry-light clamping. Also fixed a latent defect found during
+unification: `m_frenzyMaterialPass` was declared but never properly
+initialized in either tree (dead commented-out init, no destructor
+release) - now null-initialized in the constructor and released in the
+destructor, behavior-preserving since it was already unreachable dead
+code. An implementer subagent stalled mid-verification waiting on its
+own background build that never notified it back; the controller took
+over directly, ran all verification against the real tools, and
+committed - the reviewer independently hand-traced every one of the
+six divergence classes plus reconstructed both `RTS_ZEROHOUR`
+resolutions from scratch against the real deleted originals, finding
+zero drops or duplicates.
+
+**Task 3** (commit `cce21944e`): `DX8Wrapper::Has_Stencil()`
+implemented on the GL backend - honest `false`, since the GLFW window
+requests zero stencil bits and the FBO carries no stencil attachment.
+An exhaustive audit of all 12 distinct `DX8Wrapper::` members
+`W3DScene.cpp` calls (113 raw call sites, traced to their exact
+definition site including one second-order dependency through
+`_Get_D3D_Device8()->GetRenderState()`) confirmed this was the only
+gap - no correction needed to the plan's own static-read finding.
+
+**Task 4** (commits `6d25512db`, `77b19bd84`): the milestone's payoff.
+`Tests/RenderRTS3DScene/` renders Milestone 7's archive-loaded quad
+through a REAL, unmodified `RTS3DScene` sitting on a REAL,
+defaults-constructed `GlobalData` - the first GameClient scene object
+and the first `GlobalData` ever constructed and executed on POSIX. The
+pre-approved link-closure fallback (scope down to construction-only
+checks if the closure exploded) was **not needed** - all 5 checks
+passed with the full, real chain (`Render` →
+`updateFixedLightEnvironments` → `Customized_Render` →
+`Visibility_Check` → `renderOneObject` → `Flush`), including a real
+visibility-culling check and a real `drawTerrainOnly` check (the
+latter strengthened during self-review with a reversibility
+sub-check). The actual link closure came in larger than the plan's
+raw "~10-15 entries" prediction once every one-line stub is counted
+individually (~25 total), but every reviewer-checked entry was either
+a small clean TU or a loud-commented stub - nothing cascaded into a
+non-goal heavy subsystem (terrain, particles, shadows, or the full
+`GameLogic`/`Drawable` closure all stayed correctly excluded). Two
+genuine, previously-undiscovered gaps in shared infrastructure were
+found and fixed properly (not stubbed around), since `W3DScene.cpp`
+had never been compiled on any non-Windows target before this task:
+1. `PortableD3D8/d3d8.h` was missing the standard `LPDIRECT3DDEVICE8`/
+   `PDIRECT3DDEVICE8` typedef the real Microsoft D3D8 header always
+   provides - added in the same form/position.
+2. `WW3D2/light.cpp`/`.h` (`LightClass`) had been left in the
+   `WIN32`-gated source list with no portability marker at all, unlike
+   essentially every neighboring entry - an outright omission from
+   earlier portability sweeps (Drafts 22/24/26), not a deliberate
+   deferral. Confirmed zero D3D/Windows dependencies, moved to
+   `WW3D2_SRC_PORTABLE`, re-verified safe on both platforms.
+
+A follow-up fix (`77b19bd84`) corrected one factual error the review
+found: a shared-infrastructure CMakeLists.txt comment (and the task
+report) misnamed `GlobalData`'s unconditionally-constructed `Money`
+member as `m_money` - the real field is `m_defaultStartingCash`
+(`GlobalData.h:478`). The underlying link-closure justification (a
+`Money`-typed member requiring `Snapshot`'s vtable via `Money`'s
+pure-virtual overrides) was correct throughout; only the field name
+was wrong, now corrected.
+
+**Task 5** (commit `202639a25`): CI wiring for `RenderRTS3DSceneTest`,
+following the exact `ctest --test-dir`/`xvfb-run` pattern Milestone 7
+Task 5 established for `WORKING_DIRECTORY`-declaring, GL-using
+harnesses.
+
+**What Milestone 8 makes possible, honestly**: the game's own real
+scene-rendering logic - visibility culling, light-environment updates,
+the terrain-only draw gate, the full per-object render/flush pipeline
+- runs correctly on GL, on top of a real `GlobalData` settings object,
+with both proven end-to-end by a real pixel check and a real negative/
+behavioral control, not just a render call. Still missing: no
+`W3DDisplay` (rung 3b - the client/display layer, `W3DDisplay::draw()`
+unconditionally touches most of GameClient per Draft 30's own finding),
+no `W3DView` (camera/scroll/pick, coupled to `TheTerrainLogic`/
+`TheRadar`), no terrain/shadows/particles rendering (all correctly
+null-guarded per the engine's own design), no `main()`/
+`GameEngine::execute` (rung 2b, still deferred until rung 3 is
+further along). A person sees one more test harness rendering one
+quad - but for the first time, that quad is drawn by the actual game
+code that will draw every unit and building once the remaining rungs
+land.
+
+**Deferred risks recorded, not fixed, this milestone** (in addition to
+the standing Milestone 6/7 deferrals): the GNU-only linker
+version-script/static-libstdc++ allocator mitigation (carried forward
+from Milestone 7) remains unverified on Clang/macOS - this harness
+inherits that caveat verbatim, same as `Tests/RenderGameAssets`;
+`RTS2DScene`/`RTS3DInterfaceScene` construction-only smoke checks
+(open question 5) were deliberately not added, since they were
+optional and the required checks were already comfortably complete;
+the exact `--gc-sections` elimination of `RTS2DScene`'s
+`W3DStatusCircle` construction (since this harness never instantiates
+`RTS2DScene`) is real but wasn't called out explicitly in the harness's
+own comments - worth a one-line note if a future task touches this
+harness.
 - `Core/GameEngineDevice/CMakeLists.txt` (WIN32-gated Core block `:7-204`, `W3DView.cpp` precedent `:183`, un-gated `W3DFileSystem` block `:234`)
