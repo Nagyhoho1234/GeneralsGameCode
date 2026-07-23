@@ -101,8 +101,8 @@ set(WW3D2_SRC
     inttest.h
     layer.cpp
     layer.h
-    light.cpp
-    light.h
+    #light.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 30, Milestone 8 Task 4)
+    #light.h # portable, see WW3D2_SRC_PORTABLE (Draft 30, Milestone 8 Task 4)
     #lightenvironment.cpp # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     #lightenvironment.h # portable, see WW3D2_SRC_PORTABLE (Draft 24 Step 5)
     line3d.cpp
@@ -363,6 +363,22 @@ set(WW3D2_SRC_PORTABLE
     htree.h
     htreemgr.cpp
     htreemgr.h
+
+    # Native port plan Phase 5(a) Milestone 8 Task 4 (Draft 30): a genuine
+    # gap found while linking the unified W3DScene.cpp on GL for the first
+    # time ever - RTS3DScene's real, always-executed light-copying code
+    # (updateFixedLightEnvironments's "*m_infantryLight[i] =
+    # *m_globalLight[i];") needs LightClass's out-of-line ctor/dtor/
+    # operator=/Clone/etc., but light.cpp/.h had simply never been promoted
+    # to this portable list despite having zero D3D/Windows dependencies
+    # (grep-verified) - unlike nearly all of its WW3D2_SRC neighbors, which
+    # already carry a "portable, see WW3D2_SRC_PORTABLE (Draft NN Step N)"
+    # marker, light.cpp/.h had no such marker at all, an outright omission
+    # rather than a deliberate not-yet-ported call. No harness before this
+    # one ever exercised real lighting through a scene class, so the gap
+    # was never hit.
+    light.cpp
+    light.h
     lightenvironment.cpp
     lightenvironment.h
     matinfo.cpp

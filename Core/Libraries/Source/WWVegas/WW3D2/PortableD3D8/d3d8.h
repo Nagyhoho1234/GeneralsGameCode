@@ -308,6 +308,22 @@ public:
 	virtual HRESULT DeletePatch(UINT Handle) { return D3D_OK; }
 };
 
+// TheSuperHackers @fix Native port plan, Draft 30, Milestone 8 Task 4: a
+// genuine gap found while compiling the unified W3DScene.cpp on GL for the
+// first time ever (it is WIN32-gated in Core/GameEngineDevice/CMakeLists.txt,
+// so no non-Windows target had ever compiled it before this harness).
+// W3DScene.cpp's renderStenciledPlayerColor() (a stencil-only helper, only
+// reached when DX8Wrapper::Has_Stencil() is true - always false on this GL
+// backend per Milestone 8 Task 3 - so this is a compile-time-only gap, not a
+// runtime one) uses "LPDIRECT3DDEVICE8", the standard D3D8 LP*-prefixed
+// pointer typedef convention every real Microsoft d3d8.h defines
+// (confirmed against build/win32/_deps/dx8-src/d3d8.h:351: "typedef struct
+// IDirect3DDevice8 *LPDIRECT3DDEVICE8, *PDIRECT3DDEVICE8;") - this portable
+// shim defined the IDirect3DDevice8 class itself but never added its LP*
+// typedef, because nothing on the GL side had needed it until now. Added
+// verbatim in the same form and position the real header uses.
+typedef IDirect3DDevice8 *LPDIRECT3DDEVICE8, *PDIRECT3DDEVICE8;
+
 class IDirect3D8
 {
 public:

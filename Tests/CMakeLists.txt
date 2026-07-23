@@ -94,3 +94,14 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderGameAssets)
 endif()
+
+# Phase 5(a) Milestone 8 Task 4 (native port plan, Draft 30) - the
+# milestone's payoff task: a pixel rendered through the game's own real
+# scene manager (RTS3DScene) with a real, defaults-constructed GlobalData
+# underneath it - the first GameClient scene object and the first
+# GlobalData ever constructed and executed on POSIX. NOT WIN32 for the same
+# reasons as its seven rendering siblings and GameFileSystem. See
+# RenderRTS3DScene/CMakeLists.txt and main.cpp for the full plan.
+if(NOT WIN32)
+    add_subdirectory(RenderRTS3DScene)
+endif()
