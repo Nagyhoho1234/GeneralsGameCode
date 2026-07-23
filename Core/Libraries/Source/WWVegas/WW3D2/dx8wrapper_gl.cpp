@@ -2088,6 +2088,30 @@ int DX8Wrapper::Get_Swap_Interval()
 	return g_SwapInterval;
 }
 
+// Milestone 8 (native port plan Phase 5(a), Draft 30 finding 4): honest
+// false, not a stub-for-now placeholder. This backend genuinely has no
+// stencil buffer to report: Create_Device requests
+// glfwWindowHint(GLFW_STENCIL_BITS, 0) before the window is created
+// (above), and Create_Framebuffer's FBO (above) attaches only a color
+// texture and a GL_DEPTH_COMPONENT24 depth renderbuffer - no
+// GL_STENCIL_ATTACHMENT / packed depth-stencil renderbuffer exists
+// anywhere in this file. The D3D8 backend's Has_Stencil
+// (dx8wrapper_d3d8.cpp) checks _PresentParameters.AutoDepthStencilFormat
+// for a real stencil-capable format; there is no GL equivalent to check
+// because none was ever requested. Returning false here is therefore
+// correct today, not aspirational - and it is load-bearing: W3DScene.cpp's
+// Render() gates its stencil-only translucent-occlusion path on
+// DX8Wrapper::Has_Stencil(), so this makes that path degrade exactly the
+// way the real game degrades on stencil-less hardware, rather than
+// running unsupported stencil ops against a stencil-less framebuffer.
+// Adding a real stencil attachment is a deliberate non-goal of this
+// milestone (a rendering-feature decision, not a porting seam) - revisit
+// together with GLFW_STENCIL_BITS above if that ever changes.
+bool DX8Wrapper::Has_Stencil()
+{
+	return false;
+}
+
 // Milestone 6 (native port plan Phase 5(a), Draft 26 Step 5): resizes the
 // GLFW window and recreates the FBO/depth attachments at the new size -
 // mirrors dx8wrapper_d3d8.cpp's Set_Device_Resolution in structure
