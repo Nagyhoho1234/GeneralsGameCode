@@ -178,9 +178,9 @@ add_executable(RenderRTS3DSceneTest
     # pulls in GlobalData::init() (-> generateExeCRC(), guarded by
     # "if (TheVersion)", stubbed in link_stubs.cpp) even though this
     # harness never calls init() itself. Separately, GlobalData has a
-    # genuinely, unconditionally-constructed Money m_money member (its ctor
-    # runs for every GlobalData instance) - Money derives from Snapshot and
-    # overrides ITS pure virtuals (crc/xfer/loadPostProcess), so Money's own
+    # genuinely, unconditionally-constructed Money m_defaultStartingCash
+    # member (its ctor runs for every GlobalData instance) - Money derives
+    # from Snapshot and overrides ITS pure virtuals (crc/xfer/loadPostProcess), so Money's own
     # vtable must resolve too. Both TUs are small (56/214 lines) and clean
     # (Snapshot.cpp: no non-portable deps at all; Money.cpp: Xfer/GameAudio/
     # PlayerList headers for TYPES only - Money::crc/xfer/loadPostProcess
