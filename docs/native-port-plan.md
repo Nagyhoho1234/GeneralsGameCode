@@ -6140,6 +6140,13 @@ avoids this exact wall.
 **Follow-up plan (second Fable planning pass, 2026-07-23)**: three
 workstreams, not four - the two CI-wiring tasks below share exactly
 one file and would collide if split, so they merge into one task.
+
+**Workstream A is DONE**, commit `d7fc57a43`, pushed, confirmed on a
+real GitHub Actions run
+(https://github.com/Nagyhoho1234/GeneralsGameCode/actions/runs/30036222240):
+both `GameLogicTickHarnessTest` and `RenderViewUpdateDrawTest` build
+and pass on genuine CI infrastructure, baseline gate holds.
+
 - **Workstream A - CI wiring for both new harnesses** (`.github/workflows/linux-native.yml`).
   `GameLogicTickHarnessTest` needs no `xvfb-run`/`LIBGL_ALWAYS_SOFTWARE`
   at all (pure logic, zero GL/display dependency, no scratch cwd -
