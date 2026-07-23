@@ -212,6 +212,40 @@ jobs:
         run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ctest --test-dir build/linux-x64 -R '^RenderCameraTransformTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
         continue-on-error: true
 
+      - name: Build GameLogicTickHarnessTest (Phase 5(a) Milestone 10 - rung 2b-lite, headless GameLogic tick harness)
+        id: build-gamelogictickharness
+        run: cmake --build --preset linux-x64 --target GameLogicTickHarnessTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run GameLogicTickHarnessTest (no display needed - pure headless logic test)
+        id: run-gamelogictickharness
+        if: steps.build-gamelogictickharness.outcome == 'success'
+        # Unlike every rendering harness above, this one has zero GL/display
+        # dependency AND no WORKING_DIRECTORY requirement (its add_test() call
+        # carries no scratch-cwd archive-authoring step, unlike GameFileSystemTest/
+        # RenderGameAssetsTest/RenderRTS3DSceneTest/RenderCameraTransformTest) -
+        # it's real TheAI/TheGameLogic/TheScriptEngine/TheTerrainLogic/
+        # ThePartitionManager construction and a 5-tick GameLogic::UPDATE() loop,
+        # nothing else. Invoked via ctest for consistency with every other entry.
+        run: ctest --test-dir build/linux-x64 -R '^GameLogicTickHarnessTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Build RenderViewUpdateDrawTest (Phase 5(a) Milestone 11 - rung 3b-ii-a, pickDrawable() ray-cast proof)
+        id: build-renderviewupdatedraw
+        run: cmake --build --preset linux-x64 --target RenderViewUpdateDrawTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run RenderViewUpdateDrawTest (headless Mesa software rendering)
+        id: run-renderviewupdatedraw
+        if: steps.build-renderviewupdatedraw.outcome == 'success'
+        # Like RenderCameraTransformTest above, this harness needs a display for
+        # GLFW/GL even though rendering itself goes to an offscreen FBO - xvfb-run
+        # supplies the virtual X server bare GitHub-hosted runners lack. Invoked
+        # via ctest for the same WORKING_DIRECTORY reason as every scratch-archive
+        # harness above (renderviewupdatedraw_scratch).
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ctest --test-dir build/linux-x64 -R '^RenderViewUpdateDrawTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
       - name: Upload configure/build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -277,6 +311,16 @@ jobs:
           echo "Build outcome: ${{ steps.build-rendercameratransform.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Run outcome: ${{ steps.run-rendercameratransform.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "The game's own real camera-transform math (W3DView::updateCameraTransform()) driven through the real public camera API (init/setDefaultView/lookAt/setAngle/setPitch/setZoom), on top of a real base TerrainLogic and a real, defaults-constructed GlobalData - the first TerrainLogic and the first W3DView ever constructed and executed on POSIX. Verified via direct-state camera assertions and pixel checks against an independently-reauthored CPU-side reimplementation of the camera math, plus a real Cull_Sphere-based culling check. Milestone 9's exit criterion." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 10: headless GameLogic tick harness, rung 2b-lite (Tests/GameLogicTickHarness)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-gamelogictickharness.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-gamelogictickharness.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Real TheAI/TheGameLogic/TheScriptEngine/TheTerrainLogic/ThePartitionManager constructed through the engine's own real code and code paths, deliberately bypassing GameEngine::init()/execute()'s real display-layer dependencies. Calls the real, unmodified GameLogic::UPDATE() five times, asserting the real frame counter and hasUpdated() flag advance correctly each tick - no GL/display dependency at all. Milestone 10's exit criterion." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 11: pickDrawable() real ray-cast proof, rung 3b-ii-a, scoped down (Tests/RenderViewUpdateDraw)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-renderviewupdatedraw.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-renderviewupdatedraw.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "W3DView::pickDrawable()'s real ray-cast chain (screen ray -> world ray -> RTS3DScene::castRay -> user-data extraction), hit and miss both checked against a sentinel DrawableInfo on the existing test-authored quad - no live Drawable required. Scoped down from the milestone's original full update()/draw()/drawView() control-flow plan after a real implementation attempt found a much larger link closure than estimated; that fuller proof remains open follow-up work (see docs/native-port-plan.md)." >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if unexpected error count
         if: always()
