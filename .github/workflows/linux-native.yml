@@ -177,6 +177,23 @@ jobs:
         run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ctest --test-dir build/linux-x64 -R '^RenderGameAssetsTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
         continue-on-error: true
 
+      - name: Build RenderRTS3DSceneTest (Phase 5(a) Milestone 8 Task 4 - the milestone's payoff task and exit harness)
+        id: build-renderrts3dscene
+        run: cmake --build --preset linux-x64 --target RenderRTS3DSceneTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run RenderRTS3DSceneTest (headless Mesa software rendering)
+        id: run-renderrts3dscene
+        if: steps.build-renderrts3dscene.outcome == 'success'
+        # Like RenderGameAssetsTest above, this harness needs a display for
+        # GLFW/GL even though rendering itself goes to an offscreen FBO -
+        # xvfb-run supplies the virtual X server bare GitHub-hosted runners
+        # lack. Invoked via ctest for the same WORKING_DIRECTORY reason as
+        # GameFileSystemTest/RenderGameAssetsTest above (renderrts3dscene_scratch;
+        # this harness authors its own .big archive into cwd at runtime).
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ctest --test-dir build/linux-x64 -R '^RenderRTS3DSceneTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
       - name: Upload configure/build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -232,6 +249,11 @@ jobs:
           echo "Build outcome: ${{ steps.build-rendergameassets.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Run outcome: ${{ steps.run-rendergameassets.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Every byte on screen comes out of a real BIG archive through the engine's own file stack (GameFileClass -> TheFileSystem -> StdBIGFile -> RAMFile), not a loose temp file - the first harness in this port to combine the GameEngine file-system stack (Tasks 1-2) with the unified W3DFileSystem (Task 3) and the WW3D2/GL render stack together. Milestone 7's exit criterion." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 8 Task 4: the milestone's payoff task and exit harness (Tests/RenderRTS3DScene)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-renderrts3dscene.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-renderrts3dscene.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "A pixel rendered through the game's own real scene manager (RTS3DScene, Core/GameEngineDevice's unified W3DScene.cpp) with a real, defaults-constructed GlobalData object underneath it - the first GameClient scene object and the first GlobalData ever constructed and executed on POSIX. Milestone 8's exit criterion." >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if unexpected error count
         if: always()
