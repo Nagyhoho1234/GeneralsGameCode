@@ -1,79 +1,141 @@
-# Phase 5(a) Milestone 9 Task 3 (native port plan, Draft 32) - the
-# milestone's payoff task: a pixel rendered through the game's own real
-# camera-transform math (W3DView::updateCameraTransform(), Core/
-# GameEngineDevice/.../W3DView.cpp, portability-fixed in Task 2) on top of a
-# real, base TerrainLogic (Core-... no, per-tree GeneralsMD, see below) - the
-# first TerrainLogic AND the first W3DView ever constructed and executed on
-# POSIX. See main.cpp for the full check list and docs/native-port-plan.md's
-# Draft 32 section (findings 5, 6, 7, the Design Decisions section, and open
-# questions 1-3) for the full design rationale.
+# Phase 5(a) Milestone 11 RETRY (native port plan, rung 3b-ii-a, Draft 35,
+# Draft 33's "Follow-up plan / Workstream B") - the milestone's original
+# steps 1-4 (real TheGameLogic/TheScriptEngine construction, the five-class
+# GameClient/InGameUI/Display/FontLibrary/Mouse stub-subclass surface, the
+# full update()/draw()/drawView() real-execution proof), attempted again
+# with a DIFFERENT, now-mandated link strategy after the first attempt's
+# minimal-stub-subclass approach was PROVEN NOT TO WORK (see git history on
+# this file / main.cpp / harness_stubs.* for that abandoned attempt, and
+# docs/native-port-plan.md's Draft 33 section for the measured 372/237
+# undefined-symbol counts that disproved it).
 #
-# NOT WIN32: same reasoning as all eight of its rendering siblings and
-# Tests/GameFileSystem - Windows already has the real D3D8 backend and its
-# own CI.
+# THE REAL, GENERALIZABLE FINDING that forced this rewrite (unchanged from
+# the abandoned attempt's own disclosure, repeated here since it is this
+# file's own reason for existing in its current shape): a derived class's
+# vtable needs a resolved function address for EVERY virtual method in its
+# base class hierarchy, not just the ones actually overridden - so a stub
+# subclass overriding only GameClient's/InGameUI's pure virtuals still
+# forces the linker to demand GameClient.cpp's/InGameUI.cpp's real bodies
+# for every non-pure virtual left un-overridden (draw()/update() themselves
+# call plenty of those). Isolating just TheGameLogic/TheScriptEngine
+# construction alone still measured 237 undefined symbols.
 #
-# Structure: Tests/RenderRTS3DScene's ENTIRE prologue/link structure, cloned
-# wholesale per the task brief, PLUS newly for this harness:
-#   - GeneralsMD's real TerrainLogic.cpp (Draft 32 finding 6: the BASE class,
-#     NOT W3DTerrainLogic - constructor is set-defaults-only, no map load).
-#     Task 2's own scratch-harness finding (task-2-report.md) already
-#     confirmed this drags in a materially bigger link closure than the
-#     class's own small size suggests: PartitionManager, TheGhostObjectManager,
-#     TheRadar, TheTacticalView, TheGameLogic, plus Drawable.cpp's
-#     TintEnvelope vtable and CachedFileInputStream/DataChunkInput (pulled in
-#     via TerrainLogic::loadMap, never called at runtime but still needing to
-#     link). See link_stubs.cpp for the actual resolution of each.
-#   - Core/GameEngine's real FramePacer.cpp + FrameRateLimit.cpp - a genuine
-#     gap this task found that Draft 32's finding 5 did NOT enumerate:
-#     W3DView.cpp's buildCameraTransform()/zoomCameraToDesiredHeight()/
-#     movePivotToGround() (all three inside the plan's own "camera-transform-
-#     core" method list) unconditionally dereference TheFramePacer with NO
-#     null guard (":392,:450,:467"). Both TUs are already proven to compile
-#     cleanly on POSIX today (they are unconditionally listed in Core/
-#     GameEngine/CMakeLists.txt, not WIN32-gated, and already produce .o
-#     files in this repo's own build/linux-x64 tree as part of the standing
-#     g_gameengine/z_gameengine targets) - real, small, already-portable TUs,
-#     so constructing a REAL TheFramePacer (not a stub) is both cheap and the
-#     more honest choice, matching this milestone's own "first X ever
-#     constructed on POSIX" ethos applied to a second singleton.
-#   - The unified Core/GameEngineDevice/.../W3DView.cpp itself (Task 2's
-#     portability fix already applied) - the harness's own payoff object.
-#   - link_stubs.cpp additionally supplies the CameraShakeSystem harness-
-#     local stub (real Core/GameEngineDevice/.../CameraShakeSystem.cpp is
-#     WIN32-gated AND unconditionally #includes d3dx8core.h, a genuinely
-#     non-portable header with no PortableD3D8 equivalent - stubbing the
-#     four small methods W3DView.cpp's camera-transform-core calls is far
-#     cheaper than fixing that whole TU's closure for methods that are true
-#     no-ops here anyway, since Add_Camera_Shake() is never called by this
-#     harness so CameraShakerList stays empty) plus whatever the linker asks
-#     for from W3DView.o's OTHER, unreachable-but-must-link methods (draw()/
-#     drawView()/update()/pickDrawable()/iterateDrawablesInRegion() - see
-#     that file's own long-form comments for the full, linker-discovered
-#     list, not predicted by static reading alone).
+# THE FIX, copied from Tests/GameLogicTickHarness/CMakeLists.txt (Milestone
+# 10's harness, already landed, already proven on a first real attempt) per
+# the reconciled follow-up plan: instead of hand-picking which real .cpp
+# files to compile, inherit z_gameengine's ENTIRE real source closure (via a
+# cmake_language(DEFER) read of that target's SOURCES property and
+# corei_gameengine_private's INTERFACE_SOURCES property - Tests/ configures
+# before GeneralsMD/ does, so this must be deferred to the end of the
+# top-level directory's processing), filtered by a small, named,
+# Windows-only exclude list - THE SAME list Milestone 10 already needed and
+# proved sufficient, reused verbatim here (this harness's own construction
+# path - GameLogic/ScriptEngine/GameClient/InGameUI/Display/FontLibrary/
+# Mouse plus the existing render stack - reaches nothing beyond what
+# Milestone 10 already excluded; confirmed by a real link attempt, not
+# assumed). Once EVERYTHING real is linked in wholesale, there is no
+# missing-base-symbol problem left to hit, and the stub subclasses in
+# harness_stub_classes.h can go back to overriding ONLY their abstract
+# base's pure virtuals, exactly as originally planned - the real base
+# bodies now come from the closure instead of causing link errors.
+#
+# A GENUINELY NEW RISK this combination creates that Milestone 10 never had
+# to handle, confirmed for real during this file's own implementation (not
+# assumed): z_gameengine's closure and this harness's own hand-picked
+# WW3D2/GL render-stack sources (inherited unchanged from the milestone's
+# first attempt) overlap heavily - GlobalData.cpp, TerrainLogic.cpp,
+# FramePacer.cpp/FrameRateLimit.cpp, View.cpp, ParabolicEase.cpp, Line2D.cpp,
+# DataChunk.cpp, Trig.cpp, Dict.cpp, NameKeyGenerator.cpp, ObjectStatusTypes.cpp,
+# Money.cpp, CriticalSection.cpp, Snapshot.cpp, GameUtility.cpp, and the
+# entire Common/System/{ArchiveFile,ArchiveFileSystem,AsciiString,
+# UnicodeString,File,FileSystem,LocalFile,LocalFileSystem,RAMFile,registry,
+# StreamingArchiveFile,SubsystemInterface,GameMemory,GameMemoryInit}.cpp
+# block are ALL already part of z_gameengine's/corei_gameengine_private's own
+# real source lists (confirmed by direct reading of both CMakeLists.txt
+# files, not assumed) - keeping them ALSO hand-picked below would compile
+# each one twice into two different object files feeding the SAME
+# executable, a real duplicate-symbol link error. All of the above are
+# REMOVED from this file's own hand-picked list (resolved by excluding the
+# hand-picked duplicate, per the milestone brief's own guidance, since the
+# closure is the strictly larger and more complete of the two sources for
+# every one of them) - what remains hand-picked below is exactly the
+# GameEngineDevice-tree (W3D-device-layer) subset that z_gameengine's own
+# closure never contained in the first place (it is a different CMake
+# target/tree entirely): the four StdDevice twins, W3DFileSystem.cpp,
+# wwdebugstub.cpp, matrixmapper.cpp, W3DScene.cpp, W3DShroud.cpp,
+# W3DConvert.cpp, and this harness's own payoff object, W3DView.cpp.
+#
+# link_stubs.cpp received the SAME kind of pruning for the same reason: every
+# stub in it that merely re-supplied a singleton pointer or member-function
+# body the closure NOW provides for real (TheGameLogic, TheScriptEngine,
+# TheGameClient, TheDisplay, TheInGameUI, TheFontLibrary, TheMouse,
+# GameLogic::isGamePaused()/getFirstObject()/destroyObject(),
+# ScriptEngine::isTimeFrozenDebug()/isTimeFrozenScript()/isTimeFast(),
+# GameClient::flushTextBearingDrawables(), Object::attemptDamage()/
+# updateObjValuesFromMapProperties(), and others enumerated in that file's
+# own header comment) was REMOVED - see that file for the full, real,
+# linker-driven accounting of which stubs survived and why.
+function(_m11_add_render_view_update_draw_test)
+set(_m11_this_dir "${CMAKE_SOURCE_DIR}/Tests/RenderViewUpdateDraw")
+
+get_target_property(_m11_src_gmd z_gameengine SOURCES)
+get_target_property(_m11_src_core corei_gameengine_private INTERFACE_SOURCES)
+
+# Verbatim copy of Tests/GameLogicTickHarness/CMakeLists.txt's own exclude
+# regex (see that file's header comment for the full, real, per-file
+# rationale of each entry - every one a genuinely Windows-only header
+# reachable from the respective .cpp, none reachable from this harness's own
+# construction path either, confirmed by this file's own real link attempt).
+set(_m11_exclude_regex
+    "Source/Common/GameEngine\\.cpp$|GUI/IMEManager\\.cpp$|Source/Common/System/Debug\\.cpp$|WOLBrowser/WebBrowser\\.cpp$|GameSpy/MainMenuUtils\\.cpp$|Menus/MainMenu\\.cpp$|Menus/WOLLadderScreen\\.cpp$|Menus/WOLLoginMenu\\.cpp$|Menus/WOLWelcomeMenu\\.cpp$|GameNetwork/DownloadManager\\.cpp$|Menus/DownloadMenu\\.cpp$|System/MiniDumper\\.cpp$|System/StackDump\\.cpp$|Bezier/BezierSegment\\.cpp$|Bezier/BezFwdIterator\\.cpp$|INI/INIWebpageURL\\.cpp$|Behavior/DumbProjectileBehavior\\.cpp$")
+
+list(FILTER _m11_src_gmd EXCLUDE REGEX "${_m11_exclude_regex}")
+list(FILTER _m11_src_core EXCLUDE REGEX "${_m11_exclude_regex}")
+
+# Both lists declare relative paths, rooted at their OWN CMakeLists.txt's
+# source dir - re-root each independently (identical technique to Tests/
+# GameLogicTickHarness/CMakeLists.txt).
+set(_m11_gameengine_sources)
+foreach(_m11_src ${_m11_src_gmd})
+    if(_m11_src MATCHES "\\.cpp$")
+        if(IS_ABSOLUTE "${_m11_src}")
+            list(APPEND _m11_gameengine_sources "${_m11_src}")
+        else()
+            list(APPEND _m11_gameengine_sources "${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/${_m11_src}")
+        endif()
+    endif()
+endforeach()
+foreach(_m11_src ${_m11_src_core})
+    if(_m11_src MATCHES "\\.cpp$")
+        if(IS_ABSOLUTE "${_m11_src}")
+            list(APPEND _m11_gameengine_sources "${_m11_src}")
+        else()
+            list(APPEND _m11_gameengine_sources "${CMAKE_SOURCE_DIR}/Core/GameEngine/${_m11_src}")
+        endif()
+    endif()
+endforeach()
+list(REMOVE_DUPLICATES _m11_gameengine_sources)
+
 add_executable(RenderViewUpdateDrawTest
-    main.cpp
-    link_stubs.cpp
+    ${_m11_this_dir}/main.cpp
+    ${_m11_this_dir}/link_stubs.cpp
+    ${_m11_this_dir}/harness_stub_classes.cpp
 
-    # ---- Core/GameEngine Common/System layer: identical file list to
-    # Tests/RenderRTS3DScene/CMakeLists.txt. ----
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/ArchiveFile.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/ArchiveFileSystem.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/AsciiString.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/UnicodeString.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/File.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/FileSystem.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/LocalFile.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/LocalFileSystem.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/RAMFile.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/registry.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/StreamingArchiveFile.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/SubsystemInterface.cpp
+    # ---- The full real z_gameengine/corei_gameengine_private source
+    # closure (Milestone 10's own technique) - supplies, among ~300+ other
+    # real .cpp files, GameLogic.cpp, ScriptEngine.cpp, GameClient.cpp,
+    # InGameUI.cpp, Display.cpp, GameFont.cpp (FontLibrary), Mouse.cpp,
+    # TerrainLogic.cpp, GlobalData.cpp, FramePacer.cpp/FrameRateLimit.cpp,
+    # View.cpp, ParabolicEase.cpp, Line2D.cpp, and the whole Common/System
+    # file-system/memory-manager layer - see this file's own header comment
+    # for the full accounting of what this replaces from the milestone's
+    # first attempt. ----
+    ${_m11_gameengine_sources}
 
-    # ---- The real memory manager (unchanged rationale). ----
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/GameMemory.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/GameMemoryInit.cpp
-
-    # ---- The four StdDevice twins. ----
+    # ---- GameEngineDevice-tree (W3D-device-layer) sources - NOT part of
+    # z_gameengine's closure (a different CMake target/tree entirely), so
+    # still hand-picked exactly as the milestone's first attempt already
+    # established. ----
     ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Source/StdDevice/Common/StdLocalFileSystem.cpp
     ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Source/StdDevice/Common/StdLocalFile.cpp
     ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Source/StdDevice/Common/StdBIGFileSystem.cpp
@@ -82,131 +144,39 @@ add_executable(RenderViewUpdateDrawTest
     # ---- W3DFileSystem.cpp: the real WW3D<->GameEngine seam. ----
     ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DFileSystem.cpp
 
-    # ---- CriticalSection.h/.cpp: GeneralsMD's copy, matching every other
-    # harness's "GeneralsMD + RTS_ZEROHOUR=1" flavor. ----
-    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Source/Common/System/CriticalSection.cpp
-
-    # ---- wwdebugstub.cpp, direct-listed. ----
+    # ---- wwdebugstub.cpp, direct-listed (unchanged from the first attempt). ----
     ${CMAKE_SOURCE_DIR}/Core/Libraries/Source/WWVegas/WWStub/wwdebugstub.cpp
 
     # ---- matrixmapper.cpp: per-tree, needed by decalsys.cpp's
-    # MatrixMapperClass::Set_Texture_Transform reference. ----
+    # MatrixMapperClass::Set_Texture_Transform reference (unchanged). ----
     ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/Libraries/Source/WWVegas/WW3D2/matrixmapper.cpp
-
-    # ---- GeneralsMD's real GlobalData.cpp (Draft 30 finding 5, carried over
-    # unchanged from Tests/RenderRTS3DScene). ----
-    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Source/Common/GlobalData.cpp
 
     # ---- The unified RTS3DScene/RTS2DScene/RTS3DInterfaceScene TU. ----
     ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DScene.cpp
 
-    # ---- W3DShroud.cpp (carried over unchanged from Tests/RenderRTS3DScene -
-    # same Install_Materials/UnInstall_Materials vtable-completeness reason). ----
+    # ---- W3DShroud.cpp (carried over unchanged - Install_Materials/
+    # UnInstall_Materials vtable-completeness reason). ----
     ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DShroud.cpp
 
-    # ---- Common/Snapshot.cpp + GeneralsMD's Common/RTS/Money.cpp (carried
-    # over unchanged - GlobalData's vtable-completeness requirement). ----
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/Snapshot.cpp
-    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Source/Common/RTS/Money.cpp
-
-    # ---- rts::getObservedOrLocalPlayerIndex_Safe (carried over unchanged). ----
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/GameUtility.cpp
-
-    # ---- NEW for this harness (Draft 32 finding 6, Task 2 Part B): the
-    # real, GeneralsMD-flavor, BASE TerrainLogic.cpp (NOT W3DTerrainLogic).
-    # Constructor is set-defaults-only. See link_stubs.cpp for the full
-    # link-closure resolution Task 2's own scratch harness already found. ----
-    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Source/GameLogic/Map/TerrainLogic.cpp
-
-    # ---- NEW for this harness: the real FramePacer.cpp/FrameRateLimit.cpp -
-    # both already portable, already compiled on Linux today as part of the
-    # standing g_gameengine/z_gameengine targets (see this file's own header
-    # comment for the full story). ----
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/FramePacer.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/FrameRateLimit.cpp
-
-    # ---- NEW for this harness (Task 2 Part A's portability fix already
-    # applied): the real, unified, WHOLE W3DView.cpp TU - this harness's own
-    # payoff object. Only updateCameraTransform() (private, exposed to this
-    # harness via a single, minimal, test-only friend grant in W3DView.h) is
-    # ever CALLED; every other virtual method (draw()/drawView()/update()/
-    # pickDrawable()/iterateDrawablesInRegion()) must still compile and
-    # link (one TU, one vtable) but is never invoked at runtime - see
-    # link_stubs.cpp for the actual, linker-discovered closure this pulled in. ----
+    # ---- The real, unified, WHOLE W3DView.cpp TU - this harness's own
+    # payoff object, unchanged from the first attempt. ----
     ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DView.cpp
 
-    # ---- NEW for this harness: the real, already Core-unified,
-    # already-proven-portable View.cpp (base class of W3DView, needed for
-    # W3DView's vtable to resolve: View::init()/xfer()/zoom()/getLocation()/
-    # setLocation()/prependViewToList()/getScreenCornerWorldPointsAtZ() are
-    # all real, out-of-line, non-pure base methods W3DView does not
-    # override - the real linker's own first finding for this target). ----
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameClient/View.cpp
-
-    # ---- NEW for this harness: ParabolicEase.cpp - a tiny, fully
-    # self-contained pure-math TU (no singleton dependencies at all, verified
-    # by reading) needed by W3DView.o's unreachable-but-must-link
-    # rotateCameraOneFrame()/moveAlongWaypointPath()/moveCameraTo() bodies
-    # (each embeds a ParabolicEase member by value in its own Info struct,
-    # W3DView.h:71,84,112,126 - operator()/setEaseTimes() are out-of-line).
-    # Linked for real rather than stubbed, per the established "compile
-    # small clean TUs" policy - cheaper and more honest than three
-    # hand-written stub bodies for a file this small and clean. ----
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameClient/ParabolicEase.cpp
-
-    # ---- NEW for this harness: Line2D.cpp - another tiny, fully
-    # self-contained pure-geometry TU (no singleton dependencies, verified
-    # by reading) needed by W3DView.o's unreachable-but-must-link draw()
-    # body's ClipLine2D() call (W3DView.cpp:1996). Linked for real, same
-    # "compile small clean TUs" rationale as ParabolicEase.cpp above. ----
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/GameClient/Line2D.cpp
-
-    # ---- NEW for this harness: W3DConvert.cpp - a third tiny,
-    # self-contained pure-math TU (W3DLogicalScreenToPixelScreen()/
-    # PixelScreenToW3DLogicalScreen(), no singleton dependencies at all,
-    # verified by reading) needed by W3DView.o's unreachable-but-must-link
-    # getPickRay()/worldToScreenTriReturn()/calcCameraAreaOffset() bodies. ----
+    # ---- W3DConvert.cpp: W3DLogicalScreenToPixelScreen()/
+    # PixelScreenToW3DLogicalScreen(), needed by W3DView.cpp's
+    # getPickRay()/worldToScreenTriReturn()/calcCameraAreaOffset(). ----
     ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngineDevice/Source/W3DDevice/Common/W3DConvert.cpp
 
-    # ---- NEW for this harness: TerrainLogic.cpp's own remaining link
-    # closure (Task 2's scratch-harness finding, continued) - both real,
-    # already-portable, already-proven-on-Linux-today TUs (both already have
-    # .o files in this repo's own build/linux-x64 tree, as part of the
-    # standing g_gameengine/z_gameengine targets - the SAME "already
-    # compiles cleanly on POSIX today" argument this file's own header
-    # comment makes for FramePacer.cpp/FrameRateLimit.cpp):
-    #   - DataChunk.cpp: home of CachedFileInputStream/DataChunkInput, pulled
-    #     in via TerrainLogic::loadMap() (link-live via the vtable - loadMap
-    #     is virtual - runtime-dead, this harness never loads a map). Linked
-    #     for real rather than stubbing 8+ individual methods, matching the
-    #     "compile small clean TUs" policy.
-    #   - Trig.cpp: Sin()/Cos(), pulled in via TerrainLogic::alignOnTerrain()
-    #     (link-live, runtime-dead - never called by this harness). ----
-    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Source/Common/System/DataChunk.cpp
-    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Source/Common/System/Trig.cpp
-
-    # ---- NEW for this harness: TerrainLogic.cpp's own remaining link
-    # closure, continued (this task's real-linker-driven discovery, not
-    # predicted by static reading) - three more real, already-portable,
-    # already-proven-on-Linux-today TUs (all three already have .o files in
-    # this repo's own build/linux-x64 tree, same argument as above):
-    #   - Dict.cpp: Dict::getAsciiString()/getBool(), pulled in via
-    #     TerrainLogic::addWaypoint() (non-virtual, only reached from
-    #     loadMap(), link-live/runtime-dead).
-    #   - ObjectStatusTypes.cpp: OBJECT_STATUS_MASK_NONE (a real global
-    #     object, default-constructed to all-zero bits), pulled in via
-    #     Bridge::createTower()/Bridge::Bridge() default arguments (nested
-    #     class inside TerrainLogic.cpp, only reached from
-    #     addBridgeToLogic()/addLandmarkBridgeToLogic(), never called).
-    #   - NameKeyGenerator.cpp: StaticNameKey::key() (real body, null-guards
-    #     TheNameKeyGenerator internally - NameKeyGenerator.cpp:272-274),
-    #     pulled in via the TheKey_waypointPath* well-known-key globals
-    #     (link_stubs.cpp's own definitions, below - see that file's own
-    #     comment for why they must be defined there rather than by linking
-    #     the real, heavy WorldHeightMap.cpp). ----
-    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Source/Common/Dict.cpp
-    ${CMAKE_SOURCE_DIR}/Core/GameEngine/Source/Common/System/ObjectStatusTypes.cpp
-    ${CMAKE_SOURCE_DIR}/GeneralsMD/Code/GameEngine/Source/Common/NameKeyGenerator.cpp
+    # ---- NEW for this retry: the real W3DStatusCircle.cpp (Draft 35 finding
+    # 10's own real early-out proof needs the REAL class, not a stub - its
+    # constructor is what RTS2DScene::RTS2DScene() unconditionally calls,
+    # W3DScene.cpp:2171). WIN32-gated in Core/GameEngineDevice/CMakeLists.txt
+    # (grouped with four other small W3DScene.cpp closure siblings, none of
+    # which this harness needs), but a real link attempt is the authority on
+    # whether its own #include "W3DDevice/GameClient/WorldHeightMap.h" drags
+    # in anything genuinely non-portable - see link_stubs.cpp for whatever
+    # that attempt actually found. ----
+    ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Source/W3DDevice/GameClient/W3DStatusCircle.cpp
 )
 
 target_link_libraries(RenderViewUpdateDrawTest PRIVATE
@@ -214,20 +184,31 @@ target_link_libraries(RenderViewUpdateDrawTest PRIVATE
     core_wwvegas
     corei_ww3d2
     portabled3d8_gl
-    # NEW for this harness: DataChunk.cpp (#includes "Compression.h") needs
-    # core_compression's own INTERFACE include directory - a real, already-
-    # portable, already-linked-elsewhere (Tests/CMakeLists.txt's core_tests)
-    # static library, not a heavy new dependency.
+    # core_compression: DataChunk.cpp (#includes "Compression.h") needs its
+    # INTERFACE include directory (unchanged from the first attempt).
     core_compression
+    # corei_always / corei_gameengine_include / gamespy::gamespy: Milestone
+    # 10's own link-library set (see Tests/GameLogicTickHarness/CMakeLists.txt's
+    # header comment for the full rationale of each) - now needed here too
+    # since this target compiles the same real GameEngine closure.
+    # corei_gameengine_public is deliberately NOT linked directly (same
+    # `-ld3d8lib` finding M10 documented); corei_gameengine_include supplies
+    # just the "GameEngine/Include" path instead.
+    corei_always
+    corei_gameengine_include
+    gamespy::gamespy
 )
 
 target_compile_features(RenderViewUpdateDrawTest PRIVATE cxx_std_17)
 
-# Real link-closure finding, carried over unchanged from Tests/
-# RenderRTS3DScene (same reasons, PLUS this harness's own new dead paths:
-# TerrainLogic.cpp's loadMap()/water/bridge machinery and W3DView.cpp's
-# draw()/drawView()/pickDrawable()/iterateDrawablesInRegion() bodies, all
-# genuinely unreachable from anything this harness's main() calls).
+# Matches the real IG_DEBUG_STACKTRACE define every z_gameengine/g_gameengine
+# TU already compiles with (M10's own finding, carried over here since this
+# target now compiles the same real closure).
+target_compile_definitions(RenderViewUpdateDrawTest PRIVATE IG_DEBUG_STACKTRACE)
+
+# Real link-closure finding, carried over unchanged from the milestone's
+# first attempt (same reasons, PLUS the closure's own large volume of dead
+# code paths this harness's main() never reaches).
 target_compile_options(RenderViewUpdateDrawTest PRIVATE -ffunction-sections -fdata-sections)
 target_link_options(RenderViewUpdateDrawTest PRIVATE -Wl,--gc-sections)
 
@@ -237,12 +218,13 @@ target_link_options(RenderViewUpdateDrawTest PRIVATE -Wl,--gc-sections)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_link_options(RenderViewUpdateDrawTest PRIVATE
         -static-libstdc++ -static-libgcc
-        -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/hide_global_allocator_symbols.map)
+        -Wl,--version-script=${_m11_this_dir}/hide_global_allocator_symbols.map)
 endif()
 
-# Header resolution: Tests/RenderRTS3DScene/CMakeLists.txt's set, unchanged -
-# W3DView.cpp/TerrainLogic.cpp/FramePacer.cpp/FrameRateLimit.cpp need nothing
-# beyond what that set already resolves (all Core/GeneralsMD Include paths).
+# Header resolution: the milestone's first attempt's set, unchanged - the
+# real closure's own files need nothing beyond what these paths already
+# resolve (same Core/GeneralsMD Include paths z_gameengine/
+# corei_gameengine_private themselves use to compile the exact same files).
 target_include_directories(RenderViewUpdateDrawTest PRIVATE
     ${CMAKE_SOURCE_DIR}/Core/GameEngine/Include
     ${CMAKE_SOURCE_DIR}/Core/GameEngineDevice/Include
@@ -259,3 +241,12 @@ file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/renderviewupdatedraw_scratch)
 
 add_test(NAME RenderViewUpdateDrawTest COMMAND RenderViewUpdateDrawTest
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/renderviewupdatedraw_scratch)
+endfunction()
+
+# Ordering note (identical to Tests/GameLogicTickHarness/CMakeLists.txt):
+# Tests/ is add_subdirectory()'d BEFORE GeneralsMD/ in the top-level
+# CMakeLists.txt, so z_gameengine/corei_gameengine_private do not exist yet
+# at the point this file is normally processed. Defer this target's own
+# creation to the end of the top-level directory's processing instead of
+# reordering the shared top-level CMakeLists.txt.
+cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL _m11_add_render_view_update_draw_test)

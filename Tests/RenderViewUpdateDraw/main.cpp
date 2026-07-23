@@ -1,49 +1,40 @@
-// Phase 5(a) Milestone 11 (native port plan, rung 3b-ii-a, Draft 35) - this
-// harness clones Tests/RenderCameraTransform's ENTIRE prologue/camera-driving/
-// pixel-check structure WHOLESALE, unchanged (see that harness's own header
-// comment below for the full, still-accurate rationale of every one of those
-// checks), and adds exactly ONE genuinely new, achievable piece of Draft 35's
-// scope this session: Check 8, pickDrawable()'s real ray-cast proof (finding
-// 11, implementation ordering step 5).
+// Phase 5(a) Milestone 11 RETRY (native port plan, rung 3b-ii-a, Draft 35,
+// Draft 33's "Follow-up plan / Workstream B") - this harness clones Tests/
+// RenderCameraTransform's ENTIRE prologue/camera-driving/pixel-check
+// structure WHOLESALE, unchanged (see that harness's own header comment
+// below for the full, still-accurate rationale of every one of those
+// checks), and this retry now ALSO delivers Draft 35's original steps 1-4
+// (implementation ordering): real TheGameLogic/TheScriptEngine construction;
+// the five-class GameClient/InGameUI/Display/FontLibrary/Mouse minimal
+// concrete stub subclasses; the real update()/draw()/drawView() call chain -
+// PLUS Check 8, pickDrawable()'s real ray-cast proof (finding 11,
+// implementation ordering step 5, first shipped standalone in this
+// milestone's first attempt, commit 67d7b83f0, kept unchanged here).
 //
-// IMPORTANT DEVIATION FROM DRAFT 35'S ORIGINAL SCOPE, recorded here per this
-// port's standing "disclose surprises, don't smooth them over" discipline:
-// this harness does NOT attempt Draft 35's steps 1-4 (real TheGameLogic/
-// TheScriptEngine construction; the five-class GameClient/InGameUI/Display/
-// FontLibrary/Mouse stub subclass surface; the real update()/draw()/
-// drawView() call chain). A real implementation attempt (see git history on
-// this file/CMakeLists.txt/harness_stubs.h for the abandoned attempt) found a
-// genuine, previously-undiscovered blocker: a derived class's constructor
-// UNCONDITIONALLY pins the BASE class's own vtable during construction (a
-// mandatory C++ ABI requirement - virtual dispatch during base-class
-// construction/destruction must resolve to the base class's OWN
-// implementations, not a not-yet-constructed derived override) - REGARDLESS
-// of how many of the base class's virtual methods the derived stub
-// overrides. This means constructing even a maximally-overridden
-// GameClientStub/InGameUIStub (overriding literally every non-inline virtual
-// method, not just the pure ones) still requires the REAL GameClient/
-// InGameUI base class's OWN vtable to link, which in turn requires ALL of
-// GameClient.cpp's/InGameUI.cpp's own real (if runtime-dead) method bodies
-// to resolve their own full transitive closure - measured, via a real link
-// attempt, at 372 distinct undefined symbols across GameLogic/ScriptEngine/
-// GameClient/InGameUI's own subsystem dependencies (ControlBar,
-// PartitionManager, CampaignManager, GameWindowManager, INI, Object,
-// ObjectTypes, Pathfinder, GameInfo, and dozens more). Isolating JUST
-// TheGameLogic/TheScriptEngine (without the other three classes) still
-// measured 237 undefined symbols - so even Draft 35's own pre-committed
-// fallback ("scope down to update()'s and pickDrawable()'s proofs only...
-// both need at most TheGameLogic/TheScriptEngine") turns out to rest on a
-// now-invalidated "cheap" assumption; findings 2-3's "set-defaults-only
-// constructor" characterization is accurate for RUNTIME cost but not for
-// LINK-TIME cost, which the draft's research did not measure. Per finding
-// 11, pickDrawable() alone needs NONE of these five singletons (verified by
-// direct reading, W3DView.cpp:2514-2566 - only the already-null-guarded
-// TheWindowManager and the already-real-per-Milestone-8 W3DDisplay::
-// m_3DScene), so it remains genuinely achievable and is delivered as Check
-// 8 below. update()'s and draw()'s own real-chain proofs are deferred to a
-// follow-up milestone that budgets for resolving several hundred additional
-// link-time stubs - a substantially larger mechanical effort than this
-// draft's own "~47+ trivial overrides" estimate anticipated.
+// WHY THIS RETRY SUCCEEDS WHERE THE FIRST ATTEMPT DID NOT, recorded here per
+// this port's standing "disclose surprises, don't smooth them over"
+// discipline: the first attempt's stub subclasses overrode ONLY each
+// abstract base's pure virtuals, which ran into a genuine, previously-
+// undiscovered blocker - a derived class's constructor UNCONDITIONALLY pins
+// the BASE class's own vtable during construction (a mandatory C++ ABI
+// requirement), so the REAL GameClient/InGameUI base classes' ENTIRE virtual-
+// method closures (not just the pure ones) needed to resolve at link time -
+// measured at 372 undefined symbols for the full five-class set, 237 for
+// TheGameLogic+TheScriptEngine alone (see Draft 33's own accounting in
+// docs/native-port-plan.md for the full story). THE FIX (per the reconciled
+// follow-up plan): CMakeLists.txt now inherits z_gameengine's ENTIRE real
+// source closure (Milestone 10's own DEFER-closure technique, already proven
+// on a first real attempt) instead of hand-picking files - once GameLogic.cpp/
+// ScriptEngine.cpp/GameClient.cpp/InGameUI.cpp/Display.cpp/GameFont.cpp/
+// Mouse.cpp are ALL linked in for real, every one of those "several hundred"
+// undefined symbols resolves by construction, and the stub subclasses
+// (harness_stub_classes.h) go back to overriding ONLY their abstract base's
+// pure virtuals, exactly as Draft 35 originally intended. See
+// CMakeLists.txt's own header comment for the full mechanism, including the
+// genuinely NEW risk this combination created (closure/hand-picked-source
+// duplicate-symbol collisions) and link_stubs.cpp's own header comment for
+// the real, linker-driven accounting of every stub that had to be removed
+// as a result.
 //
 // ---- Everything below this point (through Check 7) is Tests/
 // RenderCameraTransform/main.cpp's own header comment and structure,
@@ -174,6 +165,11 @@
 #include "GameLogic/TerrainLogic.h"
 #include "GameClient/View.h"
 #include "GameClient/DrawableInfo.h" // Milestone 11 step 5 (finding 11): pickDrawable()'s sentinel DrawableInfo.
+#include "GameLogic/GameLogic.h" // Milestone 11 RETRY step 1: real TheGameLogic construction.
+#include "Common/NameKeyGenerator.h" // Milestone 11 RETRY: real TheNameKeyGenerator construction (teardown hazard fix, see main.cpp's own construction-site comment).
+#include "GameLogic/AI.h" // Milestone 11 RETRY: real TheAI construction (teardown hazard fix, see main.cpp's own construction-site comment).
+#include "GameLogic/ScriptEngine.h" // Milestone 11 RETRY step 1: real TheScriptEngine construction.
+#include "harness_stub_classes.h" // Milestone 11 RETRY step 2: GameClientStub/InGameUIStub/DisplayStub/FontLibraryStub/MouseStub.
 
 #include "WWLib/ffactory.h" // _TheFileFactory - the final teardown's verification.
 
@@ -729,9 +725,20 @@ int main()
 
 		// ---- Check 2: real TerrainLogic - the first ever constructed on
 		// POSIX (Draft 32 finding 6, Task 2 Part B's deferred proof). Base
-		// class only (NOT W3DTerrainLogic). ----
+		// class only (NOT W3DTerrainLogic), but via the harness-local
+		// HarnessTerrainLogic subclass (Milestone 11 RETRY's own real,
+		// implementation-time finding - see harness_stub_classes.h's own
+		// header comment): the base class's getExtent()/
+		// getExtentIncludingBorder() are unimplemented DEBUG_CRASH-only stubs
+		// that leave their output Region3D uninitialized, corrupting
+		// W3DView::calcCameraAreaConstraints() (genuinely reached by this
+		// milestone's real view->update() call, unlike M9's harness which
+		// never called update() at all) - HarnessTerrainLogic supplies a
+		// real, finite, large-enough extent instead. Every OTHER TerrainLogic
+		// method (getGroundHeight() etc., checked below) is the exact same
+		// real, unmodified base-class body. ----
 		printf("=== Check 2: real TerrainLogic (first ever on POSIX) ===\n");
-		TheTerrainLogic = NEW TerrainLogic;
+		TheTerrainLogic = NEW HarnessTerrainLogic;
 		Check(TheTerrainLogic != nullptr, "2a. TheTerrainLogic constructed (non-null)");
 		Coord3D groundNormal = { 99.0f, 99.0f, 99.0f };
 		Real groundHeight = TheTerrainLogic->getGroundHeight(500.0f, 500.0f, &groundNormal);
@@ -745,6 +752,87 @@ int main()
 		Check(TheFramePacer != nullptr, "3a. TheFramePacer constructed (non-null)");
 		Real logicStepMs = TheFramePacer->getLogicTimeStepMilliseconds();
 		Check(logicStepMs > 0.0f, "3b. getLogicTimeStepMilliseconds() > 0 (the exact call buildCameraTransform() makes unconditionally, W3DView.cpp:392)");
+
+		// ---- Milestone 11 RETRY, step 1 (Draft 35 implementation ordering,
+		// findings 2-3): real TheGameLogic/TheScriptEngine construction - now
+		// genuinely achievable link-wise since CMakeLists.txt links the whole
+		// real GameEngine source closure (Milestone 10's own technique).
+		// Both constructors are set-defaults-only (GameLogic.cpp:257-304,
+		// ScriptEngine.cpp:447-479) - assert a few known defaults so a
+		// silently-wrong construction fails loudly. ----
+		printf("=== Check M11a: real TheGameLogic/TheScriptEngine (Milestone 11 RETRY step 1) ===\n");
+		TheGameLogic = NEW GameLogic;
+		Check(TheGameLogic != nullptr, "M11a. TheGameLogic constructed (non-null)");
+		Check(TheGameLogic->getGameMode() == GAME_NONE, "M11b. TheGameLogic->getGameMode() == GAME_NONE (real default, GameLogic.cpp:284)");
+		Check(TheGameLogic->isInGame() == false, "M11c. TheGameLogic->isInGame() == false (GameLogic.h:500, \"m_gameMode != GAME_NONE\")");
+		Check(TheGameLogic->isGamePaused() == false, "M11d. TheGameLogic->isGamePaused() == false (real default, now the real linked body)");
+		Check(TheGameLogic->findObjectByID(INVALID_ID) == nullptr, "M11e. findObjectByID(INVALID_ID) == nullptr (GameLogic.h:511-525, short-circuits)");
+
+		TheScriptEngine = NEW ScriptEngine;
+		Check(TheScriptEngine != nullptr, "M11f. TheScriptEngine constructed (non-null)");
+		Check(TheScriptEngine->isTimeFrozenDebug() == false, "M11g. isTimeFrozenDebug() == false (real POSIX body, ScriptEngine.cpp:8450-8473)");
+		Check(TheScriptEngine->isTimeFrozenScript() == false, "M11h. isTimeFrozenScript() == false (real body, return m_freezeByScript, defaults FALSE)");
+		Check(TheScriptEngine->isTimeFast() == false, "M11i. isTimeFast() == false (real POSIX body, ScriptEngine.cpp:8478+)");
+
+		// ---- Milestone 11 RETRY, step 2 (Draft 35 implementation ordering,
+		// design decisions): minimal concrete stub subclasses for GameClient/
+		// InGameUI/Display/FontLibrary/Mouse, each overriding ONLY its
+		// abstract base's pure virtuals (harness_stub_classes.h) - genuinely
+		// sufficient now that the real, non-pure base bodies come from the
+		// linked closure instead of causing link errors. Resolves the
+		// GameClient destructor hazard the draft documents (~GameClient()
+		// unconditionally does "TheFontLibrary->reset(); delete
+		// TheFontLibrary;" and "TheMouse->reset(); delete TheMouse;",
+		// GameClient.cpp:187-193) by providing real, minimal, non-null
+		// FontLibraryStub/MouseStub instances FIRST, per the draft's own
+		// recommendation (open question 2) - the deliberate-leak fallback is
+		// NOT used. ----
+		printf("=== Check M11j: minimal concrete stub subclasses (Milestone 11 RETRY step 2) ===\n");
+		TheFontLibrary = NEW FontLibraryStub;
+		Check(TheFontLibrary != nullptr, "M11j. TheFontLibrary (FontLibraryStub) constructed (non-null) - resolves GameClient dtor hazard");
+		TheMouse = NEW MouseStub;
+		Check(TheMouse != nullptr, "M11k. TheMouse (MouseStub) constructed (non-null) - resolves GameClient dtor hazard");
+		TheDisplay = NEW DisplayStub;
+		Check(TheDisplay != nullptr, "M11l. TheDisplay (DisplayStub) constructed (non-null)");
+		TheGameClient = NEW GameClientStub;
+		Check(TheGameClient != nullptr, "M11m. TheGameClient (GameClientStub) constructed (non-null)");
+		TheInGameUI = NEW InGameUIStub;
+		Check(TheInGameUI != nullptr, "M11n. TheInGameUI (InGameUIStub) constructed (non-null)");
+		// TheWindowManager: a real, implementation-time finding this retry
+		// discovered (NOT flagged by Draft 35 - see GameWindowManagerStub's
+		// own header comment in harness_stub_classes.h for the full,
+		// GDB-backtrace-confirmed story): the real ~InGameUI()'s
+		// stopCameoMovie() unconditionally dereferences TheWindowManager with
+		// no null guard, genuinely reached via this harness's own
+		// "delete TheGameClient" teardown (~GameClient() cascades into
+		// ~InGameUI()). A real, minimal, non-null instance is required.
+		TheWindowManager = NEW GameWindowManagerStub;
+		Check(TheWindowManager != nullptr, "M11r. TheWindowManager (GameWindowManagerStub) constructed (non-null) - resolves the real ~InGameUI()/stopCameoMovie() teardown hazard");
+		// TheNameKeyGenerator: a SECOND real, implementation-time finding on
+		// the SAME stopCameoMovie() call site, found by a second real GDB
+		// backtrace after fixing TheWindowManager above: "TheNameKeyGenerator
+		// ->nameToKey(...)" (NameKeyGenerator.cpp:192) is NOT null-guarded
+		// (unlike StaticNameKey::key(), which IS - see link_stubs.cpp's own
+		// comment on that distinction). NameKeyGenerator's own constructor is
+		// cheap, set-defaults-only (NameKeyGenerator.cpp:37-45, zeroes its
+		// hash-bucket array) - a real, minimal, non-null instance, matching
+		// this harness's established "construct the cheap real singleton"
+		// precedent (TheGameLogic/TheScriptEngine above).
+		TheNameKeyGenerator = NEW NameKeyGenerator;
+		Check(TheNameKeyGenerator != nullptr, "M11s. TheNameKeyGenerator constructed (non-null) - resolves the real ~InGameUI()/stopCameoMovie()/nameToKey() teardown hazard");
+		// TheAI: a FOURTH real, implementation-time finding on this same
+		// teardown trail, found by a further real GDB backtrace:
+		// GameLogic::~GameLogic() -> destroyAllObjectsImmediate() ->
+		// processDestroyList() unconditionally does "TheAI->pathfinder()->
+		// m_classifyFenceZeroInit = ...;" (GameLogic.cpp:2586) with no null
+		// guard - genuinely reached by this harness's own real
+		// "delete TheGameLogic" teardown below. AI's own constructor
+		// (AI.cpp:302-307) is cheap and safe (NEW TAiData; NEW Pathfinder;
+		// Pathfinder's own constructor, AIPathfind.cpp:4074-4079, is
+		// likewise set-defaults-only) - a real, minimal, non-null instance,
+		// matching this harness's established construction precedent.
+		TheAI = NEW AI;
+		Check(TheAI != nullptr, "M11t. TheAI constructed (non-null) - resolves the real GameLogic::~GameLogic()/processDestroyList() teardown hazard");
 
 		// ---- Construct the real RTS3DScene (Milestone 8's own construction,
 		// unchanged) plus the quad. ----
@@ -788,6 +876,26 @@ int main()
 		// technique, unchanged) - this is a plain assignment to the SAME
 		// real RTS3DScene constructed above, not a new object.
 		W3DDisplay::m_3DScene = scene;
+
+		// ---- Milestone 11 RETRY, step 3 (Draft 35 implementation ordering,
+		// finding 9-10): a real RTS2DScene as W3DDisplay::m_2DScene, matching
+		// the real game's own construction idiom (NEW_REF, unchanged from
+		// Milestone 8's RTS3DScene technique above). draw() unconditionally
+		// dereferences W3DDisplay::m_2DScene ("W3DDisplay::m_2DScene->doRender(
+		// m_2DCamera)", W3DView.cpp:2109), so it must be real, not null.
+		// RTS2DScene's own constructor unconditionally builds a real
+		// W3DStatusCircle and adds it to the scene (W3DScene.cpp:2168-2173) -
+		// this is the genuine, positive proof finding 10 documents: with a
+		// real (even defaults-only) TheGameLogic now constructed above,
+		// W3DStatusCircle::Render()'s own first real line
+		// ("if (!TheGameLogic->isInGame() || TheGameLogic->getGameMode() ==
+		// GAME_SHELL) return;", W3DStatusCircle.cpp:301-304) cleanly early-
+		// returns, confirmed below once draw() actually runs it (Check M11).
+		// ----
+		printf("=== Check M11o: real RTS2DScene as W3DDisplay::m_2DScene (Milestone 11 RETRY step 3) ===\n");
+		RTS2DScene* scene2d = NEW_REF(RTS2DScene, ());
+		Check(scene2d != nullptr, "M11o. RTS2DScene constructed (non-null) - its own ctor builds a real W3DStatusCircle");
+		W3DDisplay::m_2DScene = scene2d;
 
 		// ---- Check 4: real W3DView, constructed and driven through the
 		// real public camera API (task brief item 2, open question 3). ----
@@ -843,14 +951,52 @@ int main()
 		Check(CloseReal(view->getPosition().x, 500.0f, 0.01f) && CloseReal(view->getPosition().y, 500.0f, 0.01f) && view->getPosition().z == 0.0f,
 			"4c. getPosition() == lookAt() target with z reset to the flat (0) ground height");
 
-		// The real, per-frame camera-transform-core method (open question 3;
-		// see W3DView.h's friend-grant comment and this file's own header
-		// comment for the full "why not the public updateView()" rationale).
-		RenderCameraTransformTestAccess::DriveUpdateCameraTransform(view);
+		// ---- Milestone 11 RETRY, step 4 (Draft 35 implementation ordering -
+		// THIS MILESTONE'S ACTUAL PAYOFF): drive the real, unmodified
+		// W3DView::update() through its full real body (W3DView.cpp:1388-1718),
+		// now genuinely callable (M9's own open question 3 blocker - update()
+		// unconditionally dereferences TheGameClient/TheScriptEngine/
+		// TheGameLogic - is resolved, all three are now real). Called HERE,
+		// in place of M9's own friend-grant DriveUpdateCameraTransform()
+		// workaround (that workaround existed SPECIFICALLY because those three
+		// singletons were null in M9 - now that they are real, the genuine
+		// public entry point is both callable and more honest). update()
+		// internally calls the private updateCameraTransform() itself
+		// (":1701-1705, if (m_recalcCamera || m_isCameraSlaved)") AFTER first
+		// running zoomCameraToDesiredHeight()/movePivotToGround() (":1658-1666,
+		// under m_okToAdjustHeight, real default TRUE) - a real, implementation-
+		// time finding: predicting the final camera transform from PRE-update()
+		// zoom/position state (as a bare updateCameraTransform()-only call would
+		// require) does NOT match what update()'s own height-adjustment pass
+		// converges to; reading state AFTER this single real update() call
+		// (below, Check 4d/4e) is what actually matches the game's own
+		// single-pass-per-frame semantics. Also exercises, for real: TheGameLogic
+		// ->isGamePaused()/TheScriptEngine->isTimeFrozenDebug()/
+		// isTimeFrozenScript()/isTimeFast() (all real, linked bodies, all
+		// false), getHeightAroundPos() (real TheTerrainLogic, flat/0),
+		// getAxisAlignedViewRegion() (finding 5's camera-pitch hazard - verified
+		// below not to fire under this harness's own ViewDefaultPitchRadians
+		// pitch), and TheGameClient->iterateDrawablesInRegion() (real body,
+		// empty m_drawableList, zero-count, GameClient.cpp:820-837 - the loop
+		// body never executes, confirmed safe by direct reading). ----
+		printf("=== Check M11p: real W3DView::update() (Milestone 11 RETRY step 4, the milestone's payoff) ===\n");
+		view->update();
+		Check(true, "M11p. view->update() returned without crashing (real isGamePaused()/isTimeFrozenDebug()/isTimeFrozenScript()/isTimeFast()/getAxisAlignedViewRegion()/iterateDrawablesInRegion() all executed)");
+		// finding 5's camera-pitch hazard (getAxisAlignedViewRegion()'s unguarded
+		// TheTerrainRenderObject->getMap() fallback branch): reaching this line
+		// at all (no segfault) is the honest, direct proof that
+		// getScreenCornerWorldPointsAtZ() returned PlaneClass::INSIDE_SEGMENT for
+		// this harness's own ViewDefaultPitchRadians pitch, so the hazardous
+		// fallback branch was never taken - recorded explicitly per the draft's
+		// own open question 5, not assumed.
+		Check(true, "M11q. getAxisAlignedViewRegion()'s camera-pitch hazard (finding 5) did NOT fire under this harness's real pitch (survived to this line)");
 
 		// ---- Check 4d/4e: direct-state assertions against the independent
 		// CPU-side prediction (task brief item 4 - "direct-state assertions
-		// beat pixel-only inference where a direct query is available"). ----
+		// beat pixel-only inference where a direct query is available"),
+		// computed from the view's state AFTER the real update() call above
+		// (its own PRE-transform height-adjustment pass, see this block's own
+		// header comment, is why this ordering matters). ----
 		Vector3 predictedSource, predictedTarget;
 		PredictCameraSourceAndTarget(
 			view->getZoom(), view->getAngle(), view->getPitch(), view->getPosition(),
@@ -875,12 +1021,29 @@ int main()
 		// consequence of Look_At's own definition (the target always projects
 		// to NDC (0,0)), so this specifically proves the real, W3DView-computed
 		// camera (view->get3DCamera(), NOT a hand-built test camera) is what
-		// actually drove this frame's render. ----
+		// actually drove this frame's render.
+		//
+		// Milestone 11 RETRY: renders via the REAL view->drawView() (DRAW() ->
+		// W3DView::draw(), W3DView.cpp:1857-2110) instead of a direct
+		// scene->doRender() call - draw() internally does exactly
+		// "W3DDisplay::m_3DScene->doRender(m_3DCamera)" (:1894) plus the real
+        // batching/2D-scene/filter machinery around it (task brief item 4's
+		// "reuse the existing pixel-check philosophy... now reached via the
+		// FULL real call chain"). Also confirms, for real: TheDisplay->
+		// beginBatch()/endBatch() (:2102,2104), TheGameClient->
+		// resetRenderedObjectCount()/iterateDrawablesInRegion()/
+		// flushTextBearingDrawables() (:2100,2103,2106), the default view-filter
+		// branch's real no-op resolution (finding 7 - W3DShaderManager::
+		// filterPreRender() genuinely called, genuinely returns false), and
+		// W3DDisplay::m_2DScene->doRender() (:2109) - the real RTS2DScene's
+		// W3DStatusCircle::Render() early-out (finding 10) genuinely firing,
+		// confirmed by this pixel check's own success (a mis-firing status
+		// circle would corrupt these exact pixels). ----
 		printf("=== Check 5: pixel A (centered on the real camera's own look-at target) ===\n");
 		robj->Set_Transform(Matrix3D(Vector3(LOOKAT_TARGET.x, LOOKAT_TARGET.y, LOOKAT_TARGET.z)));
 
 		Check(WW3D::Begin_Render(true, true, CLEAR_COLOR) == WW3D_ERROR_OK, "5a. WW3D::Begin_Render returned WW3D_ERROR_OK");
-		scene->doRender(view->get3DCamera()); // the REAL, W3DView-computed camera - not a hand-built test camera.
+		view->drawView(); // Milestone 11 RETRY: the REAL DRAW()->W3DView::draw() call chain, not a direct scene->doRender().
 		Check(WW3D::End_Render(true) == WW3D_ERROR_OK, "5b. WW3D::End_Render returned WW3D_ERROR_OK");
 
 		{
@@ -922,7 +1085,7 @@ int main()
 
 		robj->Set_Transform(Matrix3D(Vector3(PROBE_WORLD.x, PROBE_WORLD.y, PROBE_WORLD.z)));
 		Check(WW3D::Begin_Render(true, true, CLEAR_COLOR) == WW3D_ERROR_OK, "6b. WW3D::Begin_Render returned WW3D_ERROR_OK");
-		scene->doRender(view->get3DCamera());
+		view->drawView(); // Milestone 11 RETRY: the REAL DRAW()->W3DView::draw() call chain, not a direct scene->doRender().
 		Check(WW3D::End_Render(true) == WW3D_ERROR_OK, "6c. WW3D::End_Render returned WW3D_ERROR_OK");
 
 		{
@@ -941,42 +1104,20 @@ int main()
 		robj->Set_Transform(Matrix3D(Vector3(OFFSCREEN_WORLD.x, OFFSCREEN_WORLD.y, OFFSCREEN_WORLD.z)));
 
 		Check(WW3D::Begin_Render(true, true, CLEAR_COLOR) == WW3D_ERROR_OK, "7a. WW3D::Begin_Render returned WW3D_ERROR_OK");
-		scene->doRender(view->get3DCamera());
+		view->drawView(); // Milestone 11 RETRY: the REAL DRAW()->W3DView::draw() call chain, not a direct scene->doRender().
 		Check(WW3D::End_Render(true) == WW3D_ERROR_OK, "7b. WW3D::End_Render returned WW3D_ERROR_OK");
 		Check(robj->Is_Really_Visible() == 0, "7c. robj->Is_Really_Visible() false once moved far outside the real camera's frustum");
 
 		// ---- Check 8 (Milestone 11, rung 3b-ii-a, Draft 35, finding 11 /
 		// implementation ordering step 5): pickDrawable()'s real ray-cast
-		// proof. Reading pickDrawable() in full (W3DView.cpp:2514-2566)
-		// shows it has ZERO dependency on TheGameLogic/TheScriptEngine/
-		// TheGameClient/TheDisplay/TheInGameUI - only TheWindowManager
-		// (already null-guarded, stays null per this harness's own
-		// deliberate omissions) and W3DDisplay::m_3DScene->castRay(), which
-		// this harness already constructs for real (Milestone 8's own
-		// technique, unchanged above). This means pickDrawable()'s real
-		// ray-cast->user-data chain is provable WITHOUT the five-class
-		// GameClient/InGameUI/Display/FontLibrary/Mouse stub surface this
-		// milestone's steps 1-4 originally scoped - see this file's own
-		// header comment for why steps 1-4 (real TheGameLogic/
-		// TheScriptEngine construction and the full real update()/draw()
-		// call chain) are NOT attempted in this harness this session: a
-		// genuine, newly-discovered blocker (a mandatory C++ ABI property -
-		// a derived class's constructor unconditionally pins the BASE
-		// class's own vtable during construction, regardless of how many
-		// virtual methods the derived class overrides - see header comment)
-		// makes constructing ANY of those five real, concrete objects
-		// require resolving each real base class's ENTIRE virtual-method
-		// closure at link time, not just its constructor's; measured at 237
-		// undefined symbols for TheGameLogic+TheScriptEngine alone and 372
-		// for the full five-class set, dramatically larger than the
-		// milestone's own "cheap"/"~47+ trivial overrides" characterization
-		// anticipated. Per the milestone's own pre-committed fallback (open
-		// question 1): "if it cascades, scope this milestone DOWN to
-		// update()'s and pickDrawable()'s proofs only... deferring draw()'s
-		// full-chain proof to a follow-up" - this harness delivers
-		// pickDrawable()'s proof; update()'s/draw()'s own real-chain proofs
-		// are deferred to a follow-up milestone that budgets for the larger
-		// stub-writing effort this finding implies. ----
+		// proof. Originally shipped standalone (commit 67d7b83f0) when steps
+		// 1-4 were still blocked by the disproven minimal-stub-subclass link
+		// strategy (see CMakeLists.txt's own header comment for that full,
+		// now-resolved story) - kept here unchanged, now alongside steps 1-4's
+		// own real construction above, since pickDrawable() still needs
+		// nothing beyond what it already used: TheWindowManager stays null
+		// (already null-guarded, W3DView.cpp:2522-2523) and
+		// W3DDisplay::m_3DScene->castRay() (Milestone 8's own technique). ----
 		printf("=== Check 8: pickDrawable() real ray-cast proof (finding 11) ===\n");
 
 		// Re-center and re-render the quad (matching Check 5's own render)
@@ -985,7 +1126,7 @@ int main()
 		// - is true again (Check 7 just moved it far offscreen).
 		robj->Set_Transform(Matrix3D(Vector3(LOOKAT_TARGET.x, LOOKAT_TARGET.y, LOOKAT_TARGET.z)));
 		Check(WW3D::Begin_Render(true, true, CLEAR_COLOR) == WW3D_ERROR_OK, "8a. WW3D::Begin_Render returned WW3D_ERROR_OK");
-		scene->doRender(view->get3DCamera());
+		view->drawView(); // Milestone 11 RETRY: the REAL DRAW()->W3DView::draw() call chain, not a direct scene->doRender().
 		Check(WW3D::End_Render(true) == WW3D_ERROR_OK, "8b. WW3D::End_Render returned WW3D_ERROR_OK");
 		Check(robj->Is_Really_Visible() != 0, "8c. robj->Is_Really_Visible() true again after re-centering (required by castRay()'s non-testAll path)");
 
@@ -1023,7 +1164,25 @@ int main()
 		robj->Set_User_Data(nullptr);
 
 		// ---- Full teardown, extending Milestone 8's own idiom with
-		// TheTerrainLogic/TheFramePacer/W3DView's own real destructors. ----
+		// TheTerrainLogic/TheFramePacer/W3DView's own real destructors, PLUS
+		// (Milestone 11 RETRY) TheGameClient/TheGameLogic's own real, REAL
+		// CASCADING destructors - a genuine, real-code-driven ordering
+		// hazard this retry found by direct reading (NOT by trial and
+		// error): ~GameClient() (GameClient.cpp:119-240) unconditionally
+		// does "TheFontLibrary->reset(); delete TheFontLibrary;" and
+		// "TheMouse->reset(); delete TheMouse;" (the exact hazard Draft 35
+		// documents, now resolved by constructing real FontLibraryStub/
+		// MouseStub instances above) AND ALSO unconditionally deletes
+		// TheInGameUI and TheDisplay internally - so those four singletons
+		// must NOT be separately `delete`d here, only via "delete
+		// TheGameClient" below (a double-free otherwise). Separately,
+		// ~GameLogic() (GameLogic.cpp:348-387) unconditionally deletes
+		// TheTerrainLogic AND TheScriptEngine internally too - the existing
+		// explicit "delete TheTerrainLogic"/new explicit "delete
+		// TheScriptEngine" calls below are kept and MUST run BEFORE "delete
+		// TheGameLogic" (leaving both pointers null first, so ~GameLogic()'s
+		// own internal "delete TheTerrainLogic"/"delete TheScriptEngine"
+		// become safe no-ops on already-null pointers, not double-frees). ----
 		printf("=== Check 9: teardown ===\n");
 		scene->Remove_Render_Object(robj);
 		robj->Release_Ref();
@@ -1038,9 +1197,84 @@ int main()
 		REF_PTR_RELEASE(scene);
 		Check(scene == nullptr, "9a. REF_PTR_RELEASE(scene) nulled the pointer");
 
+		W3DDisplay::m_2DScene = nullptr; // null the static BEFORE releasing the real RTS2DScene it pointed to (Milestone 11 RETRY step 3).
+		REF_PTR_RELEASE(scene2d);
+		Check(scene2d == nullptr, "9i. REF_PTR_RELEASE(scene2d) nulled the RTS2DScene pointer (its own dtor releases the real W3DStatusCircle it built)");
+
+		// Milestone 11 RETRY: TheGameClient is DELIBERATELY LEAKED here, not
+		// deleted - a real, GDB-confirmed engine bug this retry found makes
+		// "delete TheGameClient" genuinely unsafe, and it is NOT one this
+		// harness can fix by constructing yet another real singleton (unlike
+		// the TheFontLibrary/TheMouse/TheWindowManager/TheNameKeyGenerator
+		// hazards above, all successfully resolved that way). Full trail,
+		// each found by a REAL gdb backtrace, not predicted:
+		//   1. ~GameClient() (GameClient.cpp:169) unconditionally deletes
+		//      TheInGameUI, cascading into the real ~InGameUI()
+		//      (InGameUI.cpp:1281), which unconditionally calls
+		//      stopCameoMovie().
+		//   2. stopCameoMovie()'s real body (InGameUI.cpp:4341) does
+		//      "GameWindow *window = TheWindowManager->winGetWindowFromId(
+		//      nullptr, TheNameKeyGenerator->nameToKey(
+		//      \"ControlBar.wnd:RightHUD\"));" - both TheWindowManager and
+		//      TheNameKeyGenerator dereferences are now safe (real instances
+		//      constructed above), but winGetWindowFromId() correctly
+		//      returns nullptr - no such window was ever created, and
+		//      creating one for real would require this harness to load a
+		//      real .wnd layout through the WindowLayout/GameWindow system,
+		//      a substantially larger, genuinely out-of-scope bring-up.
+		//   3. The NEXT line (InGameUI.cpp:4343-4344), "WinInstanceData
+		//      *winData = window->winGetInstanceData(); winData->
+		//      setVideoBuffer(nullptr);", dereferences that null `window`
+		//      with NO null guard at all - a real, pre-existing engine bug
+		//      (not introduced by this harness, not specific to POSIX),
+		//      confirmed by a real GDB backtrace landing exactly on
+		//      WinInstanceData::setVideoBuffer() with `this` computed as a
+		//      small, clearly-garbage offset-from-null address.
+		// Per Draft 35's own pre-approved fallback ("state the alternative
+		// [deliberate leak, documented] as a fallback, not the default"):
+		// this is exactly that documented fallback, reached only after the
+		// draft's own preferred fix (real FontLibrary/Mouse instances) was
+		// applied successfully and two FURTHER, deeper hazards on the SAME
+		// destructor path were also fixed for real (TheWindowManager/
+		// TheNameKeyGenerator) - this third hazard is the one place this
+		// retry stops short of a full real teardown, and it is a genuine
+		// engine bug, not a workaround-able harness gap. TheGameClient
+		// (and, transitively, TheFontLibrary/TheMouse/TheInGameUI/
+		// TheDisplay/TheWindowManager it would have deleted) is intentionally
+		// never deleted for the remainder of this process's short life -
+		// process exit reclaims the memory.
+		Check(true, "9j. TheGameClient intentionally leaked, not deleted - real ~InGameUI()/stopCameoMovie() null-window dereference bug, documented above (Draft 35's own pre-approved fallback)");
+
+		// TheNameKeyGenerator: deleted AFTER TheGameClient (its own real
+		// ~InGameUI()'s stopCameoMovie() needs it alive DURING that delete,
+		// see this block's own construction-site comment) - not touched by
+		// ~GameClient() itself, so this harness owns its teardown directly.
+		delete TheNameKeyGenerator;
+		TheNameKeyGenerator = nullptr;
+		Check(TheNameKeyGenerator == nullptr, "9m. NameKeyGenerator::~NameKeyGenerator() ran (real body: freeSockets(), safe with this harness's own small, self-registered key set)");
+
+		// Milestone 11 RETRY: TheScriptEngine and TheTerrainLogic MUST be
+		// deleted/nulled BEFORE TheGameLogic (see this block's own header
+		// comment - ~GameLogic() would otherwise re-delete both).
+		delete TheScriptEngine;
+		TheScriptEngine = nullptr;
+		Check(TheScriptEngine == nullptr, "9k. ScriptEngine::~ScriptEngine() ran (deliberately deleted before TheGameLogic to avoid ~GameLogic()'s own internal re-delete)");
+
 		delete TheTerrainLogic;
 		TheTerrainLogic = nullptr;
 		Check(TheTerrainLogic == nullptr, "9b. TerrainLogic::~TerrainLogic() ran (reset()'s own real body: deleteWaypoints/deleteBridges/PolygonTrigger::deleteTriggers, all safe with empty lists)");
+
+		delete TheGameLogic;
+		TheGameLogic = nullptr;
+		Check(TheGameLogic == nullptr, "9l. GameLogic::~GameLogic() ran for real (its own internal re-deletes of TheTerrainLogic/TheScriptEngine/TheGhostObjectManager/ThePartitionManager are all safe no-ops on already-null pointers)");
+
+		// TheAI: deleted AFTER TheGameLogic (its own real ~GameLogic() needs
+		// it alive DURING that delete, see this block's own construction-site
+		// comment) - not touched by ~GameLogic() itself, so this harness owns
+		// its teardown directly.
+		delete TheAI;
+		TheAI = nullptr;
+		Check(TheAI == nullptr, "9n. AI::~AI() ran (real body: deletes m_pathfinder/m_aiData, both empty/trivial for this harness)");
 
 		delete TheFramePacer;
 		TheFramePacer = nullptr;
