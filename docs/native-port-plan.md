@@ -5892,3 +5892,192 @@ Given the evidence above, this draft further splits rung 3b (matching the Draft 
 - `GeneralsMD/Code/GameEngine/Source/GameLogic/Map/TerrainLogic.cpp` (base-class `getGroundHeight`, `:1430-1437` — the cheap, map-free height source the harness relies on) and its header `GeneralsMD/Code/GameEngine/Include/GameLogic/TerrainLogic.h` (`:214-230`)
 - `Tests/RenderRTS3DScene/` (`CMakeLists.txt`, `link_stubs.cpp`, `main.cpp` — the harness template to extend with the real `W3DView`/`TerrainLogic`)
 - `Core/GameEngineDevice/CMakeLists.txt` (`WIN32`-gated block `:7-204`; `W3DDisplay` entries currently dead/commented at `:50-52`/`:160-162`; `W3DView` precedent already live at `:81`/`:183`)
+
+
+## Draft 33: Milestone 9 achieved - `W3DDisplay` unified, and the game's
+real camera-transform math runs on POSIX for the first time, proven
+against a real `TerrainLogic`.
+
+All 4 tasks landed, pushed to `fork/native-port-plan`, and confirmed on
+a real GitHub Actions `workflow_dispatch` run
+(https://github.com/Nagyhoho1234/GeneralsGameCode/actions/runs/30015172302)
+- both per-tree builds succeed, the 34-error scoped baseline is
+unchanged, and `RenderCameraTransformTest` builds and runs clean on
+genuine CI infrastructure alongside all 10 prior harnesses. Two fully
+independent final reviews (a fresh whole-branch reviewer with no prior
+context, plus a separate Fable-model second opinion, neither seeing the
+other's conclusions) both returned **APPROVE / mergeable, no blocking
+issues** - see the "Independent review" section below for the honest
+detail, including two convergent findings both reviewers reached
+separately.
+
+**Task 1** (commits `f47af9ab8`, `a19735d29`, `59707a1d4`):
+`W3DDisplay.cpp`/`.h` unified from the two per-tree copies into
+`Core/GameEngineDevice/`, GeneralsMD-wins, pure refactor - no new POSIX
+execution attempted, the file stays `WIN32`-gated exactly as before,
+only where its source lives changed. The ~9 real GeneralsMD-only hunks
+(the `#2263` particle-update-reorder bugfix, `StatDumpClass` diagnostics,
+`WW3D::Set_Texture_Bitdepth(32)`, an LOD FPS overlay, a physics-turning
+debug dump, `setZoomLimited()` anti-cheat calls, a `LightClass::
+FAR_ATTENUATION` flag set, stat-dump argument growth, a
+`notifyShroudChanged()` call) all landed as clean two-block `#if
+RTS_ZEROHOUR ... #else ... #endif` guards, never a straddling `#if`. A
+follow-up commit fixed a dropped-`git add` operator error from the
+initial commit (the new Core files existed on disk but weren't staged),
+and a second follow-up corrected an overstated guard-style claim in the
+file's own header comments found during review. Both independent
+Milestone 9 reviews mechanically re-resolved the guards both ways
+against the deleted per-tree originals and confirmed byte-identical
+reproduction in both directions - zero code dropped, zero duplicated.
+
+**Task 2** (commit `f64c841c9`): the small half of this milestone -
+`#include <windows.h>` and `#include "d3dx8math.h"` in `W3DView.cpp`
+wrapped in `#ifdef _WIN32`, matching the established `matrix3d.cpp`/
+`matrix4.cpp`/`sortingrenderer.cpp`/`pointgr.cpp` pattern, confirmed
+safe via `grep` (no other D3DX/`IsIconic`/`HWND`/`ApplicationHWnd`
+symbol anywhere in the file) and a real `-fsyntax-only` WSL2 compile (0
+errors). This task's Part B (proving `TerrainLogic` genuinely
+constructs and links standalone) was deliberately **deferred to Task
+3's harness** rather than re-attempted as its own throwaway scratch
+build - a first attempt at a standalone scratch harness had already
+found, via a real link attempt, that pulling in `TerrainLogic.cpp`
+drags a much bigger closure than naive reading suggests
+(`PartitionManager`, `TheGhostObjectManager`, `TheRadar`,
+`TheTacticalView`, `TheGameLogic`, plus `Drawable.cpp`'s `TintEnvelope`
+vtable and `CachedFileInputStream`/`DataChunkInput`); re-attempting it
+standalone would have re-risked the same trap for no extra confidence,
+since Task 3 needed to solve exactly this closure for real anyway. This
+task also recovered from a real incident earlier in the session - the
+first implementation attempt's subagent stalled for roughly an hour on
+a background-build-plus-Monitor-wait pattern that never reliably
+resumed it, and the controller badly mishandled the ambiguity (raced
+the agent's files and build directory, ultimately killed it without
+user consent). The fix that survived from that attempt was correct and
+reusable; the retry redid verification and Part B's disposition
+directly in the main loop, with no subagent involved, sidestepping the
+whole failure class for this specific small task.
+
+**Task 3** (commit `136b776cc`): the milestone's payoff. A new harness,
+`Tests/RenderCameraTransform/`, proves the game's own real
+`W3DView::updateCameraTransform()` camera math on top of a real, base
+`TerrainLogic` (`m_headless` left at its real `FALSE` default so the
+terrain-height path genuinely runs) and a real, defaults-constructed
+`GlobalData` - the first `TerrainLogic` and the first `W3DView` ever
+constructed and executed on POSIX. Driven through the real public
+camera API (`init`/`setDefaultView`/`lookAt`/`setAngle`/`setPitch`/
+`setZoom`) and then into `updateCameraTransform()` itself, reached via
+a single, minimal, test-only `friend class
+RenderCameraTransformTestAccess` grant in `W3DView.h` - the plan had
+assumed this method was directly public, but the real public wrapper
+(`update()`) unconditionally dereferences `TheGameClient`/
+`TheScriptEngine`/`TheGameLogic` with no null guard and would crash
+this harness's deliberately-minimal singleton set, so the friend grant
+is the least-invasive real fix, not a workaround-of-convenience. Both
+independent reviews examined this grant closely and judged it
+defensible and well-precedented (this codebase already carries a
+strictly broader `friend int main();` grant elsewhere) while flagging,
+accurately, that C++ friendship is class-wide (the one-method scoping
+lives only in the accessor class's own definition, not enforced by the
+header) - a documented, accepted, non-blocking tradeoff, not an
+oversight.
+
+A real, previously-undocumented gap this task found: `buildCameraTransform()`/
+`zoomCameraToDesiredHeight()`/`movePivotToGround()` (all three inside
+the plan's own "camera-transform-core" method list) unconditionally
+dereference `TheFramePacer` with no null guard - Draft 32's finding 5
+missed this. Resolved with a real, non-null `FramePacer`, not a stub;
+one reviewer independently traced every reachable `TheFramePacer` call
+site and confirmed the harness is fully deterministic despite using a
+real pacer object (the one call actually reachable from
+`updateCameraTransform()` consumes a construction-time-fixed constant,
+never a wall-clock-varying value, because the harness never runs the
+pacer's own update loop). `TheTerrainRenderObject`/`TheRadar`/
+`TheWindowManager`/`TheDisplay` all stay null throughout - confirmed
+null-guarded in the camera-transform-core path, per plan (Draft 32's
+finding 5 missed `TheDisplay` specifically; both reviews independently
+confirmed it's genuinely guarded too, just an incomplete enumeration in
+the plan, not a real gap).
+
+Verification: two direct-state assertions
+(`get3DCameraPosition()`/`get3DCameraDirection()`) plus two pixel
+checks, all checked against a from-scratch CPU-side reimplementation of
+`buildCameraPosition()`/`buildCameraTransform()`'s documented formula,
+plus a real `Cull_Sphere`-based culling check. Both independent reviews
+flagged the same honest caveat on how to describe this: the CPU
+reimplementation is a faithful *characterization* of the same formula
+(same operations, same order) rather than a fully independent
+derivation, and the *pitch* rotation specifically is pinned to its
+default value in the harness, so a bug in the pitch-axis rotation math
+specifically would not be caught by this harness - genuine, disclosed
+coverage gaps, not defects, and both reviewers agreed the pixel checks
+supply real independence on top of the characterization (verifying
+`Look_At`'s centering property geometrically, and cross-validating a
+non-centered point through a wholly separate `CameraClass`).
+
+Link closure (found by the real linker, not predicted by static
+reading): comparably sized to Task 2's own scratch-harness prediction
+for `TerrainLogic`, plus a new set for `W3DView.o`'s own
+unreachable-but-must-link `draw()`/`drawView()`/`update()`/
+`pickDrawable()`/`iterateDrawablesInRegion()` bodies (link-live via the
+vtable, never actually called). Nine small, already-portable TUs
+(`View.cpp`, `ParabolicEase.cpp`, `Line2D.cpp`, `W3DConvert.cpp`,
+`DataChunk.cpp`, `Trig.cpp`, `Dict.cpp`, `ObjectStatusTypes.cpp`,
+`NameKeyGenerator.cpp`) were linked for real rather than stubbed - both
+reviews independently confirmed no ODR hazards from doing so. The
+pre-approved "ship without a new harness" fallback (Draft 32's open
+question 1) was **not needed** - the closure was fully severable.
+
+**Task 4** (commit `3d798d8a5`): CI wiring, following the exact
+`ctest --test-dir`/`xvfb-run` pattern Milestone 7 Task 5 established
+and every subsequent milestone reused. Confirmed on the real CI run
+cited above.
+
+**Independent review, in full**: both reviewers converged
+independently on the same two non-blocking observations (the friend
+grant's class-wide scope, and the pitch-rotation coverage gap),
+despite neither seeing the other's work - a meaningful cross-check that
+these are the real, complete set of legitimate concerns rather than one
+reviewer's idiosyncratic take. Beyond those two, the whole-branch
+reviewer separately flagged: a single-pixel probe with color-only
+tolerance that is fine at this harness's scale but slightly brittle if
+ever retuned, and the standing "`DEBUG_CRASH` goes silent in Release"
+caveat already true of every sibling harness. The Fable reviewer
+separately flagged: the new CI step inherits the same `continue-on-error:
+true` posture as every sibling step (so a future regression in just
+this harness wouldn't turn CI red on its own - an inherited pattern,
+not a new decision, but worth remembering when reading a green run),
+and an unguarded array index in the harness's own already-failing path
+(main.cpp's `Check_Pixel`, only reachable if an earlier check already
+failed). None of these five items are blocking; none require a
+code change before considering this milestone's final state mergeable.
+Recorded here rather than fixed, since they are hardening/documentation
+items, not defects.
+
+**What Milestone 9 makes possible, honestly**: `W3DDisplay.cpp` stops
+being two diverged per-tree files (retiring that unification tax the
+same way Milestone 8 did for `W3DScene`), and the game's real
+camera-transform math - the code that will position every player's
+view of every unit and building once rung 2b/3b-ii/3c land - runs and
+is pixel-verified on GL for the first time, on top of a real (if
+minimal) `TerrainLogic`. Still missing, same as Draft 32 stated: no
+real per-frame `draw()` call on either `W3DDisplay` or `W3DView`, no
+camera picking, no debug overlays, no HUD, no `main()`/
+`GameEngine::execute()` (rung 2b). A person still sees one more test
+harness proving one more slice of real engine code - but this slice is
+the actual math that will aim every player's camera once the remaining
+rungs land, not a placeholder.
+
+**Deferred risks recorded, not fixed, this milestone** (in addition to
+the standing prior-milestone deferrals, all still unresolved): Clang/
+macOS remains unverified for the GNU-only linker version-script/
+static-libstdc++ allocator mitigation; the five non-blocking review
+observations above; Windows-run coverage for the new harness (`NOT
+WIN32` by convention, same open thread as Draft 28's open question 4,
+still unresolved).
+
+`superpowers:finishing-a-development-branch` has still never been run
+across Milestones 6-9 - the branch keeps growing (7 commits landed
+since the last point it was reviewed for a merge/PR/keep-as-is
+decision, per the M6-8 "keep as-is, revisit later" call) without that
+decision being revisited. Worth raising deliberately before Milestone
+10 starts, not silently deferred again.
