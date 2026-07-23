@@ -29,6 +29,64 @@
 //
 // Author: Colin Day, April 2001
 //
+// TheSuperHackers @info Unified from the per-tree Generals/GeneralsMD copies
+// (native port plan, Draft 32, Milestone 9 Task 1) - GeneralsMD-wins, with
+// "#if RTS_ZEROHOUR ... #else ... #endif" two-block guards (Milestone 7 Task 3
+// follow-up style: each branch spells out its tree's full logic in one
+// uninterrupted block, never a straddling preprocessor conditional). This is
+// a PURE REFACTOR: W3DDisplay.cpp still only compiles on WIN32 (see
+// Core/GameEngineDevice/CMakeLists.txt); no POSIX portability work was
+// attempted here. Real divergences found by direct diff, all GeneralsMD-only
+// additions, and guarded below with a comment at each call site:
+//  (a) StatDumpClass::dumpStats() grows brief/flagSpikes parameters and a
+//      dozen new "OUT OF TOLERANCE" diagnostic lines (plus a new
+//      "GameLogic/Module/PhysicsUpdate.h" include used by hunk (d) below).
+//      Purely a debug/perf-dump feature, guarded as a whole (declaration +
+//      out-of-line body) since nearly every line of the body differs.
+//  (b) WW3D::Set_Texture_Bitdepth(32) added to init() - a real rendering
+//      setting change, guarded.
+//  (c) An LOD variable (TheGlobalData->m_terrainLOD) is uncommented and
+//      surfaced in the RTS_DEBUG-only on-screen FPS overlay text.
+//  (d) drawCurrentDebugDisplay() grows a physics-turning/loco-info debug dump
+//      for the currently-selected object (needs (a)'s new #include).
+//  (e) TheParticleSystemManager->update() is called earlier in the
+//      device-cooperating branch of draw() and duplicated into the
+//      device-NOT-cooperating else branch, a dated bugfix for issue #2263
+//      (particle systems otherwise leak/accumulate without bound while the
+//      D3D device isn't cooperating, e.g. a locked Windows session, until
+//      they exhaust memory). TheSuperHackers @info: this was considered for
+//      unconditional adoption (it reads like a pure crash/leak bugfix), but
+//      is guarded instead - the reorder half is genuinely gameplay-visible,
+//      not just defensive: its own comment says it changes the moment
+//      particle systems bound to Drawable bones sample the render object's
+//      transform each frame ("PARTICLESYSTEMS LINKED TO BONES ... MOVE WITH
+//      THE CLIENT TRANSFORMS, NOW"), unlike Milestone 8's m_frenzyMaterialPass
+//      fix, which touched a provably dead, never-read pointer. A visible
+//      per-frame simulation timing change is not something this pure-refactor
+//      task adopts unconditionally for the Generals tree.
+//  (f) toggleLetterBox()/enableLetterBox() grow TheTacticalView->
+//      setZoomLimited(...) calls (an anti-cheat feature preventing zoom
+//      changes during letterboxed/cutscene sequences).
+//  (g) createLightPulse() grows a Set_Flag(LightClass::FAR_ATTENUATION, true)
+//      call with a CNC3-parity comment ("C&C3 defaults to disabled. Must
+//      enable to match Generals."). Guarded rather than unconditionally
+//      adopted: the comment suggests both trees should already look the same
+//      via some other default, but this task does not independently verify
+//      that claim, so the safe, behavior-preserving choice is to keep each
+//      tree's status quo runtime behavior exactly as it is today.
+//  (h) The stat-dump call site in draw() grows new dumpStats() arguments and
+//      a whole new "else if (m_dumpStatsAtInterval ...)" branch (the "-stats"
+//      console command's periodic/brief dump mode) - paired with (a) since it
+//      calls the new signature.
+//  (i) setShroudLevel() grows a TheTerrainRenderObject->notifyShroudChanged()
+//      call.
+// Several other differences in the raw diff are pure formatting/typo fixes
+// with zero behavioral difference (confirmed by direct reading): the file's
+// own branding/header comment ("Generals(tm)" -> "Generals Zero Hour(tm)",
+// "maintaning"->"maintaining"), "rectanges"->"rectangles" (two places), and a
+// blank-line reflow in drawLine(). These are unified unconditionally, same as
+// W3DScene.cpp's own precedent for cosmetic-only hunks.
+//
 ///////////////////////////////////////////////////////////////////////////////
 
 static void drawFramerateBar();
@@ -53,7 +111,11 @@ static void drawFramerateBar();
 #include "Common/GameLOD.h"
 #include "Common/DrawModule.h"
 #include "GameLogic/AIPathfind.h"
+#if RTS_ZEROHOUR
+// TheSuperHackers @info Milestone 9 Task 1 hunk (a)/(d): needed by
+// drawCurrentDebugDisplay()'s ZH-only physics-turning/loco-info debug dump.
 #include "GameLogic/Module/PhysicsUpdate.h"
+#endif
 
 #include "GameClient/Drawable.h"
 #include "GameClient/GameText.h"
@@ -136,7 +198,13 @@ class StatDumpClass
 public:
 	StatDumpClass( const char *fname );
 	~StatDumpClass();
+#if RTS_ZEROHOUR
+	// TheSuperHackers @info Milestone 9 Task 1 hunk (a): ZH grows brief/
+	// flagSpikes diagnostic params over Generals' plain dumpStats().
 	void dumpStats( Bool brief = FALSE, Bool flagSpikes = FALSE );
+#else
+	void dumpStats();
+#endif
 
 protected:
 	FILE *m_fp;
@@ -180,7 +248,13 @@ static const char *getCurrentTimeString()
 //=============================================================================
 //Dump the stats
 //=============================================================================
-
+// TheSuperHackers @info Milestone 9 Task 1 hunk (a): the whole function body
+// (declaration + out-of-line definition) is guarded as one unit rather than
+// piecemeal - nearly every line differs (new brief/flagSpikes params, a dozen
+// new "OUT OF TOLERANCE" diagnostic lines threaded throughout), the same
+// "duplicate the whole interleaved block" call W3DScene.cpp's unification
+// made for its own heavily-interleaved tail.
+#if RTS_ZEROHOUR
 
 static Bool s_notFirstDump = FALSE;
 
@@ -339,6 +413,121 @@ void StatDumpClass::dumpStats( Bool brief, Bool flagSpikes )
 	fprintf( m_fp, "\n\n" );
 	fflush(m_fp);
 }
+
+#else // !RTS_ZEROHOUR
+
+void StatDumpClass::dumpStats()
+{
+	if( !m_fp )
+	{
+		return;
+	}
+
+	//static char buf[1024];
+	fprintf( m_fp, "----------------------------------------------------------------\n" );
+	fprintf( m_fp, "Performance Statistical Dump -- Frame %d\n", TheGameLogic->getFrame() );
+	fprintf( m_fp, "Time:\t%s", getCurrentTimeString() );
+	fprintf( m_fp, "Map:\t%s\n", TheGlobalData->m_mapName.str());
+	fprintf( m_fp, "Side:\t%s\n", ThePlayerList->getLocalPlayer()->getSide().str());
+	fprintf( m_fp, "----------------------------------------------------------------\n" );
+
+	//FPS
+	Real fps = TheDisplay->getAverageFPS();
+	fprintf( m_fp, "Average FPS: %.1f (%.5f msec)\n", fps, 1000.0f / fps );
+
+	//Rendering stats
+	fprintf( m_fp, "Draws: %d Skins: %d SortedPolys: %d SkinPolys: %d\n",(Int)Debug_Statistics::Get_Draw_Calls(),
+		(Int)Debug_Statistics::Get_DX8_Skin_Renders(),
+		(Int)Debug_Statistics::Get_Sorting_Polygons(), (Int)Debug_Statistics::Get_DX8_Skin_Polygons());
+
+	//Object stats
+	UnsignedInt objCount = TheGameLogic->getObjectCount();
+	UnsignedInt objScreenCount = TheGameClient->getRenderedObjectCount();
+	fprintf( m_fp, "Objects: %d in world (%d onscreen)\n", objCount, objScreenCount );
+
+	//AI stats
+	UnsignedInt numAI, numMoving, numAttacking, numWaitingForPath, overallFailedPathfinds;
+	TheGameLogic->getAIMetricsStatistics( &numAI, &numMoving, &numAttacking, &numWaitingForPath, &overallFailedPathfinds );
+	fprintf( m_fp, "\n" );
+	fprintf( m_fp, "AI Statistics:\n" );
+	fprintf( m_fp, "  Total AI Objects: %d\n", numAI );
+	fprintf( m_fp, "    -moving: %d\n", numMoving );
+	fprintf( m_fp, "    -attacking: %d\n", numAttacking );
+	fprintf( m_fp, "    -waiting for path: %d\n", numWaitingForPath );
+	fprintf( m_fp, "  Total failed pathfinds: %d\n", overallFailedPathfinds );
+	fprintf( m_fp, "\n" );
+
+	// Script stats
+	Real timeLastFrame, slowScript1, slowScript2;
+	AsciiString slowScripts = TheScriptEngine->getStats(&timeLastFrame, &slowScript1, &slowScript2);
+	fprintf( m_fp, "\n" );
+	fprintf( m_fp, "Script Engine Statistics:\n" );
+	fprintf( m_fp, "  Total time last frame: %.5f msec\n", timeLastFrame*1000 );
+	fprintf( m_fp, "    -Slowest 2 scripts %s\n", slowScripts.str() );
+	fprintf( m_fp, "    -Slowest 2 script times %.5f msec, %.5f msec \n", slowScript1*1000, slowScript2*1000 );
+	fprintf( m_fp, "\n" );
+
+
+
+	//PartitionMgr stats
+	double gcoTimeThisFrameTotal, gcoTimeThisFrameAvg;
+	ThePartitionManager->getPMStats(gcoTimeThisFrameTotal, gcoTimeThisFrameAvg);
+	fprintf(m_fp, "Partition Manager Statistics:\n");
+	fprintf(m_fp, "  Total time for object scans this frame is %.5f msec\n", gcoTimeThisFrameTotal);
+	fprintf(m_fp, "  Avg time per object scan this frame is %.5f msec\n", gcoTimeThisFrameAvg);
+	fprintf( m_fp, "\n" );
+
+	// setup texture stats
+	Debug_Statistics::Record_Texture_Mode(Debug_Statistics::RECORD_TEXTURE_SIMPLE/*RECORD_TEXTURE_NONE*/);
+
+	fprintf( m_fp, "Video Statistics:\n" );
+	//Particle system stats
+	fprintf( m_fp, "  Particle Systems: %d\n", TheParticleSystemManager->getParticleSystemCount() );
+	Int totalParticles = TheParticleSystemManager->getParticleCount();
+	Int onScreenParticleCount = TheParticleSystemManager->getOnScreenParticleCount();
+	fprintf( m_fp, "  Particles: %d in world (%d onscreen)\n", totalParticles, onScreenParticleCount );
+
+	// polygons this frame
+	Int polyPerFrame = Debug_Statistics::Get_DX8_Polygons();
+	Int polyPerSecond = (Int)(polyPerFrame * fps);
+	fprintf( m_fp, "  Polygons: %d per frame (%d per second)\n", polyPerFrame, polyPerSecond );
+
+	// vertices this frame
+	fprintf( m_fp, "  Vertices: %d\n", Debug_Statistics::Get_DX8_Vertices() );
+
+	//
+	// I'm adjusting the texture memory usage counter by subtracting
+	// out the terrain alpha texture (since it's really == terrain texture).
+	//
+	fprintf( m_fp, "  Video RAM: %d\n", Debug_Statistics::Get_Record_Texture_Size() - 1376256 );
+
+	// terrain stats
+	fprintf( m_fp, "  3-Way Blends: %d/%d, \n Shoreline Blends: %d/%d\n", TheTerrainRenderObject->getNumExtraBlendTiles(TRUE),TheTerrainRenderObject->getNumExtraBlendTiles(FALSE), TheTerrainRenderObject->getNumShoreLineTiles(TRUE),TheTerrainRenderObject->getNumShoreLineTiles(FALSE));
+
+	fprintf( m_fp, "\n" );
+
+#if defined(RTS_DEBUG)
+	TheAudio->audioDebugDisplay( nullptr, nullptr, m_fp );
+	fprintf( m_fp, "\n" );
+#endif
+
+#ifdef MEMORYPOOL_DEBUG
+	//Report memory usage.
+	TheMemoryPoolFactory->debugMemoryReport( REPORT_FACTORYINFO | REPORT_POOLINFO, 0, 0, m_fp );
+#else
+	fprintf( m_fp, "Memory Report -- unavailable (build doesn't have MEMORYPOOL_DEBUG defined)\n" );
+#endif
+	fprintf( m_fp, "\n" );
+
+	fprintf( m_fp, "%s", TheSubsystemList->dumpTimesForAll().str());
+
+	fprintf( m_fp, "----------------------------------------------------------------\n" );
+	fprintf( m_fp, "END -- Frame %d\n", TheGameLogic->getFrame() );
+	fprintf( m_fp, "----------------------------------------------------------------\n\n\n" );
+	fflush(m_fp);
+}
+
+#endif // RTS_ZEROHOUR
 
 StatDumpClass TheStatDump("StatisticsDump.txt");
 
@@ -826,7 +1015,10 @@ void W3DDisplay::init()
 		WW3D::Enable_Static_Sort_Lists(true);
 		WW3D::Set_Thumbnail_Enabled(false);
 		WW3D::Set_Screen_UV_Bias( TRUE );  ///< this makes text look good :)
+#if RTS_ZEROHOUR
+		// TheSuperHackers @info Milestone 9 Task 1 hunk (b): ZH-only.
 		WW3D::Set_Texture_Bitdepth(32);
+#endif
 
 		setWindowed( TheGlobalData->m_windowed );
 
@@ -1151,6 +1343,9 @@ void W3DDisplay::gatherDebugStats()
 		double cumuFPS = (numFrames > 0 && cumuTime > 0.0) ? (numFrames / cumuTime) : 0.0;
 		double skinPolysPerFrame = Debug_Statistics::Get_DX8_Skin_Polygons();
 
+		// TheSuperHackers @info Milestone 9 Task 1 hunk (c): ZH surfaces LOD
+		// in the on-screen FPS overlay text; Generals leaves it uncomputed.
+#if RTS_ZEROHOUR
 		Int LOD = TheGlobalData->m_terrainLOD;
 		//unibuffer.format( L"FPS: %.2f, %.2fms mapLOD=%d [cumu FPS=%.2f] draws: %.2f sort: %.2f", fps, ms, LOD, cumuFPS, drawsPerFrame,sortPolysPerFrame);
 		if (TheGlobalData->m_useFpsLimit)
@@ -1160,6 +1355,17 @@ void W3DDisplay::gatherDebugStats()
 
 		unibuffer2.format( L"%.2fms [cumuFPS=%.2f] draws: %d skins: %d sortP: %d skinP: %d LOD %d", ms, cumuFPS, (Int)drawsPerFrame,(Int)skinDrawsPerFrame,(Int)sortPolysPerFrame, (Int)skinPolysPerFrame, LOD);
 		unibuffer.concat(unibuffer2);
+#else
+		//Int LOD = TheGlobalData->m_terrainLOD;
+		//unibuffer.format( L"FPS: %.2f, %.2fms mapLOD=%d [cumu FPS=%.2f] draws: %.2f sort: %.2f", fps, ms, LOD, cumuFPS, drawsPerFrame,sortPolysPerFrame);
+		if (TheGlobalData->m_useFpsLimit)
+				unibuffer.format( L"%.2f/%d FPS, ", fps, TheFramePacer->getFramesPerSecondLimit());
+		else
+				unibuffer.format( L"%.2f FPS, ", fps);
+
+				unibuffer2.format( L"%.2fms [cumuFPS=%.2f] draws: %d skins: %d sortP: %d skinP: %d", ms, cumuFPS, (Int)drawsPerFrame,(Int)skinDrawsPerFrame,(Int)sortPolysPerFrame, (Int)skinPolysPerFrame);
+				unibuffer.concat(unibuffer2);
+#endif
 #else
 		//Int LOD = TheGlobalData->m_terrainLOD;
 		//unibuffer.format( L"FPS: %.2f, %.2fms mapLOD=%d draws: %.2f sort %.2f", fps, ms, LOD, drawsPerFrame,sortPolysPerFrame);
@@ -1543,6 +1749,7 @@ void W3DDisplay::gatherDebugStats()
 			if( obj && obj->getName().isEmpty() == FALSE )
 				objectName = obj->getName();
 
+#if RTS_ZEROHOUR
 			unibuffer.format( L"Select Info: '%S'(%S) at (%.3f,%.3f,%.3f)",
 												draw->getTemplate()->getName().str(),
 												objectName.str(),
@@ -1551,6 +1758,8 @@ void W3DDisplay::gatherDebugStats()
 												draw->getPosition()->z
 											);
 
+			// TheSuperHackers @info Milestone 9 Task 1 hunk (d): ZH-only
+			// physics-turning/loco-info debug dump for the selected object.
 			const PhysicsBehavior *physics = obj->getPhysics();
 			PhysicsTurningType turnType = physics ? physics->getTurning() : TURN_NONE;
 
@@ -1563,9 +1772,14 @@ void W3DDisplay::gatherDebugStats()
 													 locoInfo->m_accelerationRoll, locoInfo->m_accelerationRollRate );
 				unibuffer.concat( unibuffer2 );
 			}
-
-
-
+#else
+			unibuffer.format( L"Select Info: '%S'(%S) at (%.3f,%.3f,%.3f)",
+												draw->getTemplate()->getName().str(),
+												objectName.str(),
+												draw->getPosition()->x,
+												draw->getPosition()->y,
+												draw->getPosition()->z );
+#endif
 
 
 
@@ -1833,9 +2047,17 @@ AGAIN:
 #ifdef DUMP_PERF_STATS
 	if( TheGlobalData->m_dumpPerformanceStatistics )
 	{
+#if RTS_ZEROHOUR
 		TheStatDump.dumpStats( FALSE, TRUE );
+#else
+		TheStatDump.dumpStats();
+#endif
 		TheWritableGlobalData->m_dumpPerformanceStatistics = FALSE;
 	}
+#if RTS_ZEROHOUR
+  // TheSuperHackers @info Milestone 9 Task 1 hunk (h): the "-stats" console
+  // command's periodic/brief dump mode, ZH-only, paired with hunk (a)'s
+  // dumpStats(brief, flagSpikes) signature.
   //The <= GAME_REPLAY essentially means, GAME_SINGLE_PLAYER || GAME_LAN || GAME_SKIRMISH || GAME_REPLAY
   else if ( TheGlobalData->m_dumpStatsAtInterval && TheGameLogic->getGameMode() <= GAME_REPLAY )
   {
@@ -1846,6 +2068,7 @@ AGAIN:
     	TheInGameUI->message( L"-stats is running, at interval: %d.", TheGlobalData->m_statsInterval );
     }
   }
+#endif
 #endif
 
 	// compute debug statistics for display later
@@ -1954,6 +2177,7 @@ AGAIN:
 			//trying to refresh the visible terrain geometry.
 //			if(TheGlobalData->m_loadScreenRender != TRUE)
 				updateViews();
+#if RTS_ZEROHOUR
      		TheParticleSystemManager->update();//LORENZEN AND WILCZYNSKI MOVED THIS FROM ITS NATIVE POSITION, ABOVE
                                            //FOR THE PURPOSE OF LETTING THE PARTICLE SYSTEM LOOK UP THE RENDER OBJECT"S
                                            //TRANSFORM MATRIX, WHILE IT IS STILL VALID (HAVING DONE ITS CLIENT TRANSFORMS
@@ -1963,6 +2187,7 @@ AGAIN:
                                            //REVOLUTIONARY!
                                            //-LORENZEN
 
+#endif
 
 			if (TheWaterRenderObj && TheGlobalData->m_waterType == 2)
 				TheWaterRenderObj->updateRenderTargetTextures(primaryW3DView->get3DCamera());	//do a render into each texture
@@ -1972,8 +2197,13 @@ AGAIN:
 			if (TheW3DProjectedShadowManager)
 				TheW3DProjectedShadowManager->updateRenderTargetTextures();
 		}
+#if RTS_ZEROHOUR
 		else
 		{
+			// TheSuperHackers @info Milestone 9 Task 1 hunk (e): ZH-only,
+			// guarded rather than unconditionally adopted - see this file's
+			// header comment for why (the reorder half is gameplay-visible,
+			// not just defensive).
 			// TheSuperHackers @bugfix Continue updating the ParticleSystemManager while the Direct3D
 			// device is not cooperating, for example when the Windows account is locked. The game logic
 			// keeps creating new particle systems in that state, but destroyed particle systems are only
@@ -1982,6 +2212,7 @@ AGAIN:
 			// The particle system update is device independent and updates at most once per logic frame.
 			TheParticleSystemManager->update();
 		}
+#endif
 
 		Debug_Statistics::End_Statistics();	//record number of polygons rendered in RenderTargetTextures.
 
@@ -2218,8 +2449,13 @@ void W3DDisplay::createLightPulse( const Coord3D *pos, const RGBColor *color,
 	theDynamicLight->setDecayRange();
 	theDynamicLight->setDecayColor();
 	//theDynamicLight->setDonut(donut);
+#if RTS_ZEROHOUR
+	// TheSuperHackers @info Milestone 9 Task 1 hunk (g): guarded, not
+	// unconditionally adopted, despite the comment's "Must enable to match
+	// Generals" claim - see this file's header comment for why.
 	// (gth) CNC3 enable far attenuation.  C&C3 defaults to disabled.  Must enable to match Generals. MW 8-06-03
 	theDynamicLight->Set_Flag(LightClass::FAR_ATTENUATION,true);
+#endif
 }
 
 void W3DDisplay::toggleLetterBox()
@@ -2227,11 +2463,15 @@ void W3DDisplay::toggleLetterBox()
 	m_letterBoxEnabled = !m_letterBoxEnabled;
 	m_letterBoxFadeStartTime = timeGetTime();
 
+#if RTS_ZEROHOUR
+	// TheSuperHackers @info Milestone 9 Task 1 hunk (f): ZH-only anti-cheat
+	// zoom lock during letterboxed/cutscene sequences.
 	//WST  9/18/2002 This is not a script api to prevent cheat. JSC Integrated 5/20/03
 	if( TheTacticalView )
 	{
 		TheTacticalView->setZoomLimited( !m_letterBoxEnabled );
 	}
+#endif
 }
 
 void W3DDisplay::enableLetterBox(Bool enable)
@@ -2243,11 +2483,13 @@ void W3DDisplay::enableLetterBox(Bool enable)
 			m_letterBoxEnabled = TRUE;
 			m_letterBoxFadeStartTime = timeGetTime();
 
+#if RTS_ZEROHOUR
 			//WST  9/18/2002 - This is not a script api to prevent cheat.  JSC Integrated 5/20/03
 			if( TheTacticalView )
 			{
 				TheTacticalView->setZoomLimited( 0 );
 			}
+#endif
 		}
 	}
 	else
@@ -2257,11 +2499,13 @@ void W3DDisplay::enableLetterBox(Bool enable)
 			m_letterBoxEnabled = FALSE;
 			m_letterBoxFadeStartTime = timeGetTime();
 
+#if RTS_ZEROHOUR
 			//WST  9/18/2002. JSC Integrated 5/20/03
 			if( TheTacticalView )
 			{
 				TheTacticalView->setZoomLimited( 1 );
 			}
+#endif
 		}
 	}
 }
@@ -3064,7 +3308,10 @@ void W3DDisplay::setShroudLevel( Int x, Int y, CellShroudStatus setting )
 		//Logic is saying shroud.  We can add alpha levels here in client if needed.
 		// W3DShroud is a 0-255 alpha byte.  Logic shroud is a double reference count.
 
+#if RTS_ZEROHOUR
+		// TheSuperHackers @info Milestone 9 Task 1 hunk (i): ZH-only.
 		TheTerrainRenderObject->notifyShroudChanged();
+#endif
 
 	}
 }

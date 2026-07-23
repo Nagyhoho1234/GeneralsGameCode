@@ -1,5 +1,5 @@
 /*
-**	Command & Conquer Generals(tm)
+**	Command & Conquer Generals Zero Hour(tm)
 **	Copyright 2025 Electronic Arts Inc.
 **
 **	This program is free software: you can redistribute it and/or modify
@@ -25,9 +25,17 @@
 // FILE: W3DDisplay.h /////////////////////////////////////////////////////////
 //
 // W3D Implementation for the W3D Display which is responsible for creating
-// and maintaning the entire visual display
+// and maintaining the entire visual display
 //
 // Author: Colin Day, April 2001
+//
+// TheSuperHackers @info Unified from the per-tree Generals/GeneralsMD copies
+// (native port plan, Draft 32, Milestone 9 Task 1). Confirmed by direct diff:
+// the only divergence from the Generals original is cosmetic (branding -
+// "Generals(tm)" vs "Generals Zero Hour(tm)" - plus two comment typo fixes,
+// "sytsem"->"system" and "maintaning"->"maintaining"). No RTS_ZEROHOUR guard
+// needed for this header; all guards for the real behavioral divergence live
+// in the .cpp (see its own header comment for the full enumeration).
 //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -60,7 +68,7 @@ public:
 	W3DDisplay();
 	virtual ~W3DDisplay() override;
 
-	virtual void init() override;  ///< initialize or re-initialize the sytsem
+	virtual void init() override;  ///< initialize or re-initialize the system
  	virtual void reset() override;																///< Reset system
 
 	virtual void setWidth( UnsignedInt width ) override;
