@@ -6132,10 +6132,42 @@ undefined symbols for the full five-class construction, 237 for
 its own pre-committed fallback anticipated. Both findings independently
 verified (ctest 12/12 then 13/13 combined, WSL2 scoped baseline
 re-confirmed at exactly 34/34 both individually and after merging).
-**Steps 1-4 remain open, unscoped follow-up work** — a future pass
-should consider Milestone 10's "inherit the full real source closure"
-technique instead of a minimal-stub approach, given it demonstrably
-avoids this exact wall.
+**Steps 1-4 were open after this first attempt** - resolved by the
+retry documented below as Workstream B, which delivered them in full
+using exactly the technique predicted here (Milestone 10's "inherit
+the full real source closure" approach).
+
+**Workstream B is DONE**: Milestone 11's retry (commit `a6d704222` on
+`native-port-plan`, cherry-picked clean from its worktree branch)
+delivered the originally-planned full scope - the real, unmodified
+`update()`/`drawView()`(->`draw()`)/`pickDrawable()` control flow, on
+top of real `TheGameLogic`/`TheScriptEngine` and minimal concrete stub
+subclasses for `GameClient`/`InGameUI`/`Display`/`FontLibrary`/`Mouse`
+- the first `GameLogic`, `ScriptEngine`, `GameClient`, `InGameUI`,
+`Display`, and `FontLibrary` ever constructed and executed on POSIX.
+The link-strategy fix worked exactly as predicted: combining Milestone
+10's DEFER-closure technique with the harness's existing render-stack
+sources produced ~65 duplicate-symbol errors on the first real link
+attempt (a genuinely new risk this combination created, since
+Milestone 10's own closure was headless and never had to coexist with
+hand-picked WW3D2/GL sources) - resolved by pruning `link_stubs.cpp`
+(1039->366 lines) and the CMakeLists source list. Two more real,
+previously-undiscovered engine bugs found along the way, both
+harness-worked-around rather than fixed upstream (out of this port's
+scope): `TerrainLogic::getExtent()`'s base implementation leaves its
+output `Region3D` uninitialized, corrupting `calcCameraAreaConstraints()`
+and silently teleporting the camera pivot; `InGameUI::~InGameUI()`'s
+`stopCameoMovie()` dereferences a window-lookup result with no null
+guard at all, one level past the (also real) `TheWindowManager`/
+`TheNameKeyGenerator` null-derefs it's reached through -
+`TheGameClient` is deliberately leaked rather than destructed as a
+result, matching this port's established "no meticulous teardown"
+precedent. Independently re-verified after merging (WSL2 baseline
+exactly 34/34, full 13-entry `ctest` suite 100% green), CI-wired
+(`.github/workflows/linux-native.yml` summary text updated to describe
+the real delivered scope) and confirmed on a real GitHub Actions run
+(https://github.com/Nagyhoho1234/GeneralsGameCode/actions/runs/30047768482).
+**Milestone 11 is now FULLY DONE**, matching its original Draft 35 scope.
 
 **Follow-up plan (second Fable planning pass, 2026-07-23)**: three
 workstreams, not four - the two CI-wiring tasks below share exactly
