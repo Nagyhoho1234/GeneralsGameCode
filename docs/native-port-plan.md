@@ -6081,3 +6081,44 @@ since the last point it was reviewed for a merge/PR/keep-as-is
 decision, per the M6-8 "keep as-is, revisit later" call) without that
 decision being revisited. Worth raising deliberately before Milestone
 10 starts, not silently deferred again.
+
+**Next steps, planned but not yet approved for implementation**: two
+candidate follow-up milestones exist as separate draft files, both
+reconciled against this Draft 33's actual landed shape by an
+independent Fable planning pass (2026-07-23) after being originally
+researched while Milestone 9 was still in progress:
+- **Draft 34** (`docs/native-port-plan-rung2b-lite-draft.md`) - Milestone
+  10, a headless `GameEngine->GameLogic->ScriptEngine->AI->TerrainLogic
+  ->PartitionManager` tick harness, deliberately bypassing
+  `GameEngine::init()`/`execute()`'s real display-layer dependencies.
+  Independent of `W3DView.cpp`/`W3DDisplay.cpp` entirely - a genuinely
+  separate logic-path workstream, not a continuation of rung 3b.
+  Carries a real, previously-undiscovered blocker (`GameEngine::
+  GameEngine()`'s constructor calls untouched ATL/COM `CComModule`
+  code, never before attempted on this port's Linux toolchain) with its
+  own pre-committed fallback.
+- **Draft 35** (`docs/native-port-plan-milestone10-draft.md`) - Milestone
+  11, rung 3b-ii-a: `W3DView`'s `update()`/`draw()`/`drawView()`/
+  `pickDrawable()` real, always-executed control flow in an
+  "empty-world" configuration, extending the `RenderCameraTransform`
+  harness lineage. Corrected post-M9 (a stale finding about `TheDisplay`
+  fixed - it is NOT solved by M9, this milestone's own `Display` stub is
+  genuinely new work; `TheFramePacer`/frame-entry-point open questions
+  resolved against M9's real code).
+- **Recommended sequencing** (Fable planning pass): run Draft 34's Task
+  1 spike first regardless of what follows - it retires this port's
+  single biggest open unknown cheaply and gates nothing else. After
+  that, the two milestones can genuinely run as parallel workstreams
+  (zero engine-source overlap verified), with three guardrails: isolate
+  each in its own git worktree/build directory (shared files -
+  `Tests/CMakeLists.txt`, `linux-native.yml`, this doc - get serialized
+  at integration, not mid-flight); land Draft 34's spike before its
+  workstream starts in earnest; and reconcile the two milestones'
+  overlapping `GameClient`-stub-subclass work (both build one
+  independently) with a comment rather than silently diverging. If
+  strictly sequential is preferred instead: Draft 34/Milestone 10 first
+  - smaller, retires more risk, and de-risks Milestone 11's own
+  singleton-construction steps for free.
+- Neither draft is approved for implementation yet - that decision
+  (which sequencing, and formal scope sign-off) is still the user's to
+  make, same as every prior milestone's approval gate.
