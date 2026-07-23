@@ -1,0 +1,30 @@
+# Native port plan, Draft 30, Milestone 8 Task 4 - carried over VERBATIM
+# from Tests/RenderGameAssets/hide_global_allocator_symbols.map (Draft 28,
+# Milestone 7 Task 4), which found and fixed this exact problem with hard
+# evidence (a real, 100%-reproducible SIGSEGV inside Mesa/llvmpipe's
+# libLLVM.so JIT codegen, isolated to a minimal repro; then a second real
+# "free(): invalid pointer" SIGABRT from std::filesystem's own inline/
+# library-boundary split, also isolated to a minimal repro). This harness
+# links the exact same GameMemory.cpp allocator (see this target's
+# CMakeLists.txt), creates the exact same real GLX/OpenGL context via the
+# exact same DX8Wrapper::Create_Device -> glfwCreateWindow path, and
+# performs the exact same std::filesystem-based case-insensitive file
+# lookups (via the same StdLocalFileSystem.cpp), so the identical fix
+# applies unchanged. See Tests/RenderGameAssets/hide_global_allocator_symbols.map's
+# own comment for the full story with hard evidence, and this task's
+# close-out report for this target's own re-verification (5+ stable runs).
+{
+  global: *;
+  local:
+    _Znwm;
+    _Znam;
+    _ZdlPv;
+    _ZdaPv;
+    _ZnwmPKci;
+    _ZdlPvPKci;
+    _ZnamPKci;
+    _ZdaPvPKci;
+    createW3DMemPool;
+    allocateFromW3DMemPool*;
+    freeFromW3DMemPool;
+};

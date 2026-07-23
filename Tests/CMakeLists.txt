@@ -129,3 +129,17 @@ endif()
 if(NOT WIN32)
     add_subdirectory(GameLogicTickHarness)
 endif()
+
+# Phase 5(a) Milestone 11 (native port plan, rung 3b-ii-a, Draft 35) - scoped
+# down from the draft's full update()/draw()/drawView() control-flow proof
+# (a real implementation attempt found a much larger link closure than
+# planned - see the commit message) to what turned out genuinely achievable
+# this pass: W3DView::pickDrawable()'s real ray-cast chain (RTS3DScene::
+# castRay against a sentinel DrawableInfo on the existing test-authored
+# quad), hit and miss both checked - no GameLogic/ScriptEngine/GameClient/
+# InGameUI/Display construction involved. NOT WIN32 for the same reasons as
+# its ten rendering siblings and GameFileSystem. See
+# RenderViewUpdateDraw/CMakeLists.txt and main.cpp for the full plan.
+if(NOT WIN32)
+    add_subdirectory(RenderViewUpdateDraw)
+endif()
