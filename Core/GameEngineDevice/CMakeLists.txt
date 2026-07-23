@@ -66,7 +66,7 @@ set(GAMEENGINEDEVICE_SRC
 #    Include/W3DDevice/GameClient/W3DProjectedShadow.h
     Include/W3DDevice/GameClient/W3DPropBuffer.h
 #    Include/W3DDevice/GameClient/W3DRoadBuffer.h
-#    Include/W3DDevice/GameClient/W3DScene.h
+    Include/W3DDevice/GameClient/W3DScene.h
     Include/W3DDevice/GameClient/W3DShaderManager.h
     Include/W3DDevice/GameClient/W3DShadow.h
     Include/W3DDevice/GameClient/W3DShroud.h
@@ -169,7 +169,7 @@ set(GAMEENGINEDEVICE_SRC
     Source/W3DDevice/GameClient/W3DProfilerFrameCapture.cpp
     Source/W3DDevice/GameClient/W3DPropBuffer.cpp
 #    Source/W3DDevice/GameClient/W3DRoadBuffer.cpp
-#    Source/W3DDevice/GameClient/W3DScene.cpp
+    Source/W3DDevice/GameClient/W3DScene.cpp
     Source/W3DDevice/GameClient/W3DShaderManager.cpp
     Source/W3DDevice/GameClient/W3DShroud.cpp
     Source/W3DDevice/GameClient/W3DSmudge.cpp
@@ -218,6 +218,18 @@ endif() # WIN32
 # VERTEX_BUFFER_TILE_LENGTH/VERTS_IN_BLOCK_ROW macro pair in favor of the
 # identical ones WorldHeightMap.h already defines - a header-hygiene
 # cleanup, not a logic change).
+
+# W3DScene.cpp/.h: the game's real scene manager (RTS3DScene/RTS2DScene/
+# RTS3DInterfaceScene), unified from the per-tree Generals/GeneralsMD copies
+# into the WIN32-gated block above (native port plan, Draft 30 finding 2,
+# Milestone 8 Task 2). GeneralsMD-wins, with "#if RTS_ZEROHOUR ... #else ...
+# #endif" two-block guards (not a straddling #if, per the Milestone 7 Task 3
+# follow-up fix) for every real behavioral divergence - see the .cpp's own
+# header comment for the full enumeration (the load-bearing one is a
+# cross-tree Drawable API rename, getHeatVisionOpacity vs
+# getSecondMaterialPassOpacity) - plus a latent-uninitialized-pointer fix to
+# m_frenzyMaterialPass (Draft 30 finding 9), applied unconditionally for both
+# trees since the member is provably dead code today.
 
 # Add C++ 17 FileSystem implementation for non-VS6 builds
 if(NOT IS_VS6_BUILD)

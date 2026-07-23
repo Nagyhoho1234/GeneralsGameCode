@@ -1,5 +1,5 @@
 /*
-**	Command & Conquer Generals(tm)
+**	Command & Conquer Generals Zero Hour(tm)
 **	Copyright 2025 Electronic Arts Inc.
 **
 **	This program is free software: you can redistribute it and/or modify
@@ -28,6 +28,77 @@
 // the rendering process, culling, material passes ...
 //
 // Author: Colin Day, April 2001
+//
+// TheSuperHackers @info Unified from the per-tree Generals/GeneralsMD copies
+// (native port plan, Draft 30, Milestone 8 Task 2) - GeneralsMD-wins, with
+// "#if RTS_ZEROHOUR ... #else ... #endif" two-block guards (Milestone 7 Task 3
+// follow-up style: each branch spells out its tree's full logic in one
+// uninterrupted block, accepting some duplication, rather than straddling a
+// shared statement's braces with a bare preprocessor conditional). Real
+// divergences found by direct diff and guarded below, each with a comment at
+// its call site:
+//  (a) ZH-only "#include WW3D2/shdlib.h" and three SHD_FLUSH call sites.
+//      USE_WWSHADE (shdlib.h's own gate) is never defined anywhere in the
+//      repo (verified by grep), so SHD_FLUSH already expands to nothing in
+//      both trees today; guarded anyway for provenance, not because it
+//      currently does anything.
+//  (b) The load-bearing cross-tree Drawable API rename: Generals calls
+//      draw->getHeatVisionOpacity() (Generals GameEngine/Drawable.h:527);
+//      ZH calls draw->getSecondMaterialPassOpacity() (GeneralsMD
+//      GameEngine/Drawable.h:545) - same slot, renamed. Guarded in
+//      renderOneObject().
+//  (c) ZH-only translucency/occlusion bugfixes: (c1) Visibility_Check no
+//      longer short-circuits with an early "continue" on
+//      hidden/shroud-obscured objects, and tracks isTranslucent so occluder/
+//      occludee candidates aren't double-queued against
+//      m_translucentObjectsBuffer; (c2) flushOccludedObjectsIntoStencil's
+//      per-player stencil loop additionally flushes translucent objects
+//      through their own two-pass stencil-only sub-block (TheSuperHackers
+//      @info); (c3) its occludee pass skips objects already flagged
+//      ERF_IS_TRANSLUCENT (TheSuperHackers @bugfix xezon 18/10/2025 - they
+//      are drawn in flushTranslucentObjects() instead). (c2)/(c3) share one
+//      guard (see flushOccludedObjectsIntoStencil) since the tail of that
+//      function is too interleaved with a harmless i/k loop-variable
+//      renaming to split further without either duplicating the whole tail
+//      anyway or risking a scope bug (Generals' loop variable is
+//      function-scoped and reused across three loops; ZH's is redeclared
+//      loop-scoped per loop) - so the whole tail from the "clear pointers"
+//      comment through the last occlusion loop is one guarded unit.
+//  (d) ZH-only dynamic-light gating: renderOneObject() only walks
+//      m_dynamicLightList when draw->getReceivesDynamicLights() is true.
+//      The accessor itself exists identically in both trees' Drawable.h
+//      (Generals:559, GeneralsMD:576); only the gating behavior at this
+//      call site differs, so only the call site is guarded.
+//  (e) ZH-only infantry-light clamping in updateFixedLightEnvironments():
+//      diffuse/ambient are scaled AND capped to (1,1,1) via
+//      Cap_Absolute_To, instead of being scaled unclamped.
+//  (f) The ZH-only commented-out m_frenzyMaterialPass block. Its header
+//      member is kept UNGUARDED (present in both trees' builds) rather than
+//      RTS_ZEROHOUR-gated: it is provably dead (never read anywhere, grep-
+//      verified), so its mere presence changes nothing for either tree. What
+//      WAS a real latent bug - the member was declared but its only would-be
+//      initialization was commented out, and the destructor never released
+//      it - is fixed here unconditionally: null-initialized in the
+//      constructor right after the historical comment block, released
+//      (harmlessly, as REF_PTR_RELEASE is null-safe) in the destructor. This
+//      is behavior-preserving (the member was always null and unread before,
+//      and remains so) while closing the uninitialized-pointer latent defect
+//      class per Draft 30 finding 9.
+// One additional divergence found during implementation, NOT called out by
+// the plan, needs no guard: renderOneObject()'s infantry-ambient line
+// ("ambient = m_infantryAmbient;" in Generals) is commented out in ZH with
+// "//has no effect - see comment on m_infantryAmbient". Tracing the value
+// confirms this: m_infantryAmbient is set to Get_Ambient_Light() every frame
+// in updateFixedLightEnvironments(), the exact same call renderOneObject()
+// already used one line earlier to seed "ambient" - so the assignment was a
+// same-value no-op in Generals too. Unified unconditionally as a dead-code
+// removal, not a behavioral guard.
+// Several other hunks in the raw diff are pure formatting/refactors with
+// zero behavioral difference (confirmed via whitespace-insensitive diff and
+// by hand): the USE_NON_STENCIL_OCCLUSION block's indentation in the
+// constructor, a comment reflow in Customized_Render, and folding
+// "Int i=0; for(;...)" into "for(Int i=0;...)" in
+// flushOccludedObjectsIntoStencil's first loop - none of these are guarded.
 //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -64,6 +135,9 @@
 #include "WW3D2/dx8caps.h"
 #include "WW3D2/colorspace.h"
 
+#if RTS_ZEROHOUR
+#include "WW3D2/shdlib.h"
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // DEFINITIONS ////////////////////////////////////////////////////////////////
@@ -131,6 +205,30 @@ RTS3DScene::RTS3DScene()
 	m_heatVisionOnlyPass->Set_Material(heatVisionMtl);
 	m_heatVisionOnlyPass->Set_Shader(heatVisionShader);
 
+
+#if RTS_ZEROHOUR
+//	VertexMaterialClass *frenzyMtl = NEW_REF(VertexMaterialClass,());
+//	frenzyMtl->Set_Lighting(TRUE);
+//	frenzyMtl->Set_Ambient(  0, 0, 0 );
+//	frenzyMtl->Set_Diffuse(  1.0f, 0.0f, 0.0f );
+//	frenzyMtl->Set_Emissive( 1.0f, 0.0f, 0.0f );
+//	m_frenzyMaterialPass = NEW_REF(MaterialPassClass,());
+//	m_frenzyMaterialPass->Set_Material(frenzyMtl);
+//	frenzyMtl->Release_Ref();
+//	ShaderClass frenzyShader=ShaderClass::_PresetMultiplicativeShader;
+//	frenzyShader.Set_Depth_Compare(ShaderClass::PASS_EQUAL);
+//	frenzyShader.Set_Depth_Mask(ShaderClass::DEPTH_WRITE_DISABLE);
+//	m_frenzyMaterialPass->Set_Shader(frenzyShader);
+#endif
+	// TheSuperHackers @fix Native port plan, Draft 30 finding 9: m_frenzyMaterialPass
+	// was declared but never initialized (its only would-be init was the commented-out
+	// block above) and never released in the destructor - an uninitialized pointer
+	// member, though currently benign since it is never read anywhere (grep-verified).
+	// Null-initialized here unconditionally for both trees: behavior-preserving (the
+	// member stays unread either way) while closing the latent-defect class.
+	m_frenzyMaterialPass = nullptr;
+
+
 	//Allocate memory to hold queue of visible render objects that need to be drawn last
 	//because they are forced translucent.
 	m_translucentObjectsCount = 0;
@@ -165,20 +263,20 @@ RTS3DScene::RTS3DScene()
 	shader.Set_Dst_Blend_Func(ShaderClass::DSTBLEND_ONE_MINUS_SRC_ALPHA);
 
 #ifdef USE_NON_STENCIL_OCCLUSION
-		for (i=0; i<MAX_PLAYER_COUNT; i++)
-		{
-			m_occludedMaterialPass[i]=NEW_REF(MaterialPassClass,());
-			VertexMaterialClass * vmtl = NEW_REF(VertexMaterialClass,());
-			vmtl->Set_Lighting(true);
-			vmtl->Set_Ambient(0,0,0);	//we're only using emissive so kill all other lights.
-			vmtl->Set_Diffuse(0,0,0);
-			m_occludedMaterialPass[i]->Set_Material(vmtl);
-			m_occludedMaterialPass[i]->Set_Shader(shader);
-			vmtl->Release_Ref();	//material pass is holding the pointer so release ref.
-		}
+	for (i=0; i<MAX_PLAYER_COUNT; i++)
+	{
+		m_occludedMaterialPass[i]=NEW_REF(MaterialPassClass,());
+		VertexMaterialClass * vmtl = NEW_REF(VertexMaterialClass,());
+		vmtl->Set_Lighting(true);
+		vmtl->Set_Ambient(0,0,0);	//we're only using emissive so kill all other lights.
+		vmtl->Set_Diffuse(0,0,0);
+		m_occludedMaterialPass[i]->Set_Material(vmtl);
+		m_occludedMaterialPass[i]->Set_Shader(shader);
+		vmtl->Release_Ref();	//material pass is holding the pointer so release ref.
+	}
 #else
-		for (i=0; i<MAX_PLAYER_COUNT; i++)
-			m_occludedMaterialPass[i]=nullptr;
+	for (i=0; i<MAX_PLAYER_COUNT; i++)
+		m_occludedMaterialPass[i]=nullptr;
 #endif
 
 }
@@ -206,6 +304,12 @@ RTS3DScene::~RTS3DScene()
 	REF_PTR_RELEASE(m_heatVisionMaterialPass);
 
 	REF_PTR_RELEASE(m_heatVisionOnlyPass);
+
+	// TheSuperHackers @fix Native port plan, Draft 30 finding 9: release the now
+	// always-null (see the constructor fix above) m_frenzyMaterialPass. REF_PTR_RELEASE
+	// is null-safe, so this is a no-op today for both trees and only guards against a
+	// future re-enable of the commented-out frenzy-pass block leaking a ref.
+	REF_PTR_RELEASE(m_frenzyMaterialPass);
 
 	delete [] m_translucentObjectsBuffer;
 	delete [] m_nonOccludersOrOccludees;
@@ -455,6 +559,63 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 					drawInfo = (DrawableInfo *)robj->Get_User_Data();
 					if (drawInfo && (draw=drawInfo->m_drawable) != nullptr)
 					{
+#if RTS_ZEROHOUR
+						// TheSuperHackers @bugfix ZH no longer short-circuits with an early
+						// "continue" here (which used to skip the trailing
+						// "robj->Set_Visible(isVisible);" below unconditionally); instead it
+						// tracks isVisible explicitly so both the hidden/shrouded case and the
+						// translucent/occluder/occludee accounting below observe consistent
+						// state, and it also tracks isTranslucent so translucent objects are
+						// not double-queued into the occluder/occludee/non-occluder buffers
+						// (they are already queued into m_translucentObjectsBuffer and get
+						// their own render pass - see flushOccludedObjectsIntoStencil (c2)/(c3)).
+						if (draw->isDrawableEffectivelyHidden() || draw->getFullyObscuredByShroud())
+						{
+							isVisible = FALSE;
+						  robj->Set_Visible(isVisible);
+            }
+						//assume normal rendering.
+						drawInfo->m_flags = DrawableInfo::ERF_IS_NORMAL;	//clear any rendering flags that may be in effect.
+
+            if ( ! isVisible )
+              continue;
+
+						if (draw->getEffectiveOpacity() != 1.0f && m_translucentObjectsCount < TheGlobalData->m_maxVisibleTranslucentObjects)
+						{
+							drawInfo->m_flags |= DrawableInfo::ERF_IS_TRANSLUCENT;
+							m_translucentObjectsBuffer[m_translucentObjectsCount++] = robj;
+						}
+						if (TheGlobalData->m_enableBehindBuildingMarkers && TheGameLogic && TheGameLogic->getShowBehindBuildingMarkers())
+						{
+							const Bool isTranslucent = (drawInfo->m_flags & DrawableInfo::ERF_IS_TRANSLUCENT) != 0;
+							//visible drawable. Check if it's either an occluder or occludee
+							if (draw->isKindOf(KINDOF_STRUCTURE) && m_numPotentialOccluders < TheGlobalData->m_maxVisibleOccluderObjects)
+							{
+								//object which could occlude other objects that need to be visible.
+								//Make sure this object is not translucent so it's not rendered twice (from m_potentialOccluders and m_translucentObjectsBuffer)
+								if (!isTranslucent)
+									m_potentialOccluders[m_numPotentialOccluders++]=robj;
+								drawInfo->m_flags |= DrawableInfo::ERF_POTENTIAL_OCCLUDER;
+							}
+							else if (draw->getObject() &&
+									(draw->isKindOf(KINDOF_SCORE) || draw->isKindOf(KINDOF_SCORE_CREATE) || draw->isKindOf(KINDOF_SCORE_DESTROY) || draw->isKindOf(KINDOF_MP_COUNT_FOR_VICTORY)) &&
+									(draw->getObject()->getSafeOcclusionFrame()) <= currentFrame && m_numPotentialOccludees < TheGlobalData->m_maxVisibleOccludeeObjects)
+							{
+								//object which could be occluded but still needs to be visible.
+								//We process translucent units twice (also in m_translucentObjectsBuffer) because we need to see them when occluded.
+								m_potentialOccludees[m_numPotentialOccludees++]=robj;
+								drawInfo->m_flags |= DrawableInfo::ERF_POTENTIAL_OCCLUDEE;
+							}
+							else if (drawInfo->m_flags == DrawableInfo::ERF_IS_NORMAL && m_numNonOccluderOrOccludee < TheGlobalData->m_maxVisibleNonOccluderOrOccludeeObjects)
+							{
+								//regular object with no custom effects but still needs to be delayed to get the occlusion feature to work correctly.
+								//Make sure this object is not translucent so it's not rendered twice (from m_nonOccludersOrOccludees and m_translucentObjectsBuffer)
+								if (!isTranslucent)
+									m_nonOccludersOrOccludees[m_numNonOccluderOrOccludee++]=robj;
+								drawInfo->m_flags |= DrawableInfo::ERF_IS_NON_OCCLUDER_OR_OCCLUDEE;
+							}
+						}
+#else
 						if (draw->isDrawableEffectivelyHidden() || draw->getFullyObscuredByShroud())
 						{	robj->Set_Visible(false);
 							continue;
@@ -491,6 +652,7 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 								drawInfo->m_flags |= DrawableInfo::ERF_IS_NON_OCCLUDER_OR_OCCLUDEE;
 							}
 						}
+#endif
 					}
 				}
 
@@ -632,7 +794,7 @@ void RTS3DScene::renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, I
 
 		if (draw->isKindOf(KINDOF_INFANTRY))
 		{
-			ambient = m_infantryAmbient;
+			//ambient = m_infantryAmbient;  //has no effect - see comment on m_infantryAmbient
 			sceneLights = m_infantryLight;
 		}
 
@@ -686,6 +848,34 @@ void RTS3DScene::renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, I
 		}
 
 		//Apply custom render pass for any drawables with heatvision enabled
+#if RTS_ZEROHOUR
+		if (draw->getSecondMaterialPassOpacity() != 0 )
+		{
+			rinfo.materialPassEmissiveOverride = draw->getSecondMaterialPassOpacity();
+
+      //if ( draw->testTintStatus( TINT_STATUS_FRENZY ) )
+      //{
+			//	rinfo.Push_Material_Pass(m_heatVisionMaterialPass);
+      //}
+			//else
+      if (draw->getStealthLook() == STEALTHLOOK_VISIBLE_DETECTED )
+			{
+			  rinfo.materialPassEmissiveOverride = draw->getSecondMaterialPassOpacity();
+				// THIS WILL EXPLICITLY SKIP THE FIRST PASS SO THAT HEATVISION ONLY WILL RENDER
+				rinfo.Push_Override_Flags(RenderInfoClass::RINFO_OVERRIDE_ADDITIONAL_PASSES_ONLY);
+				rinfo.Push_Material_Pass(m_heatVisionOnlyPass);
+        doExtraFlagsPop = TRUE;
+			}
+			else
+			{
+				//THIS CALLS FOR THE HEATVISION TO RENDER
+			  rinfo.materialPassEmissiveOverride = draw->getSecondMaterialPassOpacity();
+				rinfo.Push_Material_Pass(m_heatVisionMaterialPass);
+			}
+
+			doExtraMaterialPop = TRUE;
+		}
+#else
 		if (draw->getHeatVisionOpacity() != 0 )
 		{
 			rinfo.materialPassEmissiveOverride = draw->getHeatVisionOpacity();
@@ -703,6 +893,7 @@ void RTS3DScene::renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, I
 			}
 			doExtraMaterialPop=TRUE;
 		}
+#endif
 	}
 	else
 	{
@@ -742,6 +933,28 @@ void RTS3DScene::renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, I
 			}
 		}
 
+#if RTS_ZEROHOUR
+		// TheSuperHackers @bugfix ZH only walks dynamic lights when the drawable opts in
+		// via getReceivesDynamicLights() (present identically in both trees' Drawable.h;
+		// only this call site's gating differs).
+    if( draw && draw->getReceivesDynamicLights() )
+    {
+		  // dynamic lights
+		  RefRenderObjListIterator dynaLightIt(&m_dynamicLightList);
+		  for (dynaLightIt.First(); !dynaLightIt.Is_Done(); dynaLightIt.Next())
+		  {
+			  W3DDynamicLight* pDyna = (W3DDynamicLight*)dynaLightIt.Peek_Obj();
+			  if (!pDyna->isEnabled()) {
+				  continue;
+			  }
+			  SphereClass lSph = pDyna->Get_Bounding_Sphere();
+			  if (pDyna->Get_Type() == LightClass::POINT && !Spheres_Intersect(sph, lSph)) {
+				  continue;
+			  }
+			  lightEnv.Add_Light(*(LightClass*)dynaLightIt.Peek_Obj());
+		  }
+    }
+#else
 		// dynamic lights
 		RefRenderObjListIterator dynaLightIt(&m_dynamicLightList);
 		for (dynaLightIt.First(); !dynaLightIt.Is_Done(); dynaLightIt.Next())
@@ -756,6 +969,7 @@ void RTS3DScene::renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, I
 			}
 			lightEnv.Add_Light(*(LightClass*)dynaLightIt.Peek_Obj());
 		}
+#endif
 
 		lightEnv.Pre_Render_Update(rinfo.Camera.Get_Transform());
 		rinfo.light_environment = &lightEnv;
@@ -796,7 +1010,7 @@ void RTS3DScene::renderOneObject(RenderInfoClass &rinfo, RenderObjClass *robj, I
 	}
 
 	rinfo.light_environment = nullptr;
-	if (doExtraMaterialPop)	//check if there is an extra material on the stack from the heatvision effect.
+	if (doExtraMaterialPop)	//check if there is an extra material on the stack from the added material effect.
 		rinfo.Pop_Material_Pass();
 	if (doExtraFlagsPop)
 		rinfo.Pop_Override_Flags();	//flags used to disable base pass and only render custom heat vision pass.
@@ -824,6 +1038,12 @@ void RTS3DScene::Flush(RenderInfoClass & rinfo)
 	if (DX8Wrapper::Has_Stencil())
 		flushOccludedObjectsIntoStencil(rinfo);
 #endif
+
+#if RTS_ZEROHOUR
+	// (gth) CNC3 Flush the shader meshes
+	SHD_FLUSH;
+#endif
+
 	// Draw the trees last so they alpha blend onto everything correctly.
 	DoTrees(rinfo);
 
@@ -854,7 +1074,6 @@ void RTS3DScene::updateFixedLightEnvironments(RenderInfoClass & rinfo)
 {
 	//Figure out how dimly lit fogged objects should be compared to fully lit.
 	Real foggedLightFrac = (Real)TheGlobalData->m_fogAlpha/(Real)TheGlobalData->m_clearAlpha;
-	Vector3 oldDiffuse;
 	Real infantryLightScale;
 	if( TheGlobalData->m_scriptOverrideInfantryLightScale != -1.0f )
 		infantryLightScale = TheGlobalData->m_scriptOverrideInfantryLightScale;
@@ -865,6 +1084,38 @@ void RTS3DScene::updateFixedLightEnvironments(RenderInfoClass & rinfo)
 	m_defaultLightEnv.Reset(Vector3(0,0,0), Get_Ambient_Light());
 	m_foggedLightEnv.Reset(Vector3(0,0,0), Get_Ambient_Light()*foggedLightFrac);
 
+#if RTS_ZEROHOUR
+	// TheSuperHackers @bugfix ZH additionally clamps the scaled infantry diffuse/ambient
+	// to (1,1,1) via Cap_Absolute_To, instead of leaving the scaled value unclamped.
+	Vector3 oldDiffuse, oldAmbient;
+	for (Int globalLightIndex = 0; globalLightIndex < m_numGlobalLights; globalLightIndex++)
+	{
+		m_defaultLightEnv.Add_Light(*m_globalLight[globalLightIndex]);
+		//copy default lighting for infantry so we can tweak it.
+		*m_infantryLight[globalLightIndex]=*m_globalLight[globalLightIndex];
+		m_infantryLight[globalLightIndex]->Set_Transform(m_globalLight[globalLightIndex]->Get_Transform());
+
+		m_globalLight[globalLightIndex]->Get_Diffuse(&oldDiffuse);
+		m_globalLight[globalLightIndex]->Get_Ambient(&oldAmbient);
+    oldDiffuse *= infantryLightScale;
+    oldAmbient *= infantryLightScale;
+    static Vector3 id (1.0f, 1.0f, 1.0f);
+    oldDiffuse.Cap_Absolute_To(id);
+    oldAmbient.Cap_Absolute_To(id);
+		m_infantryLight[globalLightIndex]->Set_Ambient(oldAmbient);//CLAMPED
+		m_infantryLight[globalLightIndex]->Set_Diffuse(oldDiffuse);//CLAMPED
+
+		//copy the normal light for fog so we can modify it
+		m_scratchLight->Set_Transform(m_globalLight[globalLightIndex]->Get_Transform());
+		//modify light with attenuated value to adjust for fog.
+		m_globalLight[globalLightIndex]->Get_Diffuse(&oldDiffuse);
+		m_scratchLight->Set_Diffuse(oldDiffuse*foggedLightFrac);
+		m_globalLight[globalLightIndex]->Get_Ambient(&oldAmbient);
+		m_scratchLight->Set_Ambient(oldAmbient*foggedLightFrac);
+		m_foggedLightEnv.Add_Light(*m_scratchLight);
+	}
+#else
+	Vector3 oldDiffuse;
 	for (Int globalLightIndex = 0; globalLightIndex < m_numGlobalLights; globalLightIndex++)
 	{
 		m_defaultLightEnv.Add_Light(*m_globalLight[globalLightIndex]);
@@ -885,6 +1136,7 @@ void RTS3DScene::updateFixedLightEnvironments(RenderInfoClass & rinfo)
 		m_scratchLight->Set_Ambient(oldDiffuse*foggedLightFrac);
 		m_foggedLightEnv.Add_Light(*m_scratchLight);
 	}
+#endif
 
 	m_defaultLightEnv.Pre_Render_Update(rinfo.Camera.Get_Transform());
 	m_foggedLightEnv.Pre_Render_Update(rinfo.Camera.Get_Transform());
@@ -1139,7 +1391,7 @@ void RTS3DScene::Customized_Render( RenderInfoClass &rinfo )
 #ifdef USE_NON_STENCIL_OCCLUSION
 			if (!(draw && drawInfo->m_flags & DrawableInfo::ERF_DELAYED_RENDER))	//model rendering is delayed for some reason until end of normal scene
 #else
-				if (!(draw && drawInfo->m_flags & (DrawableInfo::ERF_DELAYED_RENDER|DrawableInfo::ERF_POTENTIAL_OCCLUDER|DrawableInfo::ERF_IS_NON_OCCLUDER_OR_OCCLUDEE)))	//in this mode we delay almost all objects in order to do correct sorting with stencil.
+			if (!(draw && drawInfo->m_flags & (DrawableInfo::ERF_DELAYED_RENDER|DrawableInfo::ERF_POTENTIAL_OCCLUDER|DrawableInfo::ERF_IS_NON_OCCLUDER_OR_OCCLUDEE)))	//in this mode we delay almost all objects in order to do correct sorting with stencil.
 #endif
 				renderOneObject(rinfo, robj, localPlayerIndex);
 		}
@@ -1307,6 +1559,217 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 	Int usedPlayerColorIndex=1;
 	Int numVisiblePlayerColors=0;
 
+	// TheSuperHackers @info The rest of this function is guarded as one unit rather than
+	// split further: ZH additionally flushes translucent objects through their own
+	// two-pass stencil-only sub-block in the per-player render loop (c2), and skips
+	// ERF_IS_TRANSLUCENT objects in the occludee pass below since they are drawn
+	// separately by flushTranslucentObjects() (c3) - both entangled with a harmless
+	// loop-variable scoping difference (Generals reuses one function-scoped "i" across
+	// three loops; ZH redeclares a loop-scoped counter per loop) that would otherwise
+	// force splitting the guard across a variable's scope.
+#if RTS_ZEROHOUR
+	//Clear pointers into temporary arrays where each player's objects will be stored.
+	//We do this so that all objects are sorted by color which reduces the number of
+	//state changes needed when drawing them.
+	for (Int i=0; i<MAX_PLAYER_COUNT; i++)
+	{
+		lastPlayerObject[i]=&playerObjects[i][0];
+		playerColorIndex[i]=-1;
+	}
+
+	//Assume no player colors are visible and all stencil bits are free for use by shadows.
+	TheW3DShadowManager->setStencilShadowMask(0);
+
+	const Int localPlayerIndex = rts::getObservedOrLocalPlayerIndex_Safe();
+
+	if (m_numPotentialOccludees && m_numPotentialOccluders)
+	{
+		//bucket sort all possibly occluded objects by player index/color.
+		Int k=0;
+		for (; k<m_numPotentialOccludees; k++)
+		{
+			robj=m_potentialOccludees[k];
+
+			draw = ((DrawableInfo *)robj->Get_User_Data())->m_drawable;
+			Object *object=draw->getObject();
+
+			Int index=object->getControllingPlayer()->getPlayerIndex();
+
+			if ((lastPlayerObject[index]-&playerObjects[index][0]) >= MAX_VISIBLE_OCCLUDED_PLAYER_OBJECTS)
+			{
+				DEBUG_CRASH(("Exceeded Maximum Number of potentially occluded models"));
+				continue;
+			}
+
+			*lastPlayerObject[index] = robj;
+			lastPlayerObject[index]++;	//increment to next object
+		}
+
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILENABLE, TRUE );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILMASK, 0xffffffff);
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILWRITEMASK, 0xffffffff);
+		//Always store player index into stencil unless it is occluded by another
+		//player's potentially occluded objects.
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFUNC,  D3DCMP_ALWAYS );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFAIL,  D3DSTENCILOP_KEEP );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILPASS,  D3DSTENCILOP_REPLACE );
+
+		//Find out which player indices are actually used and remap them to
+		//a color index.  Render all objects using the same color index at once.
+		//We render potential occludees first because this allows them to z-sort correctly
+		//when they are behind an occluder.
+		for (k=0; k<MAX_PLAYER_COUNT; k++)
+		{
+			if ((numObjects=lastPlayerObject[k]-&playerObjects[k][0]) != 0)
+			{
+				//this player has some objects so draw them using his color index.
+				if (playerColorIndex[k]==-1)	//color index not assigned yet?
+				{
+					//assign a new color index to this player
+					playerColorIndex[k]=playerIndexToColorIndex(usedPlayerColorIndex++);
+					//assign a color to this index by copying it from the controlling player
+					//of all objects in this list.
+					draw = ((DrawableInfo *)playerObjects[k][0]->Get_User_Data())->m_drawable;
+					Object *object=draw->getObject();
+
+					Int color=object->getControllingPlayer()->getPlayerColor();
+					RGB_To_HSV(hsv,Vector3(((color>>16)&0xff)/255.0f,((color>>8)&0xff)/255.0f,(color &0xff)/255.0f));
+					hsv.Z*=TheGlobalData->m_occludedLuminanceScale;
+					HSV_To_RGB(rgb,hsv);
+					visiblePlayerColors[numVisiblePlayerColors++]=DX8Wrapper::Convert_Color(rgb,0.5f);
+				}
+
+				Int thisPlayerColorIndex=playerColorIndex[k];
+
+				//Store this object's color index into bits 3-6 of stencil buffer
+				DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILREF, thisPlayerColorIndex<<3);
+
+				//Render all of this player's objects for which we care when they are occluded.
+				RenderObjClass **renderList=&playerObjects[k][0];
+				for (Int j=0; j<numObjects; j++)
+				{
+					DrawableInfo *drawInfo=((DrawableInfo *)(*renderList)->Get_User_Data());
+					if (drawInfo->m_flags & DrawableInfo::ERF_IS_TRANSLUCENT)
+					{
+						// TheSuperHackers @info This only draws the occlusion of translucent objects.
+						TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+						SHD_FLUSH;
+						//Disable writing to color buffer since translucent objects are rendered at end of frame.
+						DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFUNC,  D3DCMP_NEVER );	//never allow frame buffer writes.
+						DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFAIL,  D3DSTENCILOP_REPLACE );	//always replace existing stencil value
+						renderOneObject(rinfo, (*renderList), localPlayerIndex);
+						TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+						SHD_FLUSH;
+						DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFAIL,  D3DSTENCILOP_KEEP );
+						DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFUNC,  D3DCMP_ALWAYS );
+					}
+					else
+					{
+						renderOneObject(rinfo, (*renderList), localPlayerIndex);
+					}
+					renderList++;	//advance to next object
+				}
+
+				TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+			}
+		}
+		//Stencil buffer is now filled with color indices of potentially occluded objects.  We now draw
+		//non-occluder or occludee objects such as small rocks, shrubs, etc. which we don't care about
+		//but need to render here so that they don't interfere with building occlusion.
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILENABLE, FALSE );	//these objects are not stored in stencil
+		RenderObjClass **nonOccluderOrOccludeeList=m_nonOccludersOrOccludees;
+		for (k=0; k<m_numNonOccluderOrOccludee; k++)
+		{
+			renderOneObject(rinfo, (*nonOccluderOrOccludeeList), localPlayerIndex);
+			nonOccluderOrOccludeeList++;	//advance to next one
+		}
+		TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+
+		//Stencil buffer is now filled with color indices of potentially occluded objects.  We now draw
+		//occluder objects so they cover up and modify stencil MSB wherever they are in front of other objects.
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILENABLE, TRUE );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_ZENABLE, TRUE );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILREF, 0xffffffff);
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILMASK, 0xffffffff);	//isolate lowest player color
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILWRITEMASK, 0x80);	//only write to MSB
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFUNC,  D3DCMP_ALWAYS );	//check if player colors stored in pixel
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILZFAIL, D3DSTENCILOP_KEEP );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILFAIL,  D3DSTENCILOP_KEEP );
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILPASS,  D3DSTENCILOP_REPLACE );
+
+		//Render all potential occluders on top of already rendered potential occludees.
+		RenderObjClass **occluderList=m_potentialOccluders;
+		for (k=0; k<m_numPotentialOccluders; k++)
+		{
+			renderOneObject(rinfo, (*occluderList), localPlayerIndex);
+			occluderList++;	//advance to next one
+		}
+
+		TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+
+		//We now have a stencil buffer where pixels that are occluded have a bit pattern of 1INDX000.
+		//INDX contains the occluded player's color index.  We walk through all the player colors and
+		//draw them wherever the stencil matches the color's index.
+		Int usedPlayerColorBits=0;
+		for (k=0; k<numVisiblePlayerColors; k++)
+		{
+			Int color=visiblePlayerColors[k];
+			Int stencilRef=(playerIndexToColorIndex(k+1)<<3)|0x80;
+			renderStenciledPlayerColor(color,stencilRef);
+			usedPlayerColorBits |= stencilRef;	//keep track of all bits used for occlusion/player colors.
+		}
+
+		TheW3DShadowManager->setStencilShadowMask(usedPlayerColorBits);
+		if (numVisiblePlayerColors >= 8 && TheGlobalData->m_useShadowVolumes)
+		{
+			//for cases where we have 8 or more visible players, we're only left with 3 bits to store
+			//stencil shadows.  That's probably not enough since it will only allow 7 overlapping shadows.
+			//So we clear the stencil buffer, leaving only the MSB set on any occluded player pixels so that
+			//shadow code knows not to overwrite these pixels.
+			renderStenciledPlayerColor(0,0, TRUE);
+			TheW3DShadowManager->setStencilShadowMask(0x80808080);	//msb indicates occluded player pixels so ignore it when filling screen with shadow
+		}
+
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_STENCILENABLE, FALSE );
+	}
+	else
+	if (m_numNonOccluderOrOccludee || m_numPotentialOccluders || m_numPotentialOccludees)
+	{
+		//no occluded objects so don't need to render anything special.  Just draw the queued up
+		//objects like normal because they were skipped in the main scene traversal.
+
+		RenderObjClass **occludeeList=m_potentialOccludees;
+		Int k=0;
+		for (; k<m_numPotentialOccludees; k++)
+		{
+			// TheSuperHackers @bugfix xezon 18/10/2025 No longer draws translucent objects
+			// as non-translucent ones here. They are drawn in another pass.
+			DrawableInfo *drawInfo = static_cast<DrawableInfo *>((*occludeeList)->Get_User_Data());
+			if ((drawInfo->m_flags & DrawableInfo::ERF_IS_TRANSLUCENT) == 0)
+			{
+				renderOneObject(rinfo, (*occludeeList), localPlayerIndex);
+			}
+			occludeeList++;	//advance to next one
+		}
+
+		RenderObjClass **occluderList=m_potentialOccluders;
+		for (k=0; k<m_numPotentialOccluders; k++)
+		{
+			renderOneObject(rinfo, (*occluderList), localPlayerIndex);
+			occluderList++;	//advance to next one
+		}
+
+		RenderObjClass **nonOccluderOrOccludeeList=m_nonOccludersOrOccludees;
+		for (k=0; k<m_numNonOccluderOrOccludee; k++)
+		{
+			renderOneObject(rinfo, (*nonOccluderOrOccludeeList), localPlayerIndex);
+			nonOccluderOrOccludeeList++;	//advance to next one
+		}
+		TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
+	}
+#else
 	//Clear pointers into temporary arrays where each player's objects will be stored.
 	//We do this so that all objects are sorted by color which reduces the number of
 	//state changes needed when drawing them.
@@ -1484,6 +1947,7 @@ void RTS3DScene::flushOccludedObjectsIntoStencil(RenderInfoClass & rinfo)
 		}
 		TheDX8MeshRenderer.Flush();	//render all the submitted meshes using current stencil function
 	}
+#endif
 
 	//Reset scene ambient because we sometimes mess around with it to make objects
 	//glow, etc. when processing drawables.  This is a good place to do it because this
@@ -1947,4 +2411,3 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 
  *
  */
-

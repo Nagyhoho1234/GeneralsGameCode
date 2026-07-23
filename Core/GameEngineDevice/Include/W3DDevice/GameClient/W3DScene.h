@@ -1,5 +1,5 @@
 /*
-**	Command & Conquer Generals(tm)
+**	Command & Conquer Generals Zero Hour(tm)
 **	Copyright 2025 Electronic Arts Inc.
 **
 **	This program is free software: you can redistribute it and/or modify
@@ -28,6 +28,13 @@
 // the rendering process, culling, material passes ...
 //
 // Author: Colin Day, April 2001
+//
+// TheSuperHackers @info Unified from the per-tree Generals/GeneralsMD copies
+// (native port plan, Draft 30, Milestone 8 Task 2). The only real divergence
+// (branding aside) was m_frenzyMaterialPass, present only in the ZH header;
+// see the .cpp's header comment for why it is kept unconditionally rather
+// than RTS_ZEROHOUR-guarded, and for the latent-uninitialized-pointer fix
+// applied to it during unification.
 //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -122,6 +129,7 @@ protected:
 	W3DMaskMaterialPassClass *m_maskMaterialPass;			///< Custom render pass applied to entire scene used to mask out pixels.
 	MaterialPassClass *m_heatVisionMaterialPass;			///< Custom render passed applied on top of objects with heatvision effect.
 	MaterialPassClass *m_heatVisionOnlyPass;					///< Custom render pass applied in place of regular pass on objects with heat vision effect.
+	MaterialPassClass *m_frenzyMaterialPass;					///< Custom render pass applied in place of regular pass on objects with FRENZY effect.
 	///Custom rendering passes for each possible player color on the map
 	MaterialPassClass *m_occludedMaterialPass[MAX_PLAYER_COUNT];
 	CustomScenePassModes m_customPassMode;					///< flag used to force a non-standard rendering of scene.

@@ -62,7 +62,7 @@ set(GAMEENGINEDEVICE_SRC
     Include/W3DDevice/GameClient/W3DProjectedShadow.h
 #    Include/W3DDevice/GameClient/W3DPropBuffer.h
     Include/W3DDevice/GameClient/W3DRoadBuffer.h
-    Include/W3DDevice/GameClient/W3DScene.h
+#    Include/W3DDevice/GameClient/W3DScene.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 2)
 #    Include/W3DDevice/GameClient/W3DShaderManager.h
 #    Include/W3DDevice/GameClient/W3DShadow.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
 #    Include/W3DDevice/GameClient/W3DShroud.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
@@ -161,7 +161,7 @@ set(GAMEENGINEDEVICE_SRC
     Source/W3DDevice/GameClient/W3DPoly.cpp
 #    Source/W3DDevice/GameClient/W3DPropBuffer.cpp
     Source/W3DDevice/GameClient/W3DRoadBuffer.cpp
-    Source/W3DDevice/GameClient/W3DScene.cpp
+#    Source/W3DDevice/GameClient/W3DScene.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 2)
 #    Source/W3DDevice/GameClient/W3DShaderManager.cpp
 #    Source/W3DDevice/GameClient/W3DShroud.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
 #    Source/W3DDevice/GameClient/W3DSmudge.cpp
