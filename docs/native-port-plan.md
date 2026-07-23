@@ -6184,6 +6184,26 @@ and pass on genuine CI infrastructure, baseline gate holds.
   rebasing a base branch under an active worktree is exactly the
   incident class [[background-agent-incident-handling]] warns about.
 
+**Workstream C is DONE**: ran `superpowers:finishing-a-development-branch`
+with the user directly (13/13 tests verified passing first, both
+locally and on the real CI run cited above). **Decision: keep
+`native-port-plan` as-is** - the same call already made once for
+Milestones 6-8 and left unactioned since; this time it's a recorded,
+deliberate decision rather than another silent deferral. Rationale:
+most of the roadmap (Phase 4 windowing/input, Phase 6 audio, Phase 8
+determinism validation, rung 2b-ii, rung 3b-ii-b, and whatever
+Workstream B still has open) remains ahead of this branch - it is
+genuinely still the ongoing trunk of a multi-milestone effort, not a
+finished feature ready to land upstream or even against this fork's
+own `main`. No merge, no PR, no branch changes made. Separately
+noticed via a CI annotation while confirming the Workstream A run:
+`actions/upload-artifact@v4` in `linux-native.yml` sits on the
+floating `v4` tag (unlike `actions/checkout`, already SHA-pinned)
+and triggered a Node.js-20-deprecation warning - self-resolving as
+GitHub publishes newer `v4.x` patches under that tag, non-blocking,
+left as a minor, optional future cleanup (pin it to a SHA to match
+the existing `actions/checkout` convention) rather than actioned now.
+
 **Recommended sequencing** (Fable planning pass): run Draft 34's Task
 1 spike first regardless of what follows - it retires this port's
 single biggest open unknown cheaply and gates nothing else. After
