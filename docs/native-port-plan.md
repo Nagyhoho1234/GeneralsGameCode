@@ -6082,12 +6082,60 @@ decision, per the M6-8 "keep as-is, revisit later" call) without that
 decision being revisited. Worth raising deliberately before Milestone
 10 starts, not silently deferred again.
 
-**Milestone 10 and Milestone 11 are APPROVED and IN PROGRESS**, run as
-two parallel, git-worktree-isolated workstreams per the sequencing
-recommendation below (user approved this plan, 2026-07-23). Both
-drafts were originally researched while Milestone 9 was still in
-progress, then reconciled against Milestone 9's actual landed shape by
-an independent Fable planning pass before being folded in and started.
+**Milestone 10 is FULLY DONE; Milestone 11 landed partial**, both run
+as parallel, git-worktree-isolated workstreams per the sequencing
+recommendation below (user approved this plan, 2026-07-23; both
+committed, merged, and pushed to `fork/native-port-plan` the same
+session). Both drafts were originally researched while Milestone 9 was
+still in progress, then reconciled against Milestone 9's actual landed
+shape by an independent Fable planning pass before being folded in and
+started.
+
+**Milestone 10** (`Tests/GameLogicTickHarness/`, commit `4b895ee0e`):
+delivered in full. Real `TheAI`/`TheGameLogic`/`TheScriptEngine`/
+`TheTerrainLogic`/`ThePartitionManager` constructed through the
+engine's own real code (not a stub-subclass approach — see below for
+why that matters), ticked 5 times via the real, unmodified
+`GameLogic::UPDATE()`, with real per-tick assertions on
+`getFrame()`/`hasUpdated()`. Sidestepped the vtable-closure problem
+below by having its `CMakeLists.txt` inherit `z_gameengine`'s entire
+real source closure (via a `cmake_language(DEFER)` read of its
+`SOURCES`/`INTERFACE_SOURCES` properties, filtered by a small named
+Windows-only exclude list) rather than hand-picking files — once
+everything is linked in wholesale, there's no missing-base-symbol
+problem to hit. Also found: `W3DTerrainLogic.cpp`/`W3DGhostObject.cpp`
+each pull the full WW3D2 rendering closure via their own headers,
+worked around with the plain `GameLogic`'s default factories plus a
+real `m_headless = TRUE`; `TheGameEngine`'s one needed method,
+`isTimeFrozen()`, turned out to be `static`, so no real `GameEngine`
+object (and thus no vtable) was needed for it at all — simpler than
+either the draft or the Task 1 spike anticipated.
+
+**Milestone 11** (`Tests/RenderViewUpdateDraw/`, commit `67d7b83f0`):
+scoped down mid-implementation, honestly disclosed. Delivered a real,
+verified proof of `pickDrawable()`'s ray-cast chain (finding 11 — a
+sentinel `DrawableInfo` on the existing test-authored quad, hit and
+miss both checked against the real `RTS3DScene::castRay`). Steps 1-4
+(real `TheGameLogic`/`TheScriptEngine`, the five-class `GameClient`/
+`InGameUI`/`Display`/`FontLibrary`/`Mouse` stub-subclass surface, the
+full `update()`/`draw()`/`drawView()` call chain) were **not**
+completed. **Real, previously-undiscovered finding, generalizable
+beyond this one milestone**: a derived class's vtable needs a resolved
+function address for every virtual method in its base class hierarchy,
+not just the ones actually overridden — so a stub subclass overriding
+only the ~16 pure virtuals still forces the linker to pull in
+`GameClient.cpp`'s/`InGameUI.cpp`'s real bodies for every non-pure
+virtual left un-overridden. Measured via real link attempts: 372
+undefined symbols for the full five-class construction, 237 for
+`TheGameLogic`+`TheScriptEngine` alone — far larger than Draft 35's
+"cheap constructor"/"~47+ trivial overrides" estimate, and larger than
+its own pre-committed fallback anticipated. Both findings independently
+verified (ctest 12/12 then 13/13 combined, WSL2 scoped baseline
+re-confirmed at exactly 34/34 both individually and after merging).
+**Steps 1-4 remain open, unscoped follow-up work** — a future pass
+should consider Milestone 10's "inherit the full real source closure"
+technique instead of a minimal-stub approach, given it demonstrably
+avoids this exact wall.
 
 **Recommended sequencing** (Fable planning pass): run Draft 34's Task
 1 spike first regardless of what follows - it retires this port's
