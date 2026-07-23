@@ -1,0 +1,27 @@
+# Native port plan, Draft 34, Milestone 10 - carried over VERBATIM from
+# Tests/RenderCameraTransform/hide_global_allocator_symbols.map (itself
+# carried over from Tests/RenderGameAssets, Draft 28 Milestone 7 Task 4),
+# which found and fixed a real Mesa/llvmpipe + std::filesystem allocator-
+# interposition SIGSEGV/SIGABRT pair with hard evidence. This harness has NO
+# GL/Mesa dependency and does not link std::filesystem-based file lookups
+# (it is pure logic, no rendering, no asset loading) - the original bug this
+# map guards against does not apply here. Kept anyway as a defensive,
+# zero-cost default: it hides the same global operator new/delete symbols
+# this harness's own real GameMemory.cpp (linked unchanged from every prior
+# harness) defines, matching this port's established practice of reusing a
+# proven-safe link option verbatim rather than re-deriving it per harness.
+{
+  global: *;
+  local:
+    _Znwm;
+    _Znam;
+    _ZdlPv;
+    _ZdaPv;
+    _ZnwmPKci;
+    _ZdlPvPKci;
+    _ZnamPKci;
+    _ZdaPvPKci;
+    createW3DMemPool;
+    allocateFromW3DMemPool*;
+    freeFromW3DMemPool;
+};

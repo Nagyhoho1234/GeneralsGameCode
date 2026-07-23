@@ -116,3 +116,16 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderCameraTransform)
 endif()
+
+# Phase 5(a) Milestone 10 (native port plan, Draft 34, "rung 2b-lite") - a
+# headless TheAI->TheGameLogic->TheScriptEngine->TheTerrainLogic->
+# ThePartitionManager tick harness, deliberately bypassing
+# GameEngine::init()/execute()'s real display-layer dependencies. Independent
+# of W3DView.cpp/W3DDisplay.cpp entirely - a separate logic-path workstream,
+# not a continuation of rung 3b. NOT WIN32 for the same reasons as its nine
+# rendering/logic siblings and GameFileSystem, though this harness has no
+# rendering dependency at all (pure logic). See
+# GameLogicTickHarness/CMakeLists.txt and main.cpp for the full plan.
+if(NOT WIN32)
+    add_subdirectory(GameLogicTickHarness)
+endif()
