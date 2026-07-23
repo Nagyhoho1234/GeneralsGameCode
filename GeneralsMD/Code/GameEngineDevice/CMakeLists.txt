@@ -43,7 +43,7 @@ set(GAMEENGINEDEVICE_SRC
 #    Include/W3DDevice/GameClient/W3DCustomScene.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
     Include/W3DDevice/GameClient/W3DDebugDisplay.h
     Include/W3DDevice/GameClient/W3DDebugIcons.h
-    Include/W3DDevice/GameClient/W3DDisplay.h
+#    Include/W3DDevice/GameClient/W3DDisplay.h # unified into Core/GameEngineDevice (native port plan, Milestone 9 Task 1)
     Include/W3DDevice/GameClient/W3DDisplayString.h
     Include/W3DDevice/GameClient/W3DDisplayStringManager.h
 #    Include/W3DDevice/GameClient/W3DDynamicLight.h # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)
@@ -149,7 +149,7 @@ set(GAMEENGINEDEVICE_SRC
     Source/W3DDevice/GameClient/W3DCustomEdging.cpp
     Source/W3DDevice/GameClient/W3DDebugDisplay.cpp
     Source/W3DDevice/GameClient/W3DDebugIcons.cpp
-    Source/W3DDevice/GameClient/W3DDisplay.cpp
+#    Source/W3DDevice/GameClient/W3DDisplay.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 9 Task 1)
     Source/W3DDevice/GameClient/W3DDisplayString.cpp
     Source/W3DDevice/GameClient/W3DDisplayStringManager.cpp
 #    Source/W3DDevice/GameClient/W3DDynamicLight.cpp # unified into Core/GameEngineDevice (native port plan, Milestone 8 Task 1)

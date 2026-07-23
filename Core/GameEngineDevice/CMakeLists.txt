@@ -47,7 +47,7 @@ set(GAMEENGINEDEVICE_SRC
     Include/W3DDevice/GameClient/W3DCustomScene.h
 #    Include/W3DDevice/GameClient/W3DDebugDisplay.h
 #    Include/W3DDevice/GameClient/W3DDebugIcons.h
-#    Include/W3DDevice/GameClient/W3DDisplay.h
+    Include/W3DDevice/GameClient/W3DDisplay.h
 #    Include/W3DDevice/GameClient/W3DDisplayString.h
 #    Include/W3DDevice/GameClient/W3DDisplayStringManager.h
     Include/W3DDevice/GameClient/W3DDynamicLight.h
@@ -157,7 +157,7 @@ set(GAMEENGINEDEVICE_SRC
 #    Source/W3DDevice/GameClient/W3DCustomEdging.cpp
 #    Source/W3DDevice/GameClient/W3DDebugDisplay.cpp
 #    Source/W3DDevice/GameClient/W3DDebugIcons.cpp
-#    Source/W3DDevice/GameClient/W3DDisplay.cpp
+    Source/W3DDevice/GameClient/W3DDisplay.cpp
 #    Source/W3DDevice/GameClient/W3DDisplayString.cpp
 #    Source/W3DDevice/GameClient/W3DDisplayStringManager.cpp
     Source/W3DDevice/GameClient/W3DDynamicLight.cpp
@@ -230,6 +230,16 @@ endif() # WIN32
 # getSecondMaterialPassOpacity) - plus a latent-uninitialized-pointer fix to
 # m_frenzyMaterialPass (Draft 30 finding 9), applied unconditionally for both
 # trees since the member is provably dead code today.
+
+# W3DDisplay.cpp/.h: the game's real W3D display, unified from the per-tree
+# Generals/GeneralsMD copies into the WIN32-gated block above (native port
+# plan, Draft 32, Milestone 9 Task 1). The header's divergence is confirmed
+# cosmetic (branding + two comment typo fixes) - no guard needed. The .cpp has
+# nine real GeneralsMD-only hunks, all guarded with "#if RTS_ZEROHOUR ... #else
+# ... #endif" two-block guards (not a straddling #if) - see the .cpp's own
+# header comment for the full enumeration. This is a PURE REFACTOR:
+# W3DDisplay.cpp still only compiles on Windows (WIN32-gated, as before); no
+# POSIX portability work was attempted or is in scope here.
 
 # Add C++ 17 FileSystem implementation for non-VS6 builds
 if(NOT IS_VS6_BUILD)
