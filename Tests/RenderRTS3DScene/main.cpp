@@ -690,15 +690,23 @@ int main()
 			Check_Pixel(fbo, quad_px, quad_py, TEX_R, TEX_G, TEX_B, "2d. authored texel color at predicted position (through Render->updateFixedLightEnvironments->Customized_Render->Visibility_Check->renderOneObject->Flush)");
 			free(fbo);
 		}
+		// 2e. Direct state check, not just pixels: RTS3DScene::Visibility_Check
+		// (W3DScene.cpp:659) calls robj->Set_Visible(!camera->Cull_Sphere(...))
+		// every frame; Is_Really_Visible() (rendobj.h:443) reads that same bit
+		// back. In-frustum here, so Cull_Sphere must have said "not culled".
+		Check(robj->Is_Really_Visible() != 0, "2e. robj->Is_Really_Visible() true while in-frustum (real Cull_Sphere result, not inferred from pixels)");
 
 		// --- Check 3: culling (Visibility_Check's real Cull_Sphere logic) -------
-		// Transform the quad's render object far outside the camera
-		// frustum, render again, confirm the position where it USED to
-		// appear now reads background color - this proves Visibility_Check
-		// really culled it this frame (SimpleSceneClass::Visibility_Checked
-		// resets to false at the end of every Customized_Render call,
-		// W3DScene.cpp:1328, so every doRender() re-evaluates visibility
-		// fresh), not merely that Render() was called.
+		// Transform the quad's render object far outside the camera frustum,
+		// render again. Check 3d queries robj->Is_Really_Visible() directly -
+		// the exact bit Visibility_Check's Set_Visible(!Cull_Sphere(...)) call
+		// (W3DScene.cpp:659) wrote this frame - so this is a real assertion on
+		// the culling logic's own output, not an inference from where pixels
+		// landed (a quad moved off both the frustum AND the framebuffer would
+		// read as background at its old position regardless of whether
+		// culling ever ran; 3d rules that out). 3c is kept as a secondary,
+		// pixel-level cross-check that the culled object also doesn't
+		// coincidentally paint over the checked position.
 		printf("=== Check 3: culling - quad moved outside the frustum ===\n");
 		robj->Set_Transform(Matrix3D(Vector3(OFFSCREEN_X, OFFSCREEN_Y, 0.0f)));
 
@@ -708,9 +716,10 @@ int main()
 
 		{
 			unsigned char* fbo = Read_Fbo_Pixels_TopDown(g_W, g_H);
-			Check_Pixel(fbo, quad_px, quad_py, BG_R, BG_G, BG_B, "3c. old quad position now reads background (culled by Visibility_Check)");
+			Check_Pixel(fbo, quad_px, quad_py, BG_R, BG_G, BG_B, "3c. old quad position now reads background (secondary pixel-level cross-check)");
 			free(fbo);
 		}
+		Check(robj->Is_Really_Visible() == 0, "3d. robj->Is_Really_Visible() false after moving outside the frustum (real Cull_Sphere-based culling logic actually ran and marked it invisible this frame)");
 
 		// --- Check 4: drawTerrainOnly(true) --------------------------------------
 		// Move the quad BACK to its original, in-frustum position (so the
