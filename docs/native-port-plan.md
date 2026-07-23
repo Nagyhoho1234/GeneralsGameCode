@@ -6137,6 +6137,46 @@ should consider Milestone 10's "inherit the full real source closure"
 technique instead of a minimal-stub approach, given it demonstrably
 avoids this exact wall.
 
+**Follow-up plan (second Fable planning pass, 2026-07-23)**: three
+workstreams, not four - the two CI-wiring tasks below share exactly
+one file and would collide if split, so they merge into one task.
+- **Workstream A - CI wiring for both new harnesses** (`.github/workflows/linux-native.yml`).
+  `GameLogicTickHarnessTest` needs no `xvfb-run`/`LIBGL_ALWAYS_SOFTWARE`
+  at all (pure logic, zero GL/display dependency, no scratch cwd -
+  simpler than every existing entry). `RenderViewUpdateDrawTest` is an
+  exact clone of the `RenderCameraTransformTest` step (real
+  `WORKING_DIRECTORY`, needs `xvfb-run`), with its summary text
+  required to honestly describe the shipped scope (`pickDrawable()`
+  only) rather than Draft 35's fuller ambition. Main tree, no worktree,
+  small enough for direct execution.
+- **Workstream B - Milestone 11's remaining steps 1-4**, worktree-
+  isolated, with an explicitly rewritten brief: do NOT retry the
+  disproven minimal-stub-subclass link strategy; instead adopt
+  Milestone 10's DEFER-closure technique (inherit `z_gameengine`'s
+  entire real source closure rather than hand-picking files) layered
+  on top of the harness's existing render-stack sources, with a
+  mandatory step-0 link spike (wire the closure in, add nothing but
+  `TheGameLogic`/`TheScriptEngine` construction, count undefined/
+  duplicate symbols) before writing any stub override - retiring the
+  link question first is what made Milestone 10 land clean. Forbidden
+  files: `linux-native.yml`, this doc (both controller-only this
+  round, avoiding the only two other latent conflict points). Draft
+  35's runtime findings (the `GameClient` destructor hazard, the
+  `W3DDisplay::m_3DScene`/`m_2DScene` static definitions, the real
+  `RTS2DScene` early-out proof, the camera-pitch hazard, the
+  view-filter no-op) remain valid and still apply - only the LINK
+  strategy changed, not the runtime analysis.
+- **Workstream C - the `superpowers:finishing-a-development-branch`
+  decision**, controller-direct with the user, no subagent (it's a
+  judgment call, not a code task). Runs after Workstream A merges (a
+  marginally more complete snapshot to judge, at zero cost) but does
+  NOT wait for Workstream B - the doc's own recurring "keep growing"
+  excuse across Milestones 6-11 is the pattern this is meant to break.
+  Guardrail: if the decision is to merge/rebase the base branch, defer
+  *executing* that specific action until Workstream B integrates -
+  rebasing a base branch under an active worktree is exactly the
+  incident class [[background-agent-incident-handling]] warns about.
+
 **Recommended sequencing** (Fable planning pass): run Draft 34's Task
 1 spike first regardless of what follows - it retires this port's
 single biggest open unknown cheaply and gates nothing else. After
