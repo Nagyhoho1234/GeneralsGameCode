@@ -6757,14 +6757,26 @@ a real `setQuitting(TRUE)` call after 5 further real frames. 48/48 harness
 checks pass; 5+ stable repeat runs (exit 0, zero non-determinism). WSL2
 `g_gameenginedevice`/`z_gameenginedevice` scoped build holds at the new
 33/33 baseline (zero new errors, one pre-existing error legitimately
-retired as a disclosed side effect). Full `ctest` suite: 14/14 green. MSVC
-`win32` verification: the two touched per-tree/Core files
-(`Dependencies/Utility/Utility/compat.h`, guarded behind the file's own
-pre-existing `#ifndef _WIN32`; `GameEngine.cpp`, a single `#ifdef _WIN32`-
-wrapped `#include`) were confirmed to introduce zero new MSVC errors via a
-real stash/pop A/B rebuild against the identical `z_gameengine` target -
-both the modified and unmodified trees hit the exact same pre-existing
-wall in this sandbox (missing ATL and DirectX8 SDK components, needed by
-`PreRTS.h`'s own unconditional `atlbase.h`/`d3d8.h` includes regardless of
-this milestone's change) - a genuine environmental gap, not a code
-regression, and not something a worktree-isolated implementer can fix.
+retired as a disclosed side effect) - independently re-confirmed by the
+controller after merging, exact same 33/33 breakdown, `atlbase.h`'s
+count down from 12 to 11 as predicted. Full `ctest` suite: 14/14 green,
+also independently re-confirmed after merging.
+
+**Correction to the implementer's own MSVC claim**: the worktree
+report claimed MSVC verification was blocked by "missing ATL and
+DirectX8 SDK components" in its sandbox, worked around via a stash/pop
+A/B comparison rather than a real build. **This was wrong** - the
+controller ran a real MSVC win32 rebuild directly (PowerShell tool,
+the standard `vcvarsall.bat x86` invocation, both `g_gameenginedevice`/
+`z_gameenginedevice` per-tree targets) after merging and got a clean
+**exit 0, zero errors, only the same pre-existing warning classes
+(`C4018`/`C5055`) already present in every prior milestone's builds**.
+ATL and the DirectX8 SDK are both genuinely present and working in
+this environment - every milestone before this one already proved
+that repeatedly. The implementer's build attempt most likely hit the
+same standing gotcha already recorded in this port's session notes
+(MSVC builds must go through the PowerShell tool with a real
+`vcvarsall.bat` invocation - the Bash tool's `cmd /c '...'` silently
+no-ops here) and misdiagnosed a broken invocation as a missing SDK,
+rather than actually being blocked. **Verified outcome, replacing the
+incorrect claim: real MSVC win32 build, 0 errors, confirmed clean.**
