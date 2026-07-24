@@ -297,6 +297,47 @@ inline void RemoveFontResource(const char*) {}
 #define _MAX_PATH 260
 #endif
 
+// HINSTANCE / CComModule / SetWindowText / SetWindowTextW (native port plan
+// Phase 5(a) Milestone 12, Draft 36): GameEngine.cpp's own constructor/
+// destructor unconditionally call "_Module.Init(nullptr, ApplicationHInstance,
+// nullptr);" / "_Module.Term();" (real ATL::CComModule usage, unguarded by
+// _WIN32/ATL - this codebase's real WebBrowser class is the only genuinely
+// ATL/COM-based thing GameEngine.cpp needs, and that dependency is guarded
+// out separately, see GameEngine.cpp's own #ifdef _WIN32 guard on
+// WebBrowser.h). A real compile spike confirmed these are the only two
+// _Module members ever called (both from GameEngine.cpp only, grep-confirmed)
+// and CComModule::Init()/Term() are genuinely both no-ops for this port's
+// purposes (no in-process COM server registration happens or is needed on
+// POSIX) - true, honest no-op shims, not behavior-changing stand-ins.
+// updateWindowTitle() (GameEngine.cpp) similarly calls
+// ::SetWindowText()/::SetWindowTextW() unconditionally, but only inside an
+// "if (ApplicationHWnd)" guard - ApplicationHWnd stays permanently null on
+// every harness that reaches this code today, so these two calls are
+// link-live, provably runtime-dead no-ops for this port's current call
+// paths, exactly like timeBeginPeriod()'s shim below.
+//
+// win32_compat.h (this same directory) is the real owner of HWND's own
+// typedef - included explicitly here (its own #ifndef WIN32_COMPAT_H guard
+// makes repeat inclusion from elsewhere in this TU's own include graph
+// safe) rather than assumed already-included, since compat.h's own
+// inclusion order (via Lib/BaseTypeCore.h, ahead of WWLib/bittype.h in some
+// translation units) is not guaranteed to have pulled it in yet.
+#include "win32_compat.h"
+
+#ifndef HINSTANCE
+typedef void* HINSTANCE;
+#endif
+
+class CComModule
+{
+public:
+	inline long Init(void* /*objectMap*/, HINSTANCE /*hInstance*/, const void* /*libId*/ = nullptr) { return 0; }
+	inline void Term() {}
+};
+
+inline int SetWindowText(HWND /*hwnd*/, const char* /*title*/) { return 1; }
+inline int SetWindowTextW(HWND /*hwnd*/, const wchar_t* /*title*/) { return 1; }
+
 #include "mem_compat.h"
 #include "string_compat.h"
 #include "tchar_compat.h"

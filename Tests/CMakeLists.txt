@@ -143,3 +143,15 @@ endif()
 if(NOT WIN32)
     add_subdirectory(RenderViewUpdateDraw)
 endif()
+
+# Phase 5(a) Milestone 12 (native port plan, Draft 36, "rung 2b") - the real,
+# unmodified GameEngine::init()/update()/execute() on POSIX: a harness-local
+# PosixGameEngine subclass overriding the 11 pure factory methods, driving
+# the real engine entry point this whole port has been building toward since
+# Phase 5 began (not a bypass, not hand-constructed singletons - unlike
+# Milestone 10's own deliberately-scoped-down "rung 2b-lite"). NOT WIN32 for
+# the same reasons as its eleven rendering/logic siblings and GameFileSystem.
+# See PosixGameEngineHarness/CMakeLists.txt and main.cpp for the full plan.
+if(NOT WIN32)
+    add_subdirectory(PosixGameEngineHarness)
+endif()

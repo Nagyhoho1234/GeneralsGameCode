@@ -104,7 +104,18 @@
 #include "GameClient/GUICallbacks.h"
 
 #include "GameNetwork/NetworkInterface.h"
+// TheSuperHackers @port Milestone 12 (native port plan, Draft 36): the real
+// WebBrowser class is genuinely, structurally ATL/COM-based (FEBDispatch<...>,
+// IBrowserDispatch, IID_IBrowserDispatch - confirmed by a real compile spike,
+// not a small unnecessary #include). GameEngine.h only forward-declares
+// WebBrowser (for the pure-virtual createWebBrowser() factory), and this
+// translation unit's only other reference (below, ":684") is already
+// commented out - so guarding this include is sufficient to let the real,
+// unmodified GameEngine.cpp compile on POSIX with zero behavior change on
+// Windows (this branch is untouched there).
+#ifdef _WIN32
 #include "GameNetwork/WOLBrowser/WebBrowser.h"
+#endif
 #include "GameNetwork/LANAPI.h"
 #include "GameNetwork/GameSpy/GameResultsThread.h"
 

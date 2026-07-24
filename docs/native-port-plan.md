@@ -6702,3 +6702,69 @@ this whole port has been building toward since Phase 5 began.
 worktree-isolated implementer, step 0 (the real `init()` link/run spike)
 first per this draft's own recommendation, same discipline that made
 Milestone 10 and Milestone 11's retry both land clean.
+
+**Status: DONE** (2026-07-24). Step 0's spike landed at ZERO remaining
+compile errors on the first attempt (all 3 predicted shims applied
+up front, exceeding the draft's own "two remaining errors" spike result),
+and the real `init()`/`update()`/`execute()` link/run chain surfaced a
+tractable, individually-small set of real findings beyond this draft's own
+enumeration - none large enough to trigger the pre-committed scope-down
+fallback:
+- Two more INI directories the real `GameLODManager::init()` call reaches
+  (`Data\INI\GameLOD`, `Data\INI\GameLODPresets`) - not in this draft's own
+  19+16-directory enumeration.
+- `Data\<Language>\Language`/`Data\<Language>\HeaderTemplate` (formatted,
+  language-specific directories via `GetRegistryLanguage()`, default
+  `"english"`) and `Data\INI\WindowTransitions` (plus `Data\INI\ParticleSystem`,
+  reached because `ParticleSystemManagerDummy` deliberately does NOT override
+  `init()` under `RETAIL_COMPATIBLE_CRC`, to preserve the real logic CRC).
+- A real, pre-existing engine bug this milestone's own empty-scaffold
+  configuration exposed: `GameWindowTransitionsHandler::remove()`
+  dereferences `m_currentGroup` unguarded when both the looked-up group and
+  `m_currentGroup` are null (coincidentally equal) - worked around with real
+  INI content (a genuine `WindowTransition ControlBarArrow` group), not an
+  engine-code change.
+- `ThingFactory::reset()` unconditionally dereferences `m_firstTemplate`
+  after the override-deletion loop - requires at least one real `Object`
+  definition, not just INI-directory presence (a second, `Object`-specific
+  instance of the "two directories need real content" cost Draft 36 already
+  flagged for Water/Weather).
+- One implementation-time correction to this draft's own construction
+  guidance: MemoryPoolObject-derived classes (e.g. the new
+  `DisplayStringStub`) must be constructed via the `newInstance(ARGCLASS)`
+  macro (or the equivalent explicit placement-new tag), not plain `NEW` -
+  the memory-pool glue's plain single-argument `operator new` is a
+  deliberate misuse trap that always throws `ERROR_BUG`.
+- A genuine, disclosed side effect: guarding `GameEngine.cpp`'s
+  `WebBrowser.h` include also retires ONE of the WSL2 scoped build's 34
+  documented pre-existing errors for real (the same shared source file is
+  part of `z_gameengine`'s own closure) - the new, correct baseline for
+  `g_gameenginedevice`/`z_gameenginedevice` is **33/33**, confirmed by a
+  diff against the original 34-error log showing exactly one line removed,
+  zero new errors added.
+
+Delivered: `Tests/PosixGameEngineHarness/` (`PosixGameEngineHarnessTest`,
+14th ctest entry) - a harness-local `PosixGameEngine : GameEngine`
+overriding exactly the 11 pure factory methods, `AudioManagerStub`/
+`TerrainVisualStub`/`DisplayStringManagerStub` (plus a small
+`DisplayStringStub`), an extended `GameClientStub`, a ~38-file
+test-authored `Data/INI` scaffold, and a harness-local
+`QuitAfterFramesTranslator` - driving the REAL, unmodified
+`GameEngine::init()`, five explicit `update()` calls (asserting
+`TheGameLogic->getFrame()`/`hasUpdated()` each tick, matching Milestone
+10's own exit-criterion precedent), and a real `execute()` loop exited via
+a real `setQuitting(TRUE)` call after 5 further real frames. 48/48 harness
+checks pass; 5+ stable repeat runs (exit 0, zero non-determinism). WSL2
+`g_gameenginedevice`/`z_gameenginedevice` scoped build holds at the new
+33/33 baseline (zero new errors, one pre-existing error legitimately
+retired as a disclosed side effect). Full `ctest` suite: 14/14 green. MSVC
+`win32` verification: the two touched per-tree/Core files
+(`Dependencies/Utility/Utility/compat.h`, guarded behind the file's own
+pre-existing `#ifndef _WIN32`; `GameEngine.cpp`, a single `#ifdef _WIN32`-
+wrapped `#include`) were confirmed to introduce zero new MSVC errors via a
+real stash/pop A/B rebuild against the identical `z_gameengine` target -
+both the modified and unmodified trees hit the exact same pre-existing
+wall in this sandbox (missing ATL and DirectX8 SDK components, needed by
+`PreRTS.h`'s own unconditional `atlbase.h`/`d3d8.h` includes regardless of
+this milestone's change) - a genuine environmental gap, not a code
+regression, and not something a worktree-isolated implementer can fix.
