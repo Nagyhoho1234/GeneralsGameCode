@@ -6944,3 +6944,59 @@ implementer's worktree and again in the merged main tree.
 **Not yet done**: CI wiring for `RenderNamedDrawableTest` (deferred by
 design, same pattern as every prior milestone's own CI-wiring
 follow-up).
+
+
+## Draft 38: Milestone 14 plan — closing rung 3, multiple real `Drawable`s
+
+**Status: APPROVED and IN PROGRESS** (user authorized direct Sonnet
+implementation, 2026-07-24, judged low-risk enough not to need a
+Fable research pass first - the entire construction chain is already
+proven by Milestone 13). Milestone 13 proved ONE real, named
+`Object`+`Drawable` constructs, renders, and gets picked correctly.
+Draft 35's findings 12 and 13 describe MULTI-object behavior
+specifically - `iterateDrawablesInRegion()`'s real traversal of more
+than one live entry, and confirming `pickDrawable()` correctly
+distinguishes between multiple real candidates (not just "hits the
+one thing that exists vs. nothing"). This is genuinely the last
+un-closed piece of rung 3 as previously scoped.
+
+**Scope**: extend `Tests/RenderNamedDrawable/` (or a new sibling
+harness, implementer's judgment) to construct a SECOND real, named
+`Object`+`Drawable` (a distinct template name, a distinct world
+position) alongside the first. Verify: (1) `TheGameClient`'s drawable
+list traversal actually visits both entries, not just the first
+(`iterateDrawablesInRegion()`'s harness-local callback should count
+2, not 1, for a region containing both); (2) `pickDrawable()` at each
+unit's own screen position returns THAT unit specifically (identity
+check both ways - hitting unit A's position must return unit A, not
+unit B, and vice versa); (3) a region query positioned to contain
+only one of the two units correctly excludes the other (a real
+negative control, not just "more than zero").
+
+**One specific thing for the implementer to investigate and report on
+honestly, not assume either way**: Milestone 13's own step-0 finding
+noted it had to call the real, public `Drawable::draw()` directly
+(rather than relying on it firing automatically) because the
+production per-frame trigger for `DrawModule::doDrawModule()`'s
+transform push normally comes from `TheDisplay`'s own real draw loop
+(`W3DDisplay::draw()`, a standing non-goal, never linked). Confirm
+whether this same direct-call substitution is still the correct,
+honest approach for N objects (call it once per real drawable), or
+whether `GameClient::update()`'s own internal `TheGameClient->
+iterateDrawablesInRegion(&axisAlignedRegion, drawDrawable, this)`
+call (which Milestone 13's `view->update()` already runs for real)
+already exercises this for every registered drawable on its own once
+more than one exists - read the real code path yourself rather than
+assume Milestone 13's own comment is the final word for the
+multi-object case.
+
+**Explicit non-goals, unchanged**: `W3DDisplay.cpp`, the real
+`W3DGameClient`, map loading, terrain rendering, animation/LOD
+content beyond what Milestone 13 already exercises, `WorldHeightMap`.
+
+**Verification**: standing Global Constraints - WSL2 scoped baseline
+must hold at exactly 33/33, real MSVC win32 rebuild via the
+PowerShell tool if any per-tree/Core file is touched (unlikely for
+this milestone - it should be `Tests/`-local), full existing `ctest`
+suite green. Same worktree-isolation, foreground-only-builds,
+real-substantive-final-report discipline as every prior dispatch.
