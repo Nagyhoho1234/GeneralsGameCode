@@ -106,6 +106,7 @@
 #include "Common/GameEngine.h"
 #include "Common/MessageStream.h"
 #include "Common/FramePacer.h"
+#include "Common/RandomValue.h"
 #include "Common/version.h"
 #include "Common/PlayerList.h"
 #include "GameClient/GameText.h"
@@ -229,6 +230,24 @@ int main()
 
 		engine.init();
 
+		// TheSuperHackers @port Milestone 17 (native port plan, Draft 43,
+		// "Phase 8 rung 1") Task 5: pin the game-logic RNG to a known seed
+		// IMMEDIATELY after engine.init() - backported verbatim from Tests/
+		// RenderNamedDrawable/main.cpp's own Task 0 (see that file's own
+		// header comment for the full real finding: GameEngine::init()
+		// itself calls no-arg InitRandom(), GameEngine.cpp:411, which seeds
+		// the game-logic RNG from time(nullptr), RandomValue.cpp:98-114 - and
+		// GameLogic::getCRC()'s own real body folds a CRC of that live seed
+		// state into its result, GameLogic.cpp:4249-4262 - so Milestone 15's
+		// own getCRC(CRC_RECALC) values below were always internally
+		// repeat-stable (proven in Check 3/4e below, both still valid) but
+		// NEVER stable cross-run - no golden CRC tripwire was possible until
+		// this call). InitRandom(0) matches the same real, public call
+		// production code already makes in analogous spots (MainMenu.cpp:313,
+		// Shell.cpp:557).
+		InitRandom(0);
+		Check(true, "1a2. InitRandom(0) returned without crashing (real game-logic RNG seed pin)");
+
 		Check(TheFileSystem != nullptr, "1b. TheFileSystem real-constructed by GameEngine::init() (non-null)");
 		Check(TheLocalFileSystem != nullptr, "1c. TheLocalFileSystem real-constructed via createLocalFileSystem() (non-null)");
 		Check(TheArchiveFileSystem != nullptr, "1d. TheArchiveFileSystem real-constructed via createArchiveFileSystem() (non-null)");
@@ -261,6 +280,29 @@ int main()
 		Check(TheMouse != nullptr, "2h. TheMouse real-constructed (MouseDummy, headless ternary, non-null)");
 		Check(TheWindowManager != nullptr, "2i. TheWindowManager real-constructed (GameWindowManagerDummy, headless ternary, non-null)");
 		Check(TheKeyboard == nullptr, "2j. TheKeyboard stays null (headless - GameClient::init()'s own \"if (!m_headless)\" guard)");
+
+		// ---- Check 2 (continued), Milestone 17 (native port plan, Draft 43)
+		// Task 5: a golden, checked-in empty-world CRC - frame 0, before any
+		// real engine.update() tick and with no live Object ever spawned in
+		// this harness (Tests/RenderNamedDrawable, not this file, is where
+		// TheThingFactory->newObject() actually gets exercised - see that
+		// file's own header comment for why). With Task 5's InitRandom(0)
+		// pinned above, this is the first real cross-run CRC regression
+		// tripwire this harness has - unlocked for the exact same reason
+		// Tests/RenderNamedDrawable's own Check M17-4 is, matching Milestone
+		// 15's own kExpectedSimulationMathCrc precedent (Tests/
+		// GameLogicTickHarness/main.cpp). Coupled to this exact harness's own
+		// fixtures (no INI/Data scaffold beyond this directory's own minimal
+		// Data/INI templates) and to this repo's own WSL2/GCC build
+		// (build/linux-x64, Release, -O3). ----
+		const UnsignedInt crcEmptyWorldFirst = TheGameLogic->getCRC(CRC_RECALC);
+		const UnsignedInt crcEmptyWorldSecond = TheGameLogic->getCRC(CRC_RECALC);
+		Check(crcEmptyWorldSecond == crcEmptyWorldFirst, "2k. getCRC(CRC_RECALC) repeat call at the empty-world, pre-tick state is stable (same real state, two calls)");
+
+		const UnsignedInt kExpectedEmptyWorldCrc = 0x1ECFF0ECu;
+		char emptyWorldCrcLabel[224];
+		snprintf(emptyWorldCrcLabel, sizeof(emptyWorldCrcLabel), "2l. getCRC(CRC_RECALC) at the empty-world, pre-tick state == kExpectedEmptyWorldCrc (0x%8.8X == 0x%8.8X)", crcEmptyWorldFirst, kExpectedEmptyWorldCrc);
+		Check(crcEmptyWorldFirst == kExpectedEmptyWorldCrc, emptyWorldCrcLabel);
 
 		// ---- Check 3: the real tick loop - N=5 real calls into
 		// engine.update(), asserting the REAL, unmodified GameLogic::update()'s

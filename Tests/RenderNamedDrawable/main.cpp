@@ -241,6 +241,73 @@
 // diagnostic ever finds a given unit was NOT auto-pushed - a harmless,
 // evidence-gated safety net (never actually taken in this milestone's own
 // real runs), not a load-bearing requirement.
+//
+// ---- Milestone 17 addendum (native port plan, Draft 43, "Phase 8 rung 1,
+// making the CRC actually move") - EXTENDS this same file/target in place
+// again, after the Milestone 16 checks: this milestone's own real Fable
+// research pass ran a REAL experiment (an LD_PRELOAD time interposer) and
+// found that Milestone 15's own recorded CRC (Tests/PosixGameEngineHarness)
+// was never a stable constant across process runs - GameEngine::init()
+// calls no-arg InitRandom() (GameEngine.cpp:411), which seeds the
+// game-logic RNG from time(nullptr) (RandomValue.cpp:98-114), and
+// GameLogic::getCRC()'s own real body folds a CRC of that live seed state
+// into its result (GetGameLogicRandomSeedCRC(), GameLogic.cpp:4249-4262).
+// Each run was internally repeat-stable (Milestone 15's own in-process
+// assertions all remain valid) but not stable cross-run. Fix (Task 0,
+// Check 1f2 above): InitRandom(0) immediately after engine.init() - the
+// SAME real, public call production code already makes in analogous spots
+// (MainMenu.cpp:313, Shell.cpp:557; replay playback uses
+// InitRandom(m_gameInfo.getSeed()), Recorder.cpp:1202).
+//
+// Position IS in the lockstep CRC, confirmed by reading: Object::crc()
+// (Object.cpp:3979) xfers the full 48-byte transform matrix
+// (Object.cpp:4006) among other real per-object state. Checks M17-1/M17-2
+// below exercise this directly - a static world of live objects (no Update
+// modules) yields a CONSTANT real CRC tick to tick (Task 1), while a real
+// setPosition() call changes it (Task 2).
+//
+// Check M17-3 is this milestone's own payoff: a THIRD real, named Object
+// ("M17PhysicsUnit", Data/INI/Object.ini - M13NamedUnit's Draw/Body/die
+// modules plus a real, unmodified, already-registered "Behavior =
+// PhysicsBehavior" module, GeneralsMD/Code/GameEngine/Source/Common/Thing/
+// ModuleFactory.cpp:330 - no addModule()/CMakeLists change needed), spawned
+// airborne at (500,500,800) - well inside HarnessTerrainLogic's own
+// 0..1000 x/y, -1000..1000 z extent (harness_stub_classes.h) - via the same
+// real TheThingFactory->newObject() chain Milestone 13 established. Real
+// gravity (GlobalData.cpp:874, m_gravity = -1.0f dist/frame^2) makes it
+// fall over several real engine.update() ticks with ZERO harness-side
+// state mutation - PhysicsBehavior::update() (PhysicsUpdate.cpp:621-687)
+// integrates acceleration into velocity into position entirely inside the
+// real, unmodified engine (SLEEPY_PHYSICS is not defined in this build, so
+// calcSleepTime() at PhysicsUpdate.cpp:921-935 always returns
+// UPDATE_SLEEP_NONE - the object never sleeps, ticking every frame). A
+// real, implementation-time finding (not foreseen by Draft 43): the
+// newly-spawned object's own first real engine.update() tick is a real,
+// engine-scheduled no-op (GameLogic::update()'s own per-frame Update-module
+// dispatch list is already fixed by the time a brand-new object's module is
+// appended mid-frame) - one real, harness-level "settle" tick (Check
+// M17-3c, matching this file's own established Milestone 16 idiom for an
+// analogous one-frame-late characteristic) absorbs it before the
+// strict-decrease measurement loop. Checks M17-3e/M17-3f then assert BOTH
+// real, observable motion (getPosition()->z strictly decreasing on every
+// post-settle real tick) AND the real engine's own CRC changing tick to
+// tick, driven entirely by real physics.
+//
+// Check M17-4 checks in one golden final-tick CRC value, now that Task 0
+// has removed the cross-run non-determinism Milestone 15 never actually
+// had - the first real cross-run CRC regression tripwire this port has,
+// matching Milestone 15's own kExpectedSimulationMathCrc precedent
+// (Tests/GameLogicTickHarness/main.cpp).
+//
+// Ghost objects (GhostObject::crc()/W3DGhostObject::crc() are empty
+// bodies, never visited by getCRC()'s own walk) and terrain height
+// (needs real map loading, out of scope) are both explicit non-goals,
+// confirmed by reading, not attempted here. See docs/native-port-plan.md's
+// Draft 43 section for the full research trail and design rationale
+// (including why Tests/RenderNamedDrawable, not Tests/
+// PosixGameEngineHarness, is the right harness to extend - that harness's
+// own GameClientStub::friend_createDrawable() still returns nullptr and
+// cannot construct a real Object at all).
 #include "PreRTS.h"
 
 #include "Common/AsciiString.h"
@@ -253,6 +320,7 @@
 #include "Common/GameEngine.h"
 #include "Common/MessageStream.h"
 #include "Common/FramePacer.h"
+#include "Common/RandomValue.h"
 #include "Common/version.h"
 #include "Common/PlayerList.h"
 #include "Common/Player.h"
@@ -804,6 +872,26 @@ int main()
 
 		engine.init();
 
+		// TheSuperHackers @port Milestone 17 (native port plan, Draft 43,
+		// "Phase 8 rung 1") Task 0: pin the game-logic RNG to a known seed
+		// IMMEDIATELY after engine.init() - a real, genuinely new finding this
+		// milestone's own Fable research pass confirmed via a real LD_PRELOAD
+		// time interposer: GameEngine::init() itself calls no-arg
+		// InitRandom() (GameEngine.cpp:411), which seeds the game-logic RNG
+		// from time(nullptr) (RandomValue.cpp:98-114) - and
+		// GameLogic::getCRC()'s own real body folds a CRC of that live seed
+		// state into its result (GetGameLogicRandomSeedCRC(),
+		// RandomValue.cpp:72-77 xfers theGameLogicSeed[6], GameLogic.cpp:4249-4262),
+		// so without this call, this harness's own getCRC(CRC_RECALC) below
+		// would be internally repeat-stable (proven safe) but NEVER stable
+		// cross-run - no golden CRC tripwire (Check M17-4 below) would be
+		// possible at all. InitRandom(0) is not a harness workaround; it is
+		// the exact same real, public call production code already makes in
+		// analogous spots (MainMenu.cpp:313, Shell.cpp:557; replay playback
+		// uses InitRandom(m_gameInfo.getSeed()), Recorder.cpp:1202).
+		InitRandom(0);
+		Check(true, "1f2. InitRandom(0) returned without crashing (real game-logic RNG seed pin, matches MainMenu.cpp:313/Shell.cpp:557's own established pattern)");
+
 		Check(TheFileSystem != nullptr, "1g. TheFileSystem real-constructed by GameEngine::init() (non-null)");
 		Check(TheArchiveFileSystem != nullptr, "1h. TheArchiveFileSystem real-constructed via createArchiveFileSystem() (non-null)");
 		Check(TheThingFactory != nullptr, "1i. TheThingFactory real-constructed via createThingFactory() (non-null)");
@@ -824,6 +912,13 @@ int main()
 		// ThingTemplate.
 		const ThingTemplate* secondUnitTemplate = TheThingFactory->findTemplate("M14SecondUnit");
 		Check(secondUnitTemplate != nullptr, "1s. TheThingFactory->findTemplate(\"M14SecondUnit\") found the real, INI-parsed template");
+
+		// TheSuperHackers @port Milestone 17 (native port plan, Draft 43):
+		// the payoff template's own real, INI-parsed ThingTemplate - Data/INI/
+		// Object.ini's own "M17PhysicsUnit" (M13NamedUnit's Draw/Body/die
+		// modules plus a real "Behavior = PhysicsBehavior").
+		const ThingTemplate* physicsUnitTemplate = TheThingFactory->findTemplate("M17PhysicsUnit");
+		Check(physicsUnitTemplate != nullptr, "1t. TheThingFactory->findTemplate(\"M17PhysicsUnit\") found the real, INI-parsed template");
 
 		// ---- Cost A: the team bootstrap (Draft 37's own "~4 harness
 		// lines", all real public API, no engine changes). ----
@@ -1405,6 +1500,163 @@ int main()
 		RunOneFrame();
 		Check(rawKeyObserver->rawKeyDownCount >= 1, "M16-6a. HarnessMessageObserver (priority 5) observed a real MSG_RAW_KEY_DOWN from the synthetic ESC key-down");
 		Check(rawKeyObserver->rawKeyUpCount >= 1, "M16-6b. HarnessMessageObserver (priority 5) observed a real MSG_RAW_KEY_UP from the synthetic ESC key-up");
+
+		// ==== Milestone 17 (native port plan, Draft 43, "Phase 8 rung 1"):
+		// making the engine's own CRC actually move, driven by real objects
+		// doing something. See this file's own header comment ("Milestone 17
+		// addendum") for the full design rationale. Task 0 (InitRandom(0))
+		// already ran, immediately after engine.init() above (Check 1f2). ====
+
+		// ---- Task 1 (static control): the first-ever real
+		// engine.update() ticks in this harness. Both real, already-live
+		// units (objA/objB) have only Draw/DestroyDie/InactiveBody modules -
+		// no Update module, so neither does any real per-tick work - the
+		// with-live-objects analog of Milestone 15's own empty-world finding:
+		// a static world (no moving parts) must yield a CONSTANT
+		// getCRC(CRC_RECALC), tick to tick, not just a repeat-stable one. ----
+		printf("=== Check M17-1: two real engine.update() ticks (static world + live objects), getCRC(CRC_RECALC) repeat-checked ===\n");
+		engine.update();
+		Check(TheGameLogic->getFrame() == 1, "M17-1a. TheGameLogic->getFrame() == 1 after the first-ever real engine.update() tick in this harness");
+		const UnsignedInt crcTick1First = TheGameLogic->getCRC(CRC_RECALC);
+		const UnsignedInt crcTick1Second = TheGameLogic->getCRC(CRC_RECALC);
+		Check(crcTick1Second == crcTick1First, "M17-1b. getCRC(CRC_RECALC) repeat call at tick 1 is stable (same real state, two calls, no tick in between)");
+
+		engine.update();
+		Check(TheGameLogic->getFrame() == 2, "M17-1c. TheGameLogic->getFrame() == 2 after the second real engine.update() tick");
+		const UnsignedInt crcTick2First = TheGameLogic->getCRC(CRC_RECALC);
+		const UnsignedInt crcTick2Second = TheGameLogic->getCRC(CRC_RECALC);
+		Check(crcTick2Second == crcTick2First, "M17-1d. getCRC(CRC_RECALC) repeat call at tick 2 is stable (same real state, two calls)");
+
+		{
+			char m171Label[224];
+			snprintf(m171Label, sizeof(m171Label), "M17-1e. getCRC(CRC_RECALC) at tick 2 == tick 1 (0x%8.8X == 0x%8.8X, static world + live objects yields a constant real CRC)", crcTick2First, crcTick1First);
+			Check(crcTick2First == crcTick1First, m171Label);
+		}
+
+		// ---- Task 2 (harness-driven variation): setPosition() on unit A
+		// between two real CRC reads - Object::crc() (Object.cpp:3979) xfers
+		// the full 48-byte transform matrix (Object.cpp:4006), so a real
+		// position change must change the real CRC, and the CRC at the new
+		// real state must itself still be repeat-stable. ----
+		printf("=== Check M17-2: setPosition() changes the real CRC (Object.cpp:4006 transform-matrix xfer), repeat-stable at each state ===\n");
+		const Coord3D UNIT_A_MOVED_POS = { UNIT_A_WORLD_POS.x + 50.0f, UNIT_A_WORLD_POS.y, UNIT_A_WORLD_POS.z };
+		if (objA != nullptr)
+		{
+			objA->setPosition(&UNIT_A_MOVED_POS);
+		}
+		Check(objA != nullptr, "M17-2a. objA->setPosition() (moved 50 world units on X) returned without crashing");
+
+		const UnsignedInt crcAfterMoveFirst = TheGameLogic->getCRC(CRC_RECALC);
+		const UnsignedInt crcAfterMoveSecond = TheGameLogic->getCRC(CRC_RECALC);
+		Check(crcAfterMoveSecond == crcAfterMoveFirst, "M17-2b. getCRC(CRC_RECALC) repeat call after the move is stable (same real state, two calls)");
+
+		{
+			char m172Label[224];
+			snprintf(m172Label, sizeof(m172Label), "M17-2c. getCRC(CRC_RECALC) after the move != CRC before the move (0x%8.8X != 0x%8.8X, a real setPosition() changes the real CRC)", crcAfterMoveFirst, crcTick2First);
+			Check(crcAfterMoveFirst != crcTick2First, m172Label);
+		}
+
+		// ---- Task 3 (the payoff, engine-driven variation): a real, named
+		// Object through TheThingFactory->newObject(), spawned airborne
+		// (well inside HarnessTerrainLogic's own 0..1000 x/y, -1000..1000 z
+		// extent) with a real "Behavior = PhysicsBehavior" module. Real
+		// gravity (GlobalData.cpp:874, m_gravity = -1.0f dist/frame^2) makes
+		// it fall over several real engine.update() ticks with ZERO
+		// harness-side state mutation - PhysicsBehavior::update()
+		// (PhysicsUpdate.cpp:621-687) integrates acceleration into velocity
+		// into position, entirely inside the real, unmodified engine. ----
+		printf("=== Check M17-3: TheThingFactory->newObject() - the M17PhysicsUnit payoff spawn, airborne ===\n");
+		Object* objPhysics = nullptr;
+		if (physicsUnitTemplate != nullptr && neutralDefaultTeam != nullptr)
+		{
+			objPhysics = TheThingFactory->newObject(physicsUnitTemplate, neutralDefaultTeam);
+		}
+		Check(objPhysics != nullptr, "M17-3a. TheThingFactory->newObject() returned a real, non-null Object (M17PhysicsUnit)");
+
+		const Coord3D PHYSICS_UNIT_SPAWN_POS = { 500.0f, 500.0f, 800.0f };
+		Real prevPhysicsZ = 0.0f;
+		if (objPhysics != nullptr)
+		{
+			objPhysics->setPosition(&PHYSICS_UNIT_SPAWN_POS);
+			prevPhysicsZ = objPhysics->getPosition()->z;
+		}
+		Check(objPhysics != nullptr && CloseReal(prevPhysicsZ, PHYSICS_UNIT_SPAWN_POS.z, 0.01f),
+			"M17-3b. objPhysics->getPosition()->z == the spawned airborne height (800.0), before any real physics tick has run yet");
+
+		// ---- Real, implementation-time finding (not foreseen by Draft 43):
+		// a real run showed the newly-spawned object's own
+		// PhysicsBehavior::update() does NOT move it on the very next real
+		// engine.update() tick immediately following TheThingFactory->
+		// newObject() - z stayed EXACTLY at the spawn height (800.0 -> 800.0)
+		// on that first tick, then real, monotonic per-frame drops began the
+		// NEXT tick onward (800.0 -> 799.0 -> 797.0 -> 794.0 -> 790.0, the
+		// expected -1/-2/-3/-4 cumulative-gravity pattern). This is a real,
+		// one-frame-late engine scheduling characteristic - GameLogic::
+		// update()'s own per-frame Update-module dispatch list is already
+		// fixed by the time a brand-new object's module is appended to it
+		// mid-frame - not a defect. One real, harness-level "settle" tick
+		// (matching this file's own already-established Milestone 16
+		// "RunOneFrame() twice... to let X settle" idiom for a different,
+		// analogous one-frame-late real engine characteristic) absorbs it
+		// before the strict-decrease measurement loop below begins. ----
+		engine.update();
+		Check(true, "M17-3c. one real, harness-level 'settle' engine.update() tick absorbed (a newly-spawned object's own first physics tick is a real, engine-scheduled no-op - see this file's own header comment)");
+		prevPhysicsZ = objPhysics != nullptr ? objPhysics->getPosition()->z : 0.0f;
+
+		const int kPhysicsTicks = 5;
+		UnsignedInt prevPhysicsCrc = 0;
+		bool physicsCrcEverChanged = false;
+		bool physicsZAlwaysStrictlyDecreased = (objPhysics != nullptr);
+		for (int i = 0; i < kPhysicsTicks && objPhysics != nullptr; ++i)
+		{
+			engine.update();
+
+			const Real curPhysicsZ = objPhysics->getPosition()->z;
+			char zLabel[224];
+			snprintf(zLabel, sizeof(zLabel), "M17-3.%d. objPhysics->getPosition()->z strictly decreased after real physics tick %d (%.4f -> %.4f, real gravity-driven fall)", i, i, prevPhysicsZ, curPhysicsZ);
+			bool zDecreased = curPhysicsZ < prevPhysicsZ;
+			Check(zDecreased, zLabel);
+			physicsZAlwaysStrictlyDecreased = physicsZAlwaysStrictlyDecreased && zDecreased;
+			prevPhysicsZ = curPhysicsZ;
+
+			const UnsignedInt curPhysicsCrc = TheGameLogic->getCRC(CRC_RECALC);
+			const UnsignedInt curPhysicsCrcRepeat = TheGameLogic->getCRC(CRC_RECALC);
+			char crcLabel[224];
+			snprintf(crcLabel, sizeof(crcLabel), "M17-3.%d. getCRC(CRC_RECALC) repeat call at physics tick %d is stable (same real state, two calls)", i, i);
+			Check(curPhysicsCrcRepeat == curPhysicsCrc, crcLabel);
+
+			if (i > 0 && curPhysicsCrc != prevPhysicsCrc)
+				physicsCrcEverChanged = true;
+			prevPhysicsCrc = curPhysicsCrc;
+		}
+		Check(physicsZAlwaysStrictlyDecreased, "M17-3e. objPhysics->getPosition()->z strictly decreased on EVERY one of the real, post-settle physics ticks above (real, continuous, engine-driven fall)");
+		Check(physicsCrcEverChanged, "M17-3f. getCRC(CRC_RECALC) changed at least once across the real physics ticks (real gravity-driven motion changes the real engine's own CRC)");
+
+		// ---- Task 4 (golden tripwire): with Task 0's InitRandom(0) pinned,
+		// a checked-in golden CRC value at this run's final real physics
+		// tick - the first real cross-run CRC regression tripwire this port
+		// has, unlocked only because Task 0 removed GameEngine::init()'s own
+		// time(nullptr)-seeded non-determinism (see this file's own header
+		// comment / Check 1f2's own comment for the full real finding).
+		// TheSuperHackers @info Milestone 17 (native port plan, Draft 43)
+		// Task 4: this constant is coupled to this exact harness's own real
+		// fixtures (Data/INI/Object.ini's own "M17PhysicsUnit" template, the
+		// PHYSICS_UNIT_SPAWN_POS/kPhysicsTicks constants above, the two other
+		// real units' own final positions/state from Tasks 1-2 above, all of
+		// which feed the same real getCRC(CRC_RECALC) walk) AND to this
+		// repo's own WSL2/GCC build (build/linux-x64, Release, -O3) - matches
+		// Milestone 15's own kExpectedSimulationMathCrc precedent
+		// (Tests/GameLogicTickHarness/main.cpp). A change here after a real,
+		// intentional engine/fixture change is expected and should be
+		// re-captured from a real run, not treated as alarming on its own. ----
+		printf("=== Check M17-4: golden final-tick CRC tripwire (InitRandom(0) pinned; real cross-run regression check) ===\n");
+		const UnsignedInt kExpectedFinalPhysicsTickCrc = 0xCA35125Eu;
+		{
+			char m174Label[224];
+			snprintf(m174Label, sizeof(m174Label), "M17-4a. getCRC(CRC_RECALC) at the final real physics tick == kExpectedFinalPhysicsTickCrc (0x%8.8X == 0x%8.8X)", prevPhysicsCrc, kExpectedFinalPhysicsTickCrc);
+			Check(objPhysics != nullptr && prevPhysicsCrc == kExpectedFinalPhysicsTickCrc, m174Label);
+		}
+		printf("      (real, measured final-tick CRC this run: 0x%8.8X)\n", prevPhysicsCrc);
 
 		// ---- Manual mode (optional, not required for the automated exit
 		// criteria above): with PORTABLE_D3D8_HIDDEN unset (a real visible
