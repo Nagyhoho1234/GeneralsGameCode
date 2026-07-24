@@ -123,6 +123,88 @@
 //       correctly excludes the other - a real negative control in both
 //       directions, not just "more than zero" (Check 10 below).
 //
+// ---- Milestone 16 addendum (native port plan, Draft 41, "Phase 4 rung 0, a
+// real window with real input driving a real pick") - EXTENDS this same
+// file/target in place again (Milestone 14's own precedent, reused): flips
+// to a real, visible GLFW window (windowed=1, already the case in this
+// file's own Check 3c since Milestone 13 - CI safety comes from
+// PORTABLE_D3D8_HIDDEN=1, set on this ctest entry, not from windowed=0),
+// adds glfw_input.h's own GlfwKeyboard/GlfwMouse (harness-local concrete
+// subclasses, the direct seeds of the eventual production input classes),
+// and wires the real click-to-pick chain Draft 41's own research traced hop
+// by hop: a raw input event -> GameClient::update()'s real
+// TheMouse->UPDATE()/TheKeyboard->UPDATE()/createStreamMessages() calls ->
+// TheMessageStream->propagateMessages() walking the real translator chain
+// GameClient::init() already attached (WindowTranslator/MetaEventTranslator/
+// SelectionTranslator) -> SelectionTranslator::onRawMousePosition() calling
+// the real TheTacticalView->pickDrawable() -> MSG_MOUSEOVER_DRAWABLE_HINT /
+// MSG_MOUSE_LEFT_CLICK. Three real gotchas, each fixed with one real,
+// minimal harness-level line (no engine changes):
+//   (1) Shell::isShellActive() defaults TRUE - WindowTranslator
+//       (priority 10) forces WIN_INPUT_USED/DESTROY_MESSAGE on every raw
+//       mouse message while it is, which runs and destroys the message
+//       BEFORE MetaEventTranslator (priority 20) or SelectionTranslator
+//       (priority 50) ever see it (confirmed by reading
+//       MessageStream::propagateMessages()'s own translator-then-message
+//       double loop - each translator gets one full pass over the CURRENT
+//       list before the next translator runs, so a destroy at priority 10
+//       is final). Fixed with TheShell->hideShell(), safe with this
+//       harness's own empty screen stack (Shell::hideShell()'s own
+//       "if (layout)" guard around top()).
+//   (2) Mouse::createStreamMessages() unconditionally dereferences
+//       TheKeyboard->getModifierFlags() - a real Mouse needs a real
+//       Keyboard too, not optional (TheKeyboard was never constructed by
+//       GameClient::init() here, guarded by its own
+//       "if (!TheGlobalData->m_headless)").
+//   (3) TheTacticalView defaults to a ViewDummy (InGameUIStub::createView())
+//       - harmless but pick-null - reassigned to the real W3DView this
+//       file already constructs (Check 7a), after WW3D setup.
+// A fourth, genuine implementation-time finding (not foreseen by Draft 41):
+// SelectionInfo::contextCommandForNewSelection() (SelectionInfo.cpp:104,
+// 124,164) unconditionally dereferences ThePlayerList->getLocalPlayer() the
+// moment a real pick region contains an object NOT already
+// isLocallyControlled() - with no local player ever set in this harness (no
+// sides/human player, matching Draft 37's own minimal Cost A bootstrap),
+// that is a real null dereference, reached for the first time only once
+// this milestone starts issuing real synthetic clicks against real units.
+// Fixed the same way as every other real hazard this port's own reading has
+// found: the smallest real, harness-level line that avoids it -
+// ThePlayerList->setLocalPlayer(ThePlayerList->getNeutralPlayer()) makes
+// both real units (already owned by the neutral team) "locally controlled",
+// keeping every clicked unit on the isLocallyControlled() branch and
+// sidestepping the dereference entirely, while incidentally also letting
+// the real SelectionTranslator::onMouseLeftClick() chain genuinely select
+// them (a bonus, not a requirement of the milestone's own exit criteria).
+//
+// Message-stream verification technique: MSG_MOUSEOVER_DRAWABLE_HINT is
+// both CREATED and DESTROYED within SelectionTranslator's own single
+// translator pass (onRawMousePosition() appends it to the tail of the SAME
+// message list its own translator is still iterating,
+// onMouseoverDrawableHint() then consumes it a few iterations later, same
+// pass) - no other translator, at any priority, can ever observe the
+// message object itself. Verified instead via the real, already-public
+// TheInGameUI->getMousedOverDrawableID() accessor - the literal, real
+// "callback state" onMouseoverDrawableHint()'s own real body
+// (TheInGameUI->createMouseoverHint(msg)) sets, an equally real proof the
+// hint was created AND named the correct unit. MSG_MOUSE_LEFT_CLICK and
+// MSG_RAW_KEY_DOWN/MSG_RAW_KEY_UP, by contrast, are created by ONE
+// translator (MetaEventTranslator at priority 20; Keyboard::createStreamMessages()
+// itself, before any translator runs) and (if not destroyed) consumed by a
+// LATER one (SelectionTranslator at priority 50) - a harness-local
+// HarnessMessageObserver translator, attached at priorities 5 (before
+// WindowTranslator) and 21 (after MetaEventTranslator, before
+// SelectionTranslator), directly observes both message types for real, the
+// same real attachTranslator() public API every production translator in
+// this engine uses, before anything downstream has a chance to consume
+// them. Also a deliberate scope-tightening from Draft 41's own literal
+// "each frame, engine.update()" phrasing: the actual per-check helper below
+// calls TheGameClient->UPDATE()+TheMessageStream->propagateMessages()
+// directly (the exact two real calls Draft 41's own chain-trace names)
+// rather than the full GameEngine::update(), so TheGameLogic/TheRadar/
+// TheAudio never tick - staying precisely inside this milestone's own
+// "input->message->pick glue" scope and its own explicit non-goals list,
+// not a shortfall.
+//
 // TheSuperHackers @port Milestone 14 (native port plan, Draft 38): the
 // direct-call question - does Milestone 13's manual "drawable->draw()"
 // substitution still apply for N objects, or does W3DView::update()'s own
@@ -189,7 +271,9 @@
 #include "W3DDevice/GameClient/W3DView.h"
 #include "W3DDevice/GameClient/W3DDisplay.h"
 #include "W3DDevice/GameClient/W3DAssetManager.h"
+#include "GameClient/Shell.h"
 #include "harness_stub_classes.h"
+#include "glfw_input.h"
 
 #include "dx8wrapper.h"
 #include "ww3d.h"
@@ -595,6 +679,55 @@ namespace
 		result->lastHit = draw;
 		result->hits.push_back(draw);
 	}
+
+	// ---- Milestone 16 (native port plan, Draft 41): a harness-local
+	// GameMessageTranslator, attached at TWO real priorities via the SAME
+	// real, public TheMessageStream->attachTranslator() API every
+	// production translator in this engine uses - priority 5 (before
+	// WindowTranslator's own 10, so raw key messages are seen before
+	// anything downstream has a chance to consume them) and priority 21
+	// (after MetaEventTranslator's own 20, which is where
+	// MSG_RAW_MOUSE_LEFT_BUTTON_UP becomes MSG_MOUSE_LEFT_CLICK, but before
+	// SelectionTranslator's own 50, which may consume/destroy it on a hit).
+	// See this file's own header comment ("Message-stream verification
+	// technique") for why MSG_MOUSEOVER_DRAWABLE_HINT is deliberately NOT
+	// tracked here (it cannot be, by construction - SelectionTranslator
+	// both creates and destroys it within its own single translator pass). ----
+	class HarnessMessageObserver : public GameMessageTranslator
+	{
+	public:
+		Int rawKeyDownCount = 0;
+		Int rawKeyUpCount = 0;
+		Int leftClickCount = 0;
+		IRegion2D lastClickRegion;
+
+		virtual GameMessageDisposition translateGameMessage(const GameMessage* msg) override
+		{
+			switch (msg->getType())
+			{
+				case GameMessage::MSG_RAW_KEY_DOWN:
+					++rawKeyDownCount;
+					break;
+				case GameMessage::MSG_RAW_KEY_UP:
+					++rawKeyUpCount;
+					break;
+				case GameMessage::MSG_MOUSE_LEFT_CLICK:
+					++leftClickCount;
+					lastClickRegion = msg->getArgument(0)->pixelRegion;
+					break;
+				default:
+					break;
+			}
+			return KEEP_MESSAGE;
+		}
+
+		void Reset()
+		{
+			rawKeyDownCount = 0;
+			rawKeyUpCount = 0;
+			leftClickCount = 0;
+		}
+	};
 
 } // end anonymous namespace
 
@@ -1039,6 +1172,258 @@ int main()
 		IterateResult emptyResult;
 		TheGameClient->iterateDrawablesInRegion(&emptyRegion, IterateCallback, &emptyResult);
 		Check(emptyResult.count == 0, "10h. iterateDrawablesInRegion() callback did NOT fire for a region far away from both real units");
+
+		// ==== Milestone 16 (native port plan, Draft 41): real windowed
+		// input driving the real translator chain to a real pick. See this
+		// file's own header comment ("Milestone 16 addendum") for the full
+		// three-gotcha rationale. ====
+		printf("=== Check M16-1: gotcha fixes - TheShell->hideShell(), TheTacticalView reassignment, real local player ===\n");
+
+		Check(TheShell != nullptr, "M16-1a. TheShell real-constructed by GameClient::init() (non-null)");
+		Check(TheShell == nullptr || TheShell->isShellActive(), "M16-1b. TheShell->isShellActive() defaults TRUE (the real hazard - see header comment gotcha 1)");
+		if (TheShell != nullptr)
+			TheShell->hideShell();
+		Check(TheShell != nullptr && !TheShell->isShellActive(), "M16-1c. TheShell->hideShell() cleared isShellActive() (WindowTranslator will stop eating raw mouse input)");
+
+		Check(TheTacticalView != view, "M16-1d. TheTacticalView still the default ViewDummy before reassignment (the real hazard - see header comment gotcha 3)");
+		TheTacticalView = view;
+		Check(TheTacticalView == view, "M16-1e. TheTacticalView reassigned to the real W3DView this file already constructs");
+
+		// Gotcha 4 (a genuine implementation-time finding - see header
+		// comment): SelectionInfo::contextCommandForNewSelection() would
+		// otherwise dereference a null ThePlayerList->getLocalPlayer() the
+		// first time a real click region contains a non-locally-controlled
+		// object.
+		ThePlayerList->setLocalPlayer(ThePlayerList->getNeutralPlayer());
+		Check(ThePlayerList->getLocalPlayer() == ThePlayerList->getNeutralPlayer(),
+			"M16-1f. ThePlayerList->setLocalPlayer() real local player set (avoids a real null dereference in SelectionInfo::contextCommandForNewSelection - gotcha 4)");
+
+		// Gotcha 5 (a genuine implementation-time finding, tracked down via
+		// real diagnostic instrumentation - see this file's own header
+		// comment for the fuller trace): TheGlobalData->m_shroudOn defaults
+		// TRUE (GlobalData.cpp:582), and this milestone's own RunOneFrame()
+		// helper calls the real TheGameClient->UPDATE(), whose own real body
+		// (GameClient.cpp's "call the update for all client drawables"
+		// block) unconditionally does
+		// "draw->setFullyObscuredByShroud(object->getShroudedStatus(localPlayerIndex) >= OBJECTSHROUD_FOGGED)"
+		// once per real Drawable, every frame, when m_shroudOn is TRUE. With
+		// no real per-logic-frame vision/shroud-clearing ever run in this
+		// harness (GameLogic::UPDATE() is deliberately never called - see
+		// header comment), every real Object's PartitionData-backed
+		// getShroudedStatus() stays at its own real, still-shrouded default,
+		// so every real Drawable gets marked fully-obscured-by-shroud - and
+		// SelectionInfo::addDrawableToList() (SelectionInfo.cpp:359) refuses
+		// to add any "if (draw->getFullyObscuredByShroud()) return FALSE;"
+		// Drawable to the real click's own pick list, silently emptying it
+		// with NO crash and NO other observable symptom (confirmed by a
+		// real diagnostic instrumentation pass: TheTacticalView's own
+		// iterateDrawablesInRegion() - the same real, production
+		// addDrawableToList()-consuming overload onMouseLeftClick() itself
+		// calls - independently re-run over the exact same real captured
+		// click region found the real drawable just fine once shrouding was
+		// ruled out as the difference between it and the harness's own
+		// simpler diagnostic counting callback, which does not shroud-check
+		// at all). Turning shrouding off for this input-glue milestone (out
+		// of scope - fog-of-war is real GameLogic/vision territory, not
+		// input->message->pick glue) is the smallest real, harness-level fix
+		// that avoids it, matching gotchas 1-4's own established pattern.
+		TheWritableGlobalData->m_shroudOn = FALSE;
+		Check(TheGlobalData->m_shroudOn == FALSE, "M16-1g. TheGlobalData->m_shroudOn turned off (avoids a real, silent addDrawableToList() shroud rejection - gotcha 5)");
+
+		printf("=== Check M16-2: real GlfwKeyboard/GlfwMouse construction (gotcha 2 - a real Mouse needs a real Keyboard) ===\n");
+		// TheSuperHackers @port Milestone 16 (native port plan, Draft 41): a
+		// real, implementation-time finding - Mouse::~Mouse() (calls
+		// TheDisplayStringManager->freeDisplayString() twice) had never
+		// actually run anywhere in this port before now (every prior
+		// milestone's own MouseDummy/GlfwMouse-equivalent was heap-allocated
+		// and deliberately never deleted, matching this file's own
+		// established "no teardown" precedent - see its own header
+		// comment) - a real, first-ever crash was found here when
+		// GlfwKeyboard/GlfwMouse were stack-allocated instead (their real
+		// destructors then genuinely ran at this nested block's own closing
+		// brace, an all-new code path). Heap-allocating them here instead,
+		// matching every other subsystem in this file, sidesteps the
+		// hazard the same well-established way rather than debugging a
+		// real engine destructor bug this milestone's own scope was never
+		// meant to fix.
+		GlfwKeyboard *glfwKeyboard = NEW GlfwKeyboard;
+		TheKeyboard = glfwKeyboard;
+		glfwKeyboard->init();
+		Check(TheKeyboard == glfwKeyboard, "M16-2a. TheKeyboard replaced with the real GlfwKeyboard (was never constructed - GameClient::init()'s own \"if (!m_headless)\" guard)");
+
+		GlfwMouse *glfwMouse = NEW GlfwMouse;
+		TheMouse = glfwMouse;
+		glfwMouse->init();
+		Check(TheMouse == glfwMouse, "M16-2b. TheMouse replaced with the real GlfwMouse (was MouseDummy - a real Mouse needs a real Keyboard, now present)");
+
+		// Register the three real GLFW callbacks on the live window handle -
+		// Draft 41's own finding that glfwGetCurrentContext() gives the live
+		// window handle with zero wrapper modification, confirmed here for
+		// real.
+		GLFWwindow *liveWindow = glfwGetCurrentContext();
+		Check(liveWindow != nullptr, "M16-2c. glfwGetCurrentContext() returned the live window handle");
+		RegisterGlfwCallbacks(liveWindow, glfwKeyboard, glfwMouse);
+		Check(true, "M16-2d. RegisterGlfwCallbacks() returned without crashing (glfwSetKeyCallback/glfwSetMouseButtonCallback/glfwSetCursorPosCallback all registered)");
+
+		// Harness-local message-stream observers (see this file's own header
+		// comment, "Message-stream verification technique") - real,
+		// heap-allocated GameMessageTranslator instances, attached via the
+		// same real, public TheMessageStream->attachTranslator() API every
+		// production translator in this engine uses. MessageStream's own
+		// documented contract ("assumes ownership of the translator, and is
+		// responsible for freeing it") means these must be heap-allocated,
+		// ONE object per attachTranslator() call - attaching the SAME object
+		// twice would let two independent TranslatorData destructors each
+		// "delete m_translator" on the same pointer (a real double-free
+		// hazard, confirmed by reading TranslatorData::~TranslatorData() in
+		// MessageStream.h), so two separate instances are used below even
+		// though they run identical logic.
+		HarnessMessageObserver *rawKeyObserver = NEW HarnessMessageObserver;
+		TheMessageStream->attachTranslator(rawKeyObserver, 5); // before WindowTranslator(10)
+		HarnessMessageObserver *clickObserver = NEW HarnessMessageObserver;
+		TheMessageStream->attachTranslator(clickObserver, 21); // after MetaEventTranslator(20), before SelectionTranslator(50)
+		Check(rawKeyObserver != nullptr && clickObserver != nullptr, "M16-2e. HarnessMessageObserver instances attached at priorities 5 and 21");
+
+		// Per-check frame helper: the exact two real calls Draft 41's own
+		// chain-trace names (TheGameClient->UPDATE() -> real
+		// TheMouse->UPDATE()/TheKeyboard->UPDATE()/createStreamMessages() ->
+		// TheMessageStream->propagateMessages() -> the real translator
+		// chain), deliberately NOT the full GameEngine::update() (see this
+		// file's own header comment for why - staying inside this
+		// milestone's own "input->message->pick glue" scope, not ticking
+		// TheGameLogic/TheRadar/TheAudio at all), plus a real
+		// view->update()/Begin_Render/End_Render(true) pass (which pumps
+		// glfwPollEvents internally via the existing wrapper, the real
+		// "message pump" Draft 41's own research already found running
+		// since Milestone 6/13/14).
+		auto RunOneFrame = [&]()
+		{
+			TheGameClient->UPDATE();
+			TheMessageStream->propagateMessages();
+			view->update();
+			WW3D::Begin_Render(true, true, CLEAR_COLOR);
+			view->drawView();
+			WW3D::End_Render(true);
+		};
+
+		// Real, implementation-time finding (not foreseen by Draft 41):
+		// Mouse::createStreamMessages()'s own "basic position message" is
+		// appended using m_currMouse.pos BEFORE this same frame's queued
+		// events are folded into it (the position-update loop, which calls
+		// processMouseEvent()->moveMouse(), runs AFTER that append) -
+		// confirmed by reading Mouse.cpp:711-713 vs. the for loop starting
+		// at Mouse.cpp:741. A real, pre-existing engine characteristic (the
+		// "current position" reported is always one frame behind the
+		// latest queued delta), not a defect this milestone introduces -
+		// every move-then-check below calls RunOneFrame() TWICE: once to
+		// let m_currMouse.pos (already updated internally by the first
+		// call) settle, then again (no new injected events) so THAT frame's
+		// own "basic position message" finally reports it.
+		//
+		// A second real, implementation-time finding: View::screenToTerrain()
+		// requires a real TheTerrainRenderObject (Core/GameEngineDevice/.../
+		// W3DView.cpp), which this harness never constructs (real terrain is
+		// out of this milestone's own explicit scope) - so a mouse move over
+		// a real background pixel (no drawable under the cursor) produces
+		// NEITHER a MSG_MOUSEOVER_DRAWABLE_HINT NOR a MSG_MOUSEOVER_LOCATION_HINT,
+		// leaving TheInGameUI->getMousedOverDrawableID() at whatever it
+		// already was (a real "no hint fires at all" outcome, not a "hint
+		// clears the old value" outcome - confirmed by reading
+		// SelectionXlat.cpp's onRawMousePosition(), whose own
+		// "mouseoverMessage" local is only ever assigned inside either the
+		// drawable-hit branch or a successful screenToTerrain() branch).
+		// Exit criterion (c) is therefore checked FIRST, below, while
+		// getMousedOverDrawableID() still holds its own real, fresh-boot
+		// InGameUI::InGameUI() default (INVALID_DRAWABLE_ID) - a clean,
+		// unambiguous real negative control that does not depend on any
+		// reset behavior this harness's own minimal terrain setup can't
+		// provide.
+
+		// ---- Exit criterion (c) (checked first - see finding above): a
+		// synthetic move to, then a synthetic down+up at, a real background
+		// pixel (Check 9f's own already-proven miss point) produces neither
+		// a unit-naming hint nor a unit selection. ----
+		printf("=== Check M16-3: synthetic move+click at a background pixel (missScreen) produces neither ===\n");
+		glfwMouse->InjectMouseMove(missScreen.x, missScreen.y);
+		RunOneFrame();
+		RunOneFrame(); // settle the one-frame-late position message (see finding above)
+		Check(TheInGameUI->getMousedOverDrawableID() == INVALID_DRAWABLE_ID,
+			"M16-3a. TheInGameUI->getMousedOverDrawableID() stays INVALID_DRAWABLE_ID (its own real, fresh-boot default) after a synthetic move to a background pixel");
+
+		clickObserver->Reset();
+		glfwMouse->InjectMouseButton(GlfwMouse::LEFT_BUTTON, true);
+		glfwMouse->InjectMouseButton(GlfwMouse::LEFT_BUTTON, false);
+		RunOneFrame();
+		Check(clickObserver->leftClickCount >= 1,
+			"M16-3b. HarnessMessageObserver (priority 21) still observed a real MSG_MOUSE_LEFT_CLICK from the synthetic down+up (MetaEventTranslator creates it unconditionally, hit or miss)");
+		Check(!drawableA->isSelected() && !drawableB->isSelected(),
+			"M16-3c. neither real unit is selected after a synthetic click at a background pixel (SelectionTranslator::onMouseLeftClick()'s own drawablesThatWillSelect stayed empty)");
+
+		// ---- Exit criterion (a): a synthetic move to a known real unit's
+		// screen position produces a real MSG_MOUSEOVER_DRAWABLE_HINT naming
+		// that unit - verified via TheInGameUI->getMousedOverDrawableID(),
+		// the real callback state onMouseoverDrawableHint()'s own body sets
+		// (see this file's own header comment, "Message-stream verification
+		// technique", for why the transient message itself cannot be
+		// observed directly). ----
+		printf("=== Check M16-4: synthetic move to unit A's screen position -> real MSG_MOUSEOVER_DRAWABLE_HINT naming unit A ===\n");
+		glfwMouse->InjectMouseMove(screenA.x, screenA.y);
+		RunOneFrame();
+		RunOneFrame(); // settle the one-frame-late position message (see finding above)
+		Check(TheInGameUI->getMousedOverDrawableID() == drawableA->getID(),
+			"M16-4a. TheInGameUI->getMousedOverDrawableID() == unit A's real DrawableID after a synthetic move to unit A's real screen position");
+		Check(TheMouse->getMouseCursor() == Mouse::SELECTING,
+			"M16-4b. TheMouse->getMouseCursor() == SELECTING (the real cursor side effect of onMouseoverDrawableHint()'s own CanSelectDrawable() check)");
+
+		// ---- Exit criterion (b): a synthetic down+up at that same position
+		// produces a real MSG_MOUSE_LEFT_CLICK - verified directly via
+		// clickObserver (priority 21, sees it before SelectionTranslator can
+		// consume it), plus the real onward consequence
+		// (SelectionTranslator::onMouseLeftClick() -> TheInGameUI->selectDrawable())
+		// now that gotchas 4/5 are fixed. ----
+		printf("=== Check M16-5: synthetic down+up at unit A's screen position -> real MSG_MOUSE_LEFT_CLICK ===\n");
+		clickObserver->Reset();
+		glfwMouse->InjectMouseButton(GlfwMouse::LEFT_BUTTON, true);
+		glfwMouse->InjectMouseButton(GlfwMouse::LEFT_BUTTON, false);
+		RunOneFrame();
+		Check(clickObserver->leftClickCount >= 1,
+			"M16-5a. HarnessMessageObserver (priority 21) observed a real MSG_MOUSE_LEFT_CLICK from the synthetic down+up (created by the real MetaEventTranslator)");
+		printf("      unit A isSelected() after synthetic click = %s\n", drawableA->isSelected() ? "YES" : "NO");
+		Check(drawableA->isSelected(),
+			"M16-5b. drawableA->isSelected() == TRUE (the real onward consequence: SelectionTranslator::onMouseLeftClick() -> TheInGameUI->selectDrawable(), gotchas 4/5 now fixed)");
+		Check(!drawableB->isSelected(),
+			"M16-5c. unit B stays unselected (only unit A was ever clicked - a real cross-check, not just non-empty selection)");
+
+		// ---- Exit criterion (d): a synthetic ESC key produces real
+		// MSG_RAW_KEY_DOWN/MSG_RAW_KEY_UP messages - verified directly via
+		// rawKeyObserver (priority 5, sees them before any translator can
+		// consume them). ----
+		printf("=== Check M16-6: synthetic ESC key -> real MSG_RAW_KEY_DOWN/MSG_RAW_KEY_UP ===\n");
+		rawKeyObserver->Reset();
+		glfwKeyboard->InjectKey(KEY_ESC, TRUE);
+		glfwKeyboard->InjectKey(KEY_ESC, FALSE);
+		RunOneFrame();
+		Check(rawKeyObserver->rawKeyDownCount >= 1, "M16-6a. HarnessMessageObserver (priority 5) observed a real MSG_RAW_KEY_DOWN from the synthetic ESC key-down");
+		Check(rawKeyObserver->rawKeyUpCount >= 1, "M16-6b. HarnessMessageObserver (priority 5) observed a real MSG_RAW_KEY_UP from the synthetic ESC key-up");
+
+		// ---- Manual mode (optional, not required for the automated exit
+		// criteria above): with PORTABLE_D3D8_HIDDEN unset (a real visible
+		// window, per Check 3c's own windowed=1) and
+		// RENDERNAMEDDRAWABLE_INTERACTIVE set in the environment, keep
+		// pumping real frames - real GLFW callback delivery (mouse/keyboard)
+		// now drives the exact same real chain the synthetic checks above
+		// just proved, the one segment (real OS -> GLFW callback delivery
+		// itself) the automated criteria can't cover - until the window is
+		// closed. Does not run under ctest (PORTABLE_D3D8_HIDDEN=1 is always
+		// set there, and the env var below is never set). ----
+		if (std::getenv("RENDERNAMEDDRAWABLE_INTERACTIVE") && liveWindow != nullptr)
+		{
+			printf("=== Manual mode: RENDERNAMEDDRAWABLE_INTERACTIVE set - pumping real frames until the window closes ===\n");
+			while (!glfwWindowShouldClose(liveWindow))
+			{
+				RunOneFrame();
+			}
+		}
 
 		// ---- No teardown: matches Milestone 12's own established
 		// precedent (see this file's own header comment). Process exit

@@ -63,6 +63,7 @@ add_executable(RenderNamedDrawableTest
     ${_m13_this_dir}/main.cpp
     ${_m13_this_dir}/link_stubs.cpp
     ${_m13_this_dir}/harness_stub_classes.cpp
+    ${_m13_this_dir}/glfw_input.cpp
 
     # ---- The full real z_gameengine/corei_gameengine_private source
     # closure (Milestone 10's DEFER-closure technique, carried forward from
@@ -146,6 +147,15 @@ file(COPY ${_m13_this_dir}/Data DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/renderna
 
 add_test(NAME RenderNamedDrawableTest COMMAND RenderNamedDrawableTest
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/rendernameddrawable_scratch)
+
+# Phase 4 rung 0 Milestone 16 (native port plan, Draft 41): this harness now
+# opens a real, visible GLFW window (windowed=1, unchanged since Milestone
+# 13's own Check 3c) - PORTABLE_D3D8_HIDDEN=1 is the env override
+# dx8wrapper_gl.cpp's own Create_Device() already checks for exactly this
+# case (native-port-plan.md Draft 26 Step 5's own "local-headless-run
+# override for windowed=1 callers"), keeping automated ctest runs headless-
+# safe. A manual run without this env var shows a real window.
+set_tests_properties(RenderNamedDrawableTest PROPERTIES ENVIRONMENT "PORTABLE_D3D8_HIDDEN=1")
 endfunction()
 
 # Ordering note (identical to every prior DEFER-closure harness): Tests/ is
