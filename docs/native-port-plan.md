@@ -7412,3 +7412,27 @@ the existing entry now covers substantially more). The honest Phase 4
 remainder (real `Win32GameEngine` device-tier factories, real UI/
 `ControlBar`, cursor rendering, fullscreen) stays exactly as scoped -
 untouched, multiple future milestones.
+
+### Cleanup pass (2026-07-24)
+
+Before pausing this thread of work, closed two real, previously-
+deferred gaps rather than leave them open indefinitely:
+
+- **CI wiring for `PosixGameEngineHarnessTest`** (Milestone 12) **and
+  `RenderNamedDrawableTest`** (Milestones 13/14/16) - both had zero CI
+  coverage since landing. Wired following the exact established
+  patterns (`PosixGameEngineHarnessTest`: no `xvfb-run`, matching
+  `GameFileSystemTest`'s pure-logic/no-display precedent;
+  `RenderNamedDrawableTest`: `xvfb-run` matching every GL harness,
+  `PORTABLE_D3D8_HIDDEN=1` already set on the test's own `ctest`
+  `ENVIRONMENT` property by Milestone 16, not duplicated in the CI
+  step). Confirmed on a real GitHub Actions run
+  (https://github.com/Nagyhoho1234/GeneralsGameCode/actions/runs/30110052373)
+  - both new steps green, baseline gate holds. Every milestone this
+    port has shipped now has real CI coverage.
+- **Worktree cleanup**: removed this session's 8 implementer
+  worktrees and their associated local branches, all confirmed merged
+  into `native-port-plan` before removal (each carried its own
+  multi-GB build directory). Left the one pre-existing worktree from
+  an earlier session (`agent-a2548fd9ff0c7a152`) alone, per this
+  port's own standing "harmless to leave" precedent for it.
