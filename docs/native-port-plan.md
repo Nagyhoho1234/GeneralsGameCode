@@ -6784,9 +6784,10 @@ incorrect claim: real MSVC win32 build, 0 errors, confirmed clean.**
 
 ## Draft 37: Milestone 13 plan — rung 3b-ii-b, a real named `Drawable` rendered and picked
 
-**Status: APPROVED and IN PROGRESS** (user authorized automatic
-implementation, 2026-07-24, immediately following Milestone 12's
-completion). Draft 35 deferred rung 3b-ii-b as blocked on a
+**Status: FULLY DONE** (user authorized automatic implementation,
+2026-07-24, immediately following Milestone 12's completion; landed
+clean on the first real attempt, no scope-down needed). Draft 35
+deferred rung 3b-ii-b as blocked on a
 `ThingTemplate`/`Object`/`Drawable` bring-up "this port hasn't
 approached yet" and "likely entangled with rung 2b's real gameplay
 loop being alive." A deep Fable research pass, backed by real WSL2
@@ -6895,3 +6896,51 @@ retiring the handful of individually-small runtime-verify items the
 research pass flagged (the shroud path with a live object, `Radar::
 addObject` with the minimal template, the neutral-side name-key
 resolution fallback, exact `W3DModelDrawModuleData` parse fields).
+
+### Milestone 13 achieved (2026-07-24)
+
+Landed in full on the first real attempt - commit `b6c536f78`
+(cherry-picked clean onto `native-port-plan` as `0b58a1274`). New
+harness `Tests/RenderNamedDrawable/` constructs a real, named `Object`
+via `TheThingFactory->newObject()`, which binds a real `Drawable`
+through the unmodified `sendObjectCreated()`/`bindObjectAndDrawable()`
+chain, renders it through the real `W3DModelDraw` draw module, and
+picks it back through the real `W3DView::pickDrawable()`/
+`TheGameClient->iterateDrawablesInRegion()` - closing Milestone 11's
+own scoped-down `pickDrawable()` proof for real (no manual sentinel
+needed this time: the real render object's own `Set_User_Data(
+draw->getDrawableInfo())` call does it automatically).
+
+**Real step-0 findings beyond this draft's own predicted list, each
+fixed and disclosed at its own site**: `ThingTemplate` parsing needs
+`Body = InactiveBody`, not `Behavior =` (`InactiveBody` implements the
+Body interface, not a generic behavior); `PartitionManager::init()`
+also sizes its cell grid from `TheTerrainLogic->getExtent()` -
+Milestone 11's own `-100000..100000` extent, reused naively, requests
+a ~4x10^10-cell array and segfaults, replaced with a box sized to this
+milestone's single unit; `ThingTemplate::m_assetScale` has no real
+default (only `initForLTA()` sets it) - fixed via explicit `Scale =
+1.0`; `Create_Render_Obj()` resolves `ContainerName.MeshName`, not the
+bare mesh name; `Drawable::draw()` (normally invoked from `TheDisplay`'s
+own per-frame loop, deliberately not linked here) had to be called
+directly once to push the transform into the render object; and
+`W3DView::updateCameraTransform()` early-returns in headless mode,
+requiring `m_headless` to stay `TRUE` through `engine.init()` (matching
+Milestone 12's proven-safe chain) and flip to `FALSE` only afterward -
+flipping it earlier was tried and found to hit a real, pre-existing
+`ControlBar::init()` null-window dereference (`ControlBar.cpp:1097-1098`).
+
+**Verification, independently re-confirmed by the controller after
+merging** (not just the implementer's own claim, per the standing
+"always re-verify MSVC claims directly" lesson from Milestone 12):
+WSL2 scoped `g_gameenginedevice`/`z_gameenginedevice` build holds at
+exactly 33/33 known pre-existing errors, zero new. Real MSVC win32
+rebuild of both per-tree targets (PowerShell tool, real `vcvarsall.bat`
+invocation): **exit 0, zero errors**, only pre-existing warning classes
+(`C4018`/`C4267`). Full `ctest` suite: 15/15 green (the prior 14 plus
+`RenderNamedDrawableTest`), confirmed independently both in the
+implementer's worktree and again in the merged main tree.
+
+**Not yet done**: CI wiring for `RenderNamedDrawableTest` (deferred by
+design, same pattern as every prior milestone's own CI-wiring
+follow-up).
