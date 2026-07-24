@@ -7254,3 +7254,123 @@ not match the real, `add_test()`-grepped total of 15 registered ctest
 entries in this tree as of this dispatch - a minor pre-existing
 discrepancy in the brief's own tracking, not introduced by this
 milestone.
+
+
+## Draft 41: Milestone 16 plan — Phase 4 rung 0, a real window with real input driving a real pick
+
+**Status: PROPOSED, research-backed by real code tracing and a real
+compile spike, not yet approved for implementation.** Phase 4
+("Windowing + input") had never been started - the stated plan was
+always that Phase 5's rendering-side groundwork would inform it. A
+deep Fable research pass (2026-07-24) found that groundwork is now
+sufficient to make a real first slice tractable, genuinely smaller
+than "Windowing + input" sounds as a phase name.
+
+**Four structural discoveries that collapse the problem:**
+
+1. **The "message pump" already exists and is already running.** The
+   real production pump isn't `WinMain.cpp`'s loop - it's
+   `Win32GameEngine::update()` calling `serviceWindowsOS()` once per
+   frame. This port's GLFW equivalent (`glfwSwapBuffers`/
+   `glfwPollEvents` inside `End_Scene(true)`,
+   `dx8wrapper_gl.cpp:347,352` - the comment there already calls it
+   "the message-pump analog until a real input phase exists") has
+   been running every frame since Milestones 6/13/14.
+2. **The visible window already exists, zero new code needed.**
+   Milestone 6 already proved `windowed=1` (a real, visible GLFW
+   window, not headless) via `Set_Render_Device`. Milestone 13/14
+   currently pass `windowed=0`; flipping it is Milestone 6's already-
+   proven technique. The window handle is reachable via
+   `glfwGetCurrentContext()` with zero wrapper modification.
+3. **The input base classes are already compiled, linked, and
+   partially exercised on POSIX.** `Mouse.cpp`/`Keyboard.cpp` are
+   already in Milestone 12's link closure; `MouseDummy` already
+   constructs and runs. `Keyboard::initKeyNames()` already has a POSIX
+   branch whose own comment explicitly defers "real XKB/SDL layout
+   querying" to "Phase 4 windowing/input work" - this port's own
+   earlier work already anticipated this milestone by name.
+4. **The device classes to replace are tiny buffer-drain shims, not
+   architecture.** `Mouse` has 5 pure virtuals, `Keyboard` has 2 -
+   everything above that (event coalescing, raw-message creation) is
+   real, portable, already-linked base code. No Win32 message
+   semantics leak past the device classes - the rest of the engine
+   only ever sees already-abstracted `GameMessage`s on
+   `TheMessageStream`.
+
+**The full click-to-pick chain, traced hop by hop through real code
+(file:line for every hop)**: a GLFW mouse callback appends a raw event
+to a harness-local ring buffer -> `GameClient::update()` calls
+`TheMouse->UPDATE()`/`createStreamMessages()` (already null-guarded,
+already runs) -> `Mouse::createStreamMessages()` appends
+`MSG_RAW_MOUSE_POSITION`/`MSG_RAW_MOUSE_LEFT_BUTTON_DOWN`/`UP` ->
+`TheMessageStream->propagateMessages()` walks the real translator
+chain Milestone 12's `GameClient::init()` already attaches
+(`WindowTranslator`, `MetaEventTranslator`, `SelectionTranslator`) ->
+`SelectionTranslator::onRawMousePosition()` calls the real
+`TheTacticalView->pickDrawable()` on every mouse move, emitting
+`MSG_MOUSEOVER_DRAWABLE_HINT` - and `pickDrawable()` against real
+Milestone 13/14 units at real screen coordinates is already proven.
+**Every load-bearing segment of this chain has already run for real
+on POSIX individually; this milestone is the glue.**
+
+**Three real gotchas found by reading, each with a one-line fix**:
+(1) `Shell::isShellActive()` defaults `TRUE` and eats all mouse input
+at the `WindowTranslator` before it reaches selection - fixed with one
+real public call, `TheShell->hideShell()`, safe with an empty screen
+stack. (2) `Mouse::createStreamMessages()` unconditionally dereferences
+`TheKeyboard->getModifierFlags()` - a real `Mouse` needs a real
+`Keyboard` too, not optional. (3) `TheTacticalView` defaults to a
+`ViewDummy` (harmless but pick-null) - the harness must reassign it to
+the real `W3DView` Milestone 13 already constructs, after WW3D setup.
+
+**Real compile spike (WSL2, exact flags+PCH of the
+`PosixGameEngineHarnessTest` target)**: a scratch `GlfwKeyboard`
+(2 overrides + ring buffer) and `GlfwMouse` (5 overrides + `MouseIO`
+ring) compiled clean, `-fsyntax-only`, only pre-existing PCH warnings.
+The subclass shape is de-risked, not just theorized.
+
+**Milestone 16 shape**: extends `Tests/RenderNamedDrawable` in place
+(Milestone 14's own precedent). No new `GameEngine`/`GameClient`
+subclass needed - `PosixGameEngine`/`GameClientStub` reused unchanged.
+Steps: flip to `windowed=1` (CI sets `PORTABLE_D3D8_HIDDEN=1` via the
+env override already built for exactly this; manual runs are visible);
+add `GlfwKeyboard`/`GlfwMouse` (spike-proven shape) plus a ~60-entry
+GLFW-to-DIK key-mapping table (`KeyDefs.h` self-defines the DIK
+constants, no DirectInput header needed); post-init, call
+`TheShell->hideShell()`, construct+`init()` the two new real input
+classes in place of `TheKeyboard`/`MouseDummy`, reassign
+`TheTacticalView` to the real `W3DView`, register the three GLFW
+callbacks. **Automated, CI-safe exit criteria** (no human needed):
+inject synthetic input events directly into the same ring buffers
+`getMouseEvent()`/`getKey()` already drain (bypassing only GLFW's
+callback delivery), assert a move to a known unit's screen position
+produces `MSG_MOUSEOVER_DRAWABLE_HINT` naming that unit, a click there
+produces `MSG_MOUSE_LEFT_CLICK`, a background click produces neither,
+and a synthetic ESC produces real raw key messages. A manual mode
+(visible window, real clicking) is the human payoff and covers the
+one segment the automated criteria can't (real GLFW callback
+delivery itself).
+
+**Explicit non-goals, the honest Phase 4 remainder this milestone does
+NOT open**: the real `Win32GameEngine`'s full device-tier factory
+binding (`W3DGameClient`/`W3DGameLogic`/`MilesAudioManager`/
+`W3DRadar`); real non-dummy `GameWindowManager` + `.wnd`-driven UI;
+`ControlBar`; IME; `W3DMouse`'s real D3D cursor rendering (a Phase 3
+coupling this plan already flagged); fullscreen/monitor mode;
+`WM_ACTIVATEAPP`-equivalent focus semantics. All multiple, separately-
+scoped future milestones - Milestone 16's `GlfwKeyboard`/`GlfwMouse`
+are the direct seeds of the eventual production input classes, not a
+throwaway.
+
+**Pre-committed fallback**: if a translator's raw-input path hits an
+unforeseen deref cascade at runtime (despite every translator on the
+real path being pre-traced above), scope down to asserting
+`pickDrawable()` driven directly from the GLFW cursor position rather
+than the translator-emitted hint - still delivers a real, visible,
+clickable window, with the cascade recorded for a follow-up, matching
+Milestone 11's own established de-scope precedent.
+
+**Not yet approved for implementation** - proposed plan only, pending
+user sign-off (this round's instruction was explicitly to review
+Phase 4 with Fable, matching Phase 8's own explore-then-decide
+rhythm).
