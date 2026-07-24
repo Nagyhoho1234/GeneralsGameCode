@@ -7000,3 +7000,115 @@ PowerShell tool if any per-tree/Core file is touched (unlikely for
 this milestone - it should be `Tests/`-local), full existing `ctest`
 suite green. Same worktree-isolation, foreground-only-builds,
 real-substantive-final-report discipline as every prior dispatch.
+
+
+## Draft 39: Milestone 15 plan — Phase 8 rung 0, first determinism readings on POSIX
+
+**Status: PROPOSED, research-backed by real cross-toolchain compile
+spikes, not yet approved for implementation.** Phase 8
+("Determinism validation") had never been started before this
+research pass - a deep Fable analysis (2026-07-24), run in parallel
+with Milestone 14's implementation, found it in a genuinely different
+shape than expected.
+
+**Headline finding: this engine already ships a complete, portable
+lockstep CRC/desync-detection stack, already compiled into every
+existing POSIX harness, with zero real callers anywhere in this
+fork** - dead code waiting for exactly this milestone, not
+infrastructure that needs building:
+
+- `GameLogic::getCRC(CRC_RECALC)` - a full sim-state CRC over every
+  `Object`, the logic random seed, `ThePartitionManager`,
+  `ThePlayerList`, `TheAI` (`GameLogic.cpp:4195-4321`).
+- Per-frame CRC generation already inside the real `update()` loop
+  (`GameLogic.cpp:3810-3840`), emitted into the replay command stream
+  (`Recorder.cpp:54`).
+- Playback comparison with first-mismatch-frame reporting
+  (`RecorderClass::handleCRCMessage`, `Recorder.cpp:984-1031`,
+  already headless-usable).
+- `ReplaySimulation::simulateReplays()` - a graphics-free, headless
+  replay verifier with an exit-code result, whose Windows-only
+  fraction (a multi-process worker fan-out) is already correctly
+  isolated by this port's own Phase 1 work
+  (`ReplaySimulation.cpp:257-266`) - the sequential path was already
+  portable by design.
+- `SimulationMathCrc` - a purpose-built, already-upstream, cross-
+  platform floating-point-determinism probe (CRCs a `Matrix3D`
+  computed through `WWMath::Sin/Cos`/`tanf`/`asinf`/`sqrtf`/etc. under
+  `setFPMode()`, with a real non-Windows `fesetenv` path already
+  written) - compiled into every harness's link closure today, never
+  once called.
+- `RETAIL_COMPATIBLE_CRC` (default 1, `GameDefines.h:86-87`) -
+  upstream's own maintained "logic CRC stays compatible with retail
+  1.08/1.04" invariant, already respected by at least one prior
+  milestone's implementation choice (Milestone 12's
+  `ParticleSystemManagerDummy` decision).
+
+**Real spike evidence (5 toolchains: WSL2 GCC at `-O0`/`-O2`/`-O3`,
+real MSVC x64, real MSVC x86 via `vcvarsall`)**: the engine's actual
+in-use math path (`SimulationMathCrc`'s full computation, through
+real engine code) produced a bit-identical result in all five builds
+- including MSVC x86's raw x87 `fsin`/`fcos` inline asm. Confirmed:
+no `-ffast-math`/`/fp:fast`/`-march`/FMA flags anywhere in this
+repo's build config; `setFPMode()` already has a correct portable
+body. A separate 100,000-sample libm sweep found the honest ceiling:
+`sqrtf`/`fmod`/`atanf`/`sinhf`/`coshf` and the engine's own
+lookup-table-driven `Fast_Sin`/`Fast_Acos`/`Fast_Slerp` (the actual
+bone-animation interpolation core) are bit-identical cross-platform,
+but raw `sinf`/`cosf`/`tanf`/`asinf`/`acosf`/`expf`/`logf`/`atan2`/
+`pow` genuinely diverge across C runtimes - including MSVC x86 vs
+MSVC x64 against each other, a pre-existing cross-CRT reality this
+port doesn't create. `Locomotor.cpp:1300/1639/1772`'s double `atan2`
+turning-angle computation is flagged as the most lockstep-critical
+real call site affected. **Conclusion: Linux<->Linux lockstep looks
+strong (same libm, bit-identical across optimization levels in the
+spike); Windows<->Linux bit-lockstep is not reachable without a
+future, separately-scoped deterministic-math layer for the specific
+sim-reachable transcendentals that actually diverge.**
+
+**Milestone 15 shape** (small - comparable to Milestone 9 Task 3,
+smaller than Milestone 12):
+1. New harness (or an addition to `Tests/GameLogicTickHarness/`,
+   whose `SimulationMathCrc.cpp.o` is already in the link closure):
+   first-ever call of `SimulationMathCrc::calculate()`, asserting
+   repeat-call stability and a checked-in expected value.
+2. In `Tests/PosixGameEngineHarness/`'s tick loop, call
+   `TheGameLogic->getCRC(CRC_RECALC)` after each tick, asserting
+   non-crash and run-to-run stability across two in-process runs -
+   the first real execution of `XferCRC::xferSnapshot` over real
+   objects/`PartitionManager`/`PlayerList`/`AI` on POSIX.
+3. A CI cross-check building at two optimization levels (optionally
+   +Clang) and diffing the CRC outputs - the "second platform without
+   a second platform" trick, becoming this port's standing
+   determinism regression tripwire.
+4. Exit criterion: identical CRC values across repeats and
+   optimization levels, wired into `linux-native.yml` like every
+   prior harness.
+
+**Explicit non-goals for Milestone 15** (each a real, separately-sized
+future milestone, not this one): real-asset headless
+`ReplaySimulation` of an actual Windows-recorded replay (the
+instrument is already ported; blocked on the full INI/map/asset load
+surface, far beyond Milestone 12's empty scaffold - the user has a
+real game install for whenever this is picked up); the
+deterministic-math remediation layer for the ~32 `GameLogic`-adjacent
+files calling the genuinely-divergent transcendentals, which
+Windows<->Linux cross-play would eventually require.
+
+**Risk-profile note, stated honestly rather than smoothed over**: a
+determinism bug is a silent, statistical, late-failing bug class -
+structurally different from every portability bug this port has
+fixed so far (which fail loudly at compile/link time). No green
+milestone here "proves" the absence of a desync; it establishes the
+first real, instrumented baseline. The realistic trajectory this
+research supports: Linux<->Linux lockstep first (cheap, high
+confidence), Windows<->Linux replay-compatibility measured next
+(expect real mismatches in transcendental-heavy paths within
+game-minutes, not immediately), deterministic-math remediation only
+once measurement identifies which call sites actually matter -
+not attempted blind.
+
+**Not yet approved for implementation** - proposed plan only, pending
+user sign-off (this round's instruction was explicitly to explore
+Phase 8 with Fable, not to auto-implement it the way the last several
+milestones were).
