@@ -96,6 +96,69 @@
 //  12. No teardown: matches Milestone 12's own established "no teardown"
 //      precedent (this milestone extends that same GameEngine::init() chain
 //      to its logical next step) - process exit reclaims everything.
+//
+// ---- Milestone 14 addendum (native port plan, Draft 38, "closing rung 3,
+// multiple real Drawables") - EXTENDS this same file/target in place rather
+// than forking a new sibling harness: the combination stays small (one more
+// authored mesh/texture pair, one more ThingTemplate, one more
+// newObject()/setPosition() call, a wider camera framing both units, and a
+// handful of additional Check calls against the SAME already-real
+// TheGameClient/view/pickDrawable()/iterateDrawablesInRegion() surface this
+// file already exercises) - forking a second ~840-line harness whose first
+// 700 lines would be a verbatim copy of this one was judged higher-risk and
+// lower-value than extending it directly. Adds a SECOND real, named
+// Object+Drawable ("M14SecondUnit", Data/INI/Object.ini, at
+// UNIT_B_WORLD_POS, far enough from M13NamedUnit's own UNIT_A_WORLD_POS
+// that region-based queries cleanly distinguish them) alongside the first,
+// and closes Draft 35 findings 12/13's own "only ever tested with one live
+// entry" gap for real:
+//   (a) iterateDrawablesInRegion()'s real multi-entry traversal - a region
+//       containing both units' positions fires the harness-local callback
+//       twice, not once (Check 10 below);
+//   (b) pickDrawable() identity-distinguishing two real candidates - picking
+//       at unit A's own screen position returns unit A specifically (by
+//       pointer identity AND by getTemplate()->getName()), not unit B, and
+//       vice versa (Check 9 below);
+//   (c) a region query positioned to contain only ONE of the two units
+//       correctly excludes the other - a real negative control in both
+//       directions, not just "more than zero" (Check 10 below).
+//
+// TheSuperHackers @port Milestone 14 (native port plan, Draft 38): the
+// direct-call question - does Milestone 13's manual "drawable->draw()"
+// substitution still apply for N objects, or does W3DView::update()'s own
+// internal "TheGameClient->iterateDrawablesInRegion(&axisAlignedRegion,
+// drawDrawable, nullptr)" call, W3DView.cpp:1717, already cover every
+// registered drawable on its own - is answered by a real, in-code
+// diagnostic (Check 7i below), not by comment-only reasoning, and the real,
+// measured answer is: **NO, the manual substitution is NOT needed for this
+// milestone's own two-unit configuration.** A real run showed BOTH unit A's
+// and unit B's render-object transforms were already correctly pushed by
+// view->update() alone, with NEITHER drawable's own "draw()" called
+// manually beforehand (Check 7i's own printed diagnostic:
+// "unit A auto-pushed by view->update() alone = YES, unit B auto-pushed =
+// YES"; Check 8's own subsequent real pixel checks against both units'
+// authored colors, at their own real projected screen positions, both
+// passed on this exact render). This is consistent with reading
+// GameClient::iterateDrawablesInRegion() (GameClient.cpp:820-837) as a
+// plain, unconditional "for (draw = m_drawableList; draw; draw =
+// nextDrawable)" walk with no early break, called by W3DView::update()
+// itself (W3DView.cpp:1717) with a FRESH getAxisAlignedViewRegion() every
+// call - so every real drawable inside the current view region gets a real
+// "draw->draw()" once per update(), automatically, for as many drawables as
+// are actually in view, once the camera's own transform is current (which
+// it is here, since m_headless is flipped to FALSE and lookAt() sets
+// m_recalcCamera=true before this same update() call runs). This differs
+// from Milestone 13's own single-unit finding (see the original header
+// comment above, step 11) - the two are not in conflict, each is a real,
+// correctly-measured result for a DIFFERENT harness configuration, and
+// Draft 38 explicitly warned not to assume one carries over to the other.
+// Milestone 13's own single-unit harness was never re-tested to find out
+// WHY its manual call was needed there; this milestone's own two-unit
+// configuration simply never needed it. The code below still calls
+// "drawableA->draw()"/"drawableB->draw()" conditionally, ONLY if the
+// diagnostic ever finds a given unit was NOT auto-pushed - a harmless,
+// evidence-gated safety net (never actually taken in this milestone's own
+// real runs), not a load-bearing requirement.
 #include "PreRTS.h"
 
 #include "Common/AsciiString.h"
@@ -150,6 +213,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <filesystem>
 #include <unistd.h>
 
@@ -496,15 +560,32 @@ namespace
 	const int TEX_R = 200, TEX_G = 60, TEX_B = 90;
 	const float UNIT_HALF = 20.0f;
 
-	const Coord3D UNIT_WORLD_POS = { 500.0f, 500.0f, 0.0f };
+	// TheSuperHackers @port Milestone 14 (native port plan, Draft 38): the
+	// original Milestone 13 unit ("M13NamedUnit") is now UNIT A; Milestone
+	// 14 adds a second, distinct-templated UNIT B ("M14SecondUnit",
+	// TEX2_R/G/B, at UNIT_B_WORLD_POS) - far enough from UNIT A (200 world
+	// units apart on each axis, ~283 units of straight-line separation) that
+	// a region query with a modest (50-unit) half-width around either one
+	// cleanly excludes the other (Check 10), while both stay close enough to
+	// the shared HarnessTerrainLogic-constrained 0..1000 extent's own center
+	// to both remain visible in a single, moderately-zoomed-out camera frame
+	// (Check 7, confirmed via the real view->worldToScreen() below rather
+	// than assumed from FOV math).
+	const Coord3D UNIT_A_WORLD_POS = { 400.0f, 400.0f, 0.0f };
+	const Coord3D UNIT_B_WORLD_POS = { 600.0f, 600.0f, 0.0f };
+	const int TEX2_R = 60, TEX2_G = 200, TEX2_B = 90;
 
-	// ---- Check 11 (iterateDrawablesInRegion): a harness-local callback,
-	// counting hits and recording the last Drawable* seen - Draft 35 finding
-	// 13's own point-pick proof, closed for real this milestone. ----
+	// ---- Check 10 (iterateDrawablesInRegion): a harness-local callback,
+	// counting hits and recording every Drawable* seen (not just the last -
+	// Milestone 14's own extension, needed to confirm BOTH real entries are
+	// visited by a single region query, not just that the count is right) -
+	// Draft 35 finding 12's own multi-entry-traversal proof, closed for real
+	// this milestone. ----
 	struct IterateResult
 	{
 		int count = 0;
 		Drawable* lastHit = nullptr;
+		std::vector<Drawable*> hits;
 	};
 
 	void IterateCallback(Drawable* draw, void* userData)
@@ -512,6 +593,7 @@ namespace
 		IterateResult* result = static_cast<IterateResult*>(userData);
 		result->count++;
 		result->lastHit = draw;
+		result->hits.push_back(draw);
 	}
 
 } // end anonymous namespace
@@ -537,15 +619,28 @@ int main()
 	{
 		RemoveIfExists(kArchiveName);
 
-		printf("=== Setup 0: authoring m13unit.w3d + m13unit.tga into a test-authored .big archive ===\n");
+		printf("=== Setup 0: authoring m13unit.w3d/.tga (unit A) + m14unit.w3d/.tga (unit B) into a test-authored .big archive ===\n");
 		std::string tgaBytes = Author_Unit_TGA_Bytes(4, 4, TEX_R, TEX_G, TEX_B);
-		Check(!tgaBytes.empty(), "0a. authored TGA bytes are non-empty");
+		Check(!tgaBytes.empty(), "0a. authored TGA bytes are non-empty (unit A)");
 		std::string w3dBytes = Author_Unit_W3D_Bytes("M13", "UNIT", "m13unit.tga", UNIT_HALF);
-		Check(!w3dBytes.empty(), "0b. authored W3D bytes are non-empty");
+		Check(!w3dBytes.empty(), "0b. authored W3D bytes are non-empty (unit A)");
+
+		// TheSuperHackers @port Milestone 14 (native port plan, Draft 38):
+		// unit B's own authored mesh/texture pair - a distinct container
+		// name ("M14", matching Data/INI/Object.ini's own "Model = M14.UNIT"
+		// for the new "M14SecondUnit" template) and a distinct solid color
+		// (TEX2_R/G/B) so Check 8/9's pixel/pick checks can tell the two
+		// real render objects apart on sight, not just by pointer identity.
+		std::string tgaBytes2 = Author_Unit_TGA_Bytes(4, 4, TEX2_R, TEX2_G, TEX2_B);
+		Check(!tgaBytes2.empty(), "0c. authored TGA bytes are non-empty (unit B)");
+		std::string w3dBytes2 = Author_Unit_W3D_Bytes("M14", "UNIT", "m14unit.tga", UNIT_HALF);
+		Check(!w3dBytes2.empty(), "0d. authored W3D bytes are non-empty (unit B)");
 
 		std::vector<ArchiveEntry> entries = {
 			{ "Art\\W3D\\m13unit.w3d",     w3dBytes },
 			{ "Art\\Textures\\m13unit.tga", tgaBytes },
+			{ "Art\\W3D\\m14unit.w3d",     w3dBytes2 },
+			{ "Art\\Textures\\m14unit.tga", tgaBytes2 },
 		};
 		AuthorBigArchive(kArchiveName, entries);
 
@@ -590,6 +685,12 @@ int main()
 
 		const ThingTemplate* namedUnitTemplate = TheThingFactory->findTemplate("M13NamedUnit");
 		Check(namedUnitTemplate != nullptr, "1r. TheThingFactory->findTemplate(\"M13NamedUnit\") found the real, INI-parsed template");
+
+		// TheSuperHackers @port Milestone 14 (native port plan, Draft 38):
+		// the second, distinct-templated unit's own real, INI-parsed
+		// ThingTemplate.
+		const ThingTemplate* secondUnitTemplate = TheThingFactory->findTemplate("M14SecondUnit");
+		Check(secondUnitTemplate != nullptr, "1s. TheThingFactory->findTemplate(\"M14SecondUnit\") found the real, INI-parsed template");
 
 		// ---- Cost A: the team bootstrap (Draft 37's own "~4 harness
 		// lines", all real public API, no engine changes). ----
@@ -655,48 +756,94 @@ int main()
 		bool loaded = assetManager.Load_3D_Assets("m13unit.w3d");
 		Check(loaded, "4c. Load_3D_Assets(\"m13unit.w3d\") succeeded via factory->TheFileSystem->archive resolution");
 
+		// TheSuperHackers @port Milestone 14 (native port plan, Draft 38):
+		// the second unit's own real asset load, into the SAME real
+		// W3DAssetManager (a second Load_3D_Assets call on the real,
+		// unmodified object - no per-call special-casing needed).
+		bool loaded2 = assetManager.Load_3D_Assets("m14unit.w3d");
+		Check(loaded2, "4d. Load_3D_Assets(\"m14unit.w3d\") succeeded via factory->TheFileSystem->archive resolution");
+
 		// ---- Check 5 (THE MILESTONE'S ACTUAL PAYOFF CALL): a real, named
-		// Object+Drawable through TheThingFactory->newObject(). ----
-		printf("=== Check 5: TheThingFactory->newObject() - the milestone's payoff call ===\n");
-		Object* obj = nullptr;
+		// Object+Drawable through TheThingFactory->newObject() - UNIT A
+		// (Milestone 13's own "M13NamedUnit"). ----
+		printf("=== Check 5: TheThingFactory->newObject() - unit A (Milestone 13's own payoff call) ===\n");
+		Object* objA = nullptr;
 		if (namedUnitTemplate != nullptr && neutralDefaultTeam != nullptr && loaded)
 		{
-			obj = TheThingFactory->newObject(namedUnitTemplate, neutralDefaultTeam);
+			objA = TheThingFactory->newObject(namedUnitTemplate, neutralDefaultTeam);
 		}
-		Check(obj != nullptr, "5a. TheThingFactory->newObject() returned a real, non-null Object");
+		Check(objA != nullptr, "5a. TheThingFactory->newObject() returned a real, non-null Object (unit A)");
 
-		Drawable* drawable = obj ? obj->getDrawable() : nullptr;
-		Check(drawable != nullptr, "5b. obj->getDrawable() returned a real, non-null Drawable (bound by the real sendObjectCreated()/bindObjectAndDrawable() chain)");
-		Check(drawable != nullptr && drawable->getTemplate() == namedUnitTemplate, "5c. drawable->getTemplate() matches the real, parsed \"M13NamedUnit\" template");
+		Drawable* drawableA = objA ? objA->getDrawable() : nullptr;
+		Check(drawableA != nullptr, "5b. objA->getDrawable() returned a real, non-null Drawable (unit A, bound by the real sendObjectCreated()/bindObjectAndDrawable() chain)");
+		Check(drawableA != nullptr && drawableA->getTemplate() == namedUnitTemplate, "5c. drawableA->getTemplate() matches the real, parsed \"M13NamedUnit\" template");
 
-		if (obj != nullptr)
+		if (objA != nullptr)
 		{
-			obj->setPosition(&UNIT_WORLD_POS);
-			Check(true, "5d. obj->setPosition() returned without crashing (see 5e for the real position readback)");
-			const Coord3D* drawPos = drawable->getPosition();
-			Check(drawPos != nullptr &&
-				std::fabs(drawPos->x - UNIT_WORLD_POS.x) < 0.01f &&
-				std::fabs(drawPos->y - UNIT_WORLD_POS.y) < 0.01f,
-				"5e. drawable->getPosition() matches obj->setPosition()'s target (real Object::reactToTransformChange() sync)");
+			objA->setPosition(&UNIT_A_WORLD_POS);
+			Check(true, "5d. objA->setPosition() returned without crashing (see 5e for the real position readback)");
+			const Coord3D* drawPosA = drawableA->getPosition();
+			Check(drawPosA != nullptr &&
+				std::fabs(drawPosA->x - UNIT_A_WORLD_POS.x) < 0.01f &&
+				std::fabs(drawPosA->y - UNIT_A_WORLD_POS.y) < 0.01f,
+				"5e. drawableA->getPosition() matches objA->setPosition()'s target (real Object::reactToTransformChange() sync)");
 		}
 
-		// ---- Check 6: the drawable is in TheGameClient's list, by name. ----
-		printf("=== Check 6: drawable present in TheGameClient's real drawable list, by name ===\n");
-		Drawable* foundByName = nullptr;
+		// TheSuperHackers @port Milestone 14 (native port plan, Draft 38):
+		// UNIT B - a SECOND real, named Object+Drawable, through the exact
+		// same real chain, a distinct template ("M14SecondUnit") at a
+		// distinct world position (UNIT_B_WORLD_POS).
+		printf("=== Check 5f: TheThingFactory->newObject() - unit B (Milestone 14's own second payoff call) ===\n");
+		Object* objB = nullptr;
+		if (secondUnitTemplate != nullptr && neutralDefaultTeam != nullptr && loaded2)
+		{
+			objB = TheThingFactory->newObject(secondUnitTemplate, neutralDefaultTeam);
+		}
+		Check(objB != nullptr, "5f. TheThingFactory->newObject() returned a real, non-null Object (unit B)");
+
+		Drawable* drawableB = objB ? objB->getDrawable() : nullptr;
+		Check(drawableB != nullptr, "5g. objB->getDrawable() returned a real, non-null Drawable (unit B, bound by the real sendObjectCreated()/bindObjectAndDrawable() chain)");
+		Check(drawableB != nullptr && drawableB->getTemplate() == secondUnitTemplate, "5h. drawableB->getTemplate() matches the real, parsed \"M14SecondUnit\" template");
+		Check(drawableB != nullptr && drawableA != nullptr && drawableB != drawableA, "5i. drawableB is a distinct real Drawable* from drawableA (two real, separate entries)");
+
+		if (objB != nullptr)
+		{
+			objB->setPosition(&UNIT_B_WORLD_POS);
+			Check(true, "5j. objB->setPosition() returned without crashing (see 5k for the real position readback)");
+			const Coord3D* drawPosB = drawableB->getPosition();
+			Check(drawPosB != nullptr &&
+				std::fabs(drawPosB->x - UNIT_B_WORLD_POS.x) < 0.01f &&
+				std::fabs(drawPosB->y - UNIT_B_WORLD_POS.y) < 0.01f,
+				"5k. drawableB->getPosition() matches objB->setPosition()'s target (real Object::reactToTransformChange() sync)");
+		}
+
+		// ---- Check 6: BOTH drawables are in TheGameClient's real drawable
+		// list, by name (Milestone 14's own first real proof that the list
+		// actually holds more than one live entry - Draft 35 finding 12).
+		// ----
+		printf("=== Check 6: both drawables present in TheGameClient's real drawable list, by name ===\n");
+		Drawable* foundA = nullptr;
+		Drawable* foundB = nullptr;
 		int drawableListCount = 0;
 		for (Drawable* d = TheGameClient->firstDrawable(); d != nullptr; d = d->getNextDrawable())
 		{
 			++drawableListCount;
 			if (d->getTemplate() != nullptr && d->getTemplate()->getName() == "M13NamedUnit")
-				foundByName = d;
+				foundA = d;
+			if (d->getTemplate() != nullptr && d->getTemplate()->getName() == "M14SecondUnit")
+				foundB = d;
 		}
-		Check(drawableListCount >= 1, "6a. TheGameClient's real drawable list is non-empty");
-		Check(foundByName != nullptr && foundByName == drawable, "6b. the real drawable list contains our exact Drawable*, found by template name \"M13NamedUnit\"");
+		Check(drawableListCount >= 2, "6a. TheGameClient's real drawable list has at least 2 entries");
+		Check(foundA != nullptr && foundA == drawableA, "6b. the real drawable list contains our exact unit A Drawable*, found by template name \"M13NamedUnit\"");
+		Check(foundB != nullptr && foundB == drawableB, "6c. the real drawable list contains our exact unit B Drawable*, found by template name \"M14SecondUnit\"");
 
 		// ---- Check 7: a real W3DView, driven through the real per-frame
-		// camera API, centered on the unit's own world position (Milestone
-		// 11's own established technique). ----
-		printf("=== Check 7: real W3DView, driven through the real per-frame camera API ===\n");
+		// camera API, framed on the MIDPOINT between unit A and unit B
+		// (Milestone 11's own established technique; Milestone 14's own
+		// wider framing so BOTH units land on screen at once, confirmed
+		// below via the real view->worldToScreen(), not assumed from FOV
+		// math). ----
+		printf("=== Check 7: real W3DView, driven through the real per-frame camera API, framed on both units ===\n");
 		W3DView* view = NEW W3DView;
 		Check(view != nullptr, "7a. W3DView constructed (non-null)");
 
@@ -708,9 +855,14 @@ int main()
 		view->setPitch(ViewDefaultPitchRadians);
 		view->setAngle(DEG_TO_RADF(15.0f));
 		view->setZoom(1.0f);
-		view->lookAt(&UNIT_WORLD_POS);
-		Check(CloseReal(view->getPosition().x, UNIT_WORLD_POS.x, 0.01f) && CloseReal(view->getPosition().y, UNIT_WORLD_POS.y, 0.01f),
-			"7b. getPosition() == lookAt() target");
+		const Coord3D MIDPOINT_WORLD_POS = {
+			(UNIT_A_WORLD_POS.x + UNIT_B_WORLD_POS.x) * 0.5f,
+			(UNIT_A_WORLD_POS.y + UNIT_B_WORLD_POS.y) * 0.5f,
+			0.0f
+		};
+		view->lookAt(&MIDPOINT_WORLD_POS);
+		Check(CloseReal(view->getPosition().x, MIDPOINT_WORLD_POS.x, 0.01f) && CloseReal(view->getPosition().y, MIDPOINT_WORLD_POS.y, 0.01f),
+			"7b. getPosition() == lookAt() target (the midpoint between unit A and unit B)");
 
 		// ---- Real, implementation-time finding (this milestone's own step-0
 		// spike, not foreseen by Draft 37): W3DView::updateCameraTransform()
@@ -739,34 +891,68 @@ int main()
 		view->update();
 		Check(true, "7c. view->update() returned without crashing (real isGamePaused()/isTimeFrozenDebug()/getAxisAlignedViewRegion()/iterateDrawablesInRegion() all executed)");
 
-		// ---- Real, implementation-time finding (this milestone's own step-0
-		// spike, not foreseen by Draft 37): the real per-frame chain that
-		// pushes a Drawable's own transform into its W3DModelDraw's
-		// m_renderObject ("m_renderObject->Set_Transform(mtx)") lives inside
-		// DrawModule::doDrawModule(), called from Drawable::draw() - itself
-		// normally invoked from TheDisplay's own real per-frame draw loop
-		// (W3DDisplay::draw(), deliberately NOT compiled/linked in this
-		// milestone - a standing non-goal). obj->setPosition() above already
-		// synced the DRAWABLE's own transform (Object::reactToTransformChange(),
-		// confirmed by Check 5e), but the SEPARATE render-object transform
-		// stays at its own construction-time default (world origin) until
-		// Drawable::draw() itself runs at least once - confirmed by a real
-		// step-0 run (Check 8d/9a originally failed - the rendered mesh
-		// stayed at the clear color / pickDrawable() found nothing - until
-		// this call was added). A direct call to the real, public,
-		// unmodified Drawable::draw() is the same real per-frame method the
-		// production TheDisplay->draw() loop would call for every drawable;
-		// this harness simply calls it directly once, since it has no real
-		// TheDisplay of its own to do so automatically.
-		if (drawable != nullptr)
-			drawable->draw();
-		Check(true, "7d. drawable->draw() returned without crashing (real DrawModule::doDrawModule() pushed the drawable's transform into its render object)");
+		// ---- Real screen positions for both units, via the real
+		// view->worldToScreen() - used for both the pixel checks (Check 8)
+		// and the pickDrawable() identity checks (Check 9) below, instead of
+		// an assumed/hardcoded screen position (Milestone 13's own
+		// screen-center shortcut only worked because it had exactly one,
+		// exactly-centered unit). ----
+		ICoord2D screenA, screenB;
+		Bool insideA = view->worldToScreen(&UNIT_A_WORLD_POS, &screenA);
+		Bool insideB = view->worldToScreen(&UNIT_B_WORLD_POS, &screenB);
+		Check(insideA, "7d. worldToScreen() places unit A's world position inside the camera frustum");
+		Check(insideB, "7e. worldToScreen() places unit B's world position inside the camera frustum");
+		printf("      unit A projected screen pos: (%d,%d); unit B projected screen pos: (%d,%d)\n", screenA.x, screenA.y, screenB.x, screenB.y);
+		Check(screenA.x >= 0 && screenA.x < g_W && screenA.y >= 0 && screenA.y < g_H, "7f. unit A's projected screen position is within the framebuffer bounds");
+		Check(screenB.x >= 0 && screenB.x < g_W && screenB.y >= 0 && screenB.y < g_H, "7g. unit B's projected screen position is within the framebuffer bounds");
+		int screenSeparation = std::abs(screenA.x - screenB.x) + std::abs(screenA.y - screenB.y);
+		Check(screenSeparation > 20, "7h. unit A and unit B project to sufficiently separated, non-overlapping screen positions");
 
-		// ---- Check 8: pixel check on the rendered mesh - the quad, placed
-		// exactly at the lookAt() target (Look_At's own centering
-		// guarantee), renders at the exact screen center. ----
-		printf("=== Check 8: pixel check on the real named unit's rendered mesh ===\n");
 		const Vector3 CLEAR_COLOR(BG_R / 255.0f, BG_G / 255.0f, BG_B / 255.0f);
+
+		// ---- Check 7i (DIAGNOSTIC - Draft 38's own explicit "investigate
+		// and report honestly" question): render ONCE, with NEITHER unit's
+		// drawable->draw() called yet, to determine empirically whether
+		// view->update()'s own internal "TheGameClient->
+		// iterateDrawablesInRegion(&axisAlignedRegion, drawDrawable,
+		// nullptr)" call (W3DView.cpp:1717 - GameClient::iterateDrawablesInRegion(),
+		// GameClient.cpp:820-837, a plain unconditional walk of the WHOLE
+		// m_drawableList with no early break) already pushed BOTH real
+		// drawables' render-object transforms on its own. This is a genuine
+		// measurement, not an assumption in either direction - see this
+		// file's own header comment for the real, measured result. ----
+		printf("=== Check 7i (diagnostic): rendering BEFORE any manual drawable->draw() call ===\n");
+		Check(WW3D::Begin_Render(true, true, CLEAR_COLOR) == WW3D_ERROR_OK, "7i-1. WW3D::Begin_Render returned WW3D_ERROR_OK (diagnostic pass)");
+		view->drawView();
+		Check(WW3D::End_Render(true) == WW3D_ERROR_OK, "7i-2. WW3D::End_Render returned WW3D_ERROR_OK (diagnostic pass)");
+		bool autoPushWorkedA = false, autoPushWorkedB = false;
+		{
+			unsigned char* fbo = Read_Fbo_Pixels_TopDown(g_W, g_H);
+			int idxA = (screenA.y * g_W + screenA.x) * 4;
+			int idxB = (screenB.y * g_W + screenB.x) * 4;
+			autoPushWorkedA = Close(fbo[idxA + 0], TEX_R) && Close(fbo[idxA + 1], TEX_G) && Close(fbo[idxA + 2], TEX_B);
+			autoPushWorkedB = Close(fbo[idxB + 0], TEX2_R) && Close(fbo[idxB + 1], TEX2_G) && Close(fbo[idxB + 2], TEX2_B);
+			free(fbo);
+		}
+		printf("      diagnostic result: unit A auto-pushed by view->update() alone = %s, unit B auto-pushed = %s\n",
+			autoPushWorkedA ? "YES" : "NO", autoPushWorkedB ? "YES" : "NO");
+
+		// TheSuperHackers @port Milestone 14 (native port plan, Draft 38):
+		// apply Milestone 13's own manual "drawable->draw()" workaround only
+		// to whichever real drawable(s) the diagnostic above found NOT
+		// already pushed automatically - see this file's own header comment
+		// for the real, measured outcome this milestone's own step-0 spike
+		// found for THIS harness's own two-unit camera configuration.
+		if (!autoPushWorkedA && drawableA != nullptr)
+			drawableA->draw();
+		if (!autoPushWorkedB && drawableB != nullptr)
+			drawableB->draw();
+		Check(true, "7j. any needed manual drawable->draw() call(s) returned without crashing");
+
+		// ---- Check 8: pixel check on both real named units' rendered
+		// meshes, at their own real, projected screen positions (Check
+		// 7d-7h above). ----
+		printf("=== Check 8: pixel check on both real named units' rendered meshes ===\n");
 		Check(WW3D::Begin_Render(true, true, CLEAR_COLOR) == WW3D_ERROR_OK, "8a. WW3D::Begin_Render returned WW3D_ERROR_OK");
 		view->drawView();
 		Check(WW3D::End_Render(true) == WW3D_ERROR_OK, "8b. WW3D::End_Render returned WW3D_ERROR_OK");
@@ -774,47 +960,85 @@ int main()
 		{
 			unsigned char* fbo = Read_Fbo_Pixels_TopDown(g_W, g_H);
 			Check_Pixel(fbo, 5, 5, BG_R, BG_G, BG_B, "8c. background == clear color");
-			Check_Pixel(fbo, g_W / 2, g_H / 2, TEX_R, TEX_G, TEX_B, "8d. authored texel at the exact screen center (the real named unit's own render object)");
+			Check_Pixel(fbo, screenA.x, screenA.y, TEX_R, TEX_G, TEX_B, "8d. authored texel at unit A's own projected screen position (the real unit A render object)");
+			Check_Pixel(fbo, screenB.x, screenB.y, TEX2_R, TEX2_G, TEX2_B, "8e. authored texel at unit B's own projected screen position (the real unit B render object)");
 			free(fbo);
 		}
 
-		// ---- Check 9: pickDrawable() returns the REAL drawable - identity
-		// + template name, NOT a sentinel (closing Milestone 11's own
-		// scoped-down proof for real - see this file's own header comment
-		// for why no manual sentinel is needed this time). ----
-		printf("=== Check 9: pickDrawable() real ray-cast proof, no sentinel needed ===\n");
-		ICoord2D hitScreen;
-		hitScreen.x = g_W / 2;
-		hitScreen.y = g_H / 2;
-		Drawable* hitResult = view->pickDrawable(&hitScreen, false, PICK_TYPE_SELECTABLE);
-		Check(hitResult == drawable, "9a. pickDrawable() at the unit's screen center returns the REAL drawable pointer (identity match)");
-		Check(hitResult != nullptr && hitResult->getTemplate() != nullptr && hitResult->getTemplate()->getName() == "M13NamedUnit",
-			"9b. the picked drawable's getTemplate()->getName() == \"M13NamedUnit\"");
+		// ---- Check 9: pickDrawable() distinguishes the two real
+		// candidates - identity + template name, in BOTH directions (Draft
+		// 35 finding 13's own "not just hits the one thing that exists vs.
+		// nothing" gap, closed for real this milestone). ----
+		printf("=== Check 9: pickDrawable() real ray-cast identity proof - distinguishing unit A from unit B ===\n");
+		Drawable* hitA = view->pickDrawable(&screenA, false, PICK_TYPE_SELECTABLE);
+		Check(hitA == drawableA, "9a. pickDrawable() at unit A's screen position returns the REAL unit A drawable pointer (identity match)");
+		Check(hitA != nullptr && hitA->getTemplate() != nullptr && hitA->getTemplate()->getName() == "M13NamedUnit",
+			"9b. the picked drawable's getTemplate()->getName() == \"M13NamedUnit\" (not unit B's)");
+
+		Drawable* hitB = view->pickDrawable(&screenB, false, PICK_TYPE_SELECTABLE);
+		Check(hitB == drawableB, "9c. pickDrawable() at unit B's screen position returns the REAL unit B drawable pointer (identity match)");
+		Check(hitB != nullptr && hitB->getTemplate() != nullptr && hitB->getTemplate()->getName() == "M14SecondUnit",
+			"9d. the picked drawable's getTemplate()->getName() == \"M14SecondUnit\" (not unit A's)");
+
+		Check(hitA != nullptr && hitB != nullptr && hitA != hitB, "9e. pickDrawable() at unit A's and unit B's screen positions return two DIFFERENT real drawables (a real cross-check, not just non-null)");
 
 		ICoord2D missScreen;
 		missScreen.x = 5;
 		missScreen.y = 5;
 		Drawable* missResult = view->pickDrawable(&missScreen, false, PICK_TYPE_SELECTABLE);
-		Check(missResult == nullptr, "9c. pickDrawable() at a background screen point returns nullptr (real castRay() miss)");
+		Check(missResult == nullptr, "9f. pickDrawable() at a background screen point returns nullptr (real castRay() miss)");
 
-		// ---- Check 10: iterateDrawablesInRegion()'s point-pick callback
-		// fires with a live entry (Draft 35 findings 12/13, closed for
-		// real). ----
-		printf("=== Check 10: iterateDrawablesInRegion() real point-pick callback ===\n");
-		Region3D region;
-		region.lo.x = UNIT_WORLD_POS.x - 50.0f; region.lo.y = UNIT_WORLD_POS.y - 50.0f; region.lo.z = -50.0f;
-		region.hi.x = UNIT_WORLD_POS.x + 50.0f; region.hi.y = UNIT_WORLD_POS.y + 50.0f; region.hi.z = 50.0f;
-		IterateResult iterResult;
-		TheGameClient->iterateDrawablesInRegion(&region, IterateCallback, &iterResult);
-		Check(iterResult.count >= 1, "10a. iterateDrawablesInRegion() callback fired at least once for a region containing the real unit");
-		Check(iterResult.lastHit == drawable, "10b. the callback's own Drawable* argument is our exact, real Drawable (live entry, not a placeholder)");
+		// ---- Check 10: TheGameClient->iterateDrawablesInRegion()'s real
+		// Region3D-based traversal (GameClient.cpp:820-837 - a plain,
+		// unconditional walk of TheGameClient's own m_drawableList, DISTINCT
+		// from W3DView::iterateDrawablesInRegion()'s own IRegion2D/
+		// point-pick overload that pickDrawable()-based Check 9 above
+		// exercises) actually visits BOTH live entries for a region
+		// containing both, and correctly excludes the other for a region
+		// containing only one - Draft 35 finding 12's own "only ever tested
+		// with one live entry" gap, closed for real this milestone. ----
+		printf("=== Check 10: iterateDrawablesInRegion() real multi-entry region traversal ===\n");
+		Region3D bothRegion;
+		bothRegion.lo.x = std::min(UNIT_A_WORLD_POS.x, UNIT_B_WORLD_POS.x) - 50.0f;
+		bothRegion.lo.y = std::min(UNIT_A_WORLD_POS.y, UNIT_B_WORLD_POS.y) - 50.0f;
+		bothRegion.lo.z = -50.0f;
+		bothRegion.hi.x = std::max(UNIT_A_WORLD_POS.x, UNIT_B_WORLD_POS.x) + 50.0f;
+		bothRegion.hi.y = std::max(UNIT_A_WORLD_POS.y, UNIT_B_WORLD_POS.y) + 50.0f;
+		bothRegion.hi.z = 50.0f;
+		IterateResult bothResult;
+		TheGameClient->iterateDrawablesInRegion(&bothRegion, IterateCallback, &bothResult);
+		Check(bothResult.count == 2, "10a. iterateDrawablesInRegion() callback fired exactly twice for a region containing both real units (the loop actually walks a multi-entry list, not just the first)");
+		Check(std::find(bothResult.hits.begin(), bothResult.hits.end(), drawableA) != bothResult.hits.end(),
+			"10b. the callback's own hit list contains our exact unit A Drawable*");
+		Check(std::find(bothResult.hits.begin(), bothResult.hits.end(), drawableB) != bothResult.hits.end(),
+			"10c. the callback's own hit list contains our exact unit B Drawable*");
+
+		Region3D onlyARegion;
+		onlyARegion.lo.x = UNIT_A_WORLD_POS.x - 50.0f; onlyARegion.lo.y = UNIT_A_WORLD_POS.y - 50.0f; onlyARegion.lo.z = -50.0f;
+		onlyARegion.hi.x = UNIT_A_WORLD_POS.x + 50.0f; onlyARegion.hi.y = UNIT_A_WORLD_POS.y + 50.0f; onlyARegion.hi.z = 50.0f;
+		IterateResult onlyAResult;
+		TheGameClient->iterateDrawablesInRegion(&onlyARegion, IterateCallback, &onlyAResult);
+		Check(onlyAResult.count == 1, "10d. a region containing only unit A fires the callback exactly once (real negative control - unit B correctly excluded)");
+		Check(onlyAResult.count == 1 && onlyAResult.lastHit == drawableA, "10e. the one hit is unit A specifically");
+
+		Region3D onlyBRegion;
+		onlyBRegion.lo.x = UNIT_B_WORLD_POS.x - 50.0f; onlyBRegion.lo.y = UNIT_B_WORLD_POS.y - 50.0f; onlyBRegion.lo.z = -50.0f;
+		onlyBRegion.hi.x = UNIT_B_WORLD_POS.x + 50.0f; onlyBRegion.hi.y = UNIT_B_WORLD_POS.y + 50.0f; onlyBRegion.hi.z = 50.0f;
+		IterateResult onlyBResult;
+		TheGameClient->iterateDrawablesInRegion(&onlyBRegion, IterateCallback, &onlyBResult);
+		Check(onlyBResult.count == 1, "10f. a region containing only unit B fires the callback exactly once (real negative control - unit A correctly excluded)");
+		Check(onlyBResult.count == 1 && onlyBResult.lastHit == drawableB, "10g. the one hit is unit B specifically");
 
 		Region3D emptyRegion;
-		emptyRegion.lo.x = UNIT_WORLD_POS.x + 10000.0f; emptyRegion.lo.y = UNIT_WORLD_POS.y + 10000.0f; emptyRegion.lo.z = -50.0f;
-		emptyRegion.hi.x = UNIT_WORLD_POS.x + 10100.0f; emptyRegion.hi.y = UNIT_WORLD_POS.y + 10100.0f; emptyRegion.hi.z = 50.0f;
-		IterateResult emptyIterResult;
-		TheGameClient->iterateDrawablesInRegion(&emptyRegion, IterateCallback, &emptyIterResult);
-		Check(emptyIterResult.count == 0, "10c. iterateDrawablesInRegion() callback did NOT fire for a region far away from the real unit");
+		emptyRegion.lo.x = std::max(UNIT_A_WORLD_POS.x, UNIT_B_WORLD_POS.x) + 10000.0f;
+		emptyRegion.lo.y = std::max(UNIT_A_WORLD_POS.y, UNIT_B_WORLD_POS.y) + 10000.0f;
+		emptyRegion.lo.z = -50.0f;
+		emptyRegion.hi.x = emptyRegion.lo.x + 100.0f;
+		emptyRegion.hi.y = emptyRegion.lo.y + 100.0f;
+		emptyRegion.hi.z = 50.0f;
+		IterateResult emptyResult;
+		TheGameClient->iterateDrawablesInRegion(&emptyRegion, IterateCallback, &emptyResult);
+		Check(emptyResult.count == 0, "10h. iterateDrawablesInRegion() callback did NOT fire for a region far away from both real units");
 
 		// ---- No teardown: matches Milestone 12's own established
 		// precedent (see this file's own header comment). Process exit
