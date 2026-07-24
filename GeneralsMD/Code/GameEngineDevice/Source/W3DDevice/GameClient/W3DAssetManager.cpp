@@ -771,7 +771,15 @@ RenderObjClass * W3DAssetManager::Create_Render_Obj(
 		const char *mesh_name = strchr (name, '.');
 		if (mesh_name != nullptr)
 		{
-			lstrcpyn(filename, name, ((int)mesh_name) - ((int)name) + 1);
+			// TheSuperHackers @port Milestone 13 (native port plan, Draft 37):
+			// mesh_name and name both point into the same string - a real
+			// pointer DIFFERENCE (ptrdiff_t) is the portable way to compute
+			// this byte offset; casting each pointer to `int` first (the
+			// original code) truncates a 64-bit pointer on LP64 targets
+			// before the subtraction ever happens, corrupting the result.
+			// Zero behavior change on 32-bit Windows (int and ptrdiff_t are
+			// the same width there).
+			lstrcpyn(filename, name, static_cast<int>(mesh_name - name) + 1);
 			lstrcat(filename, ".w3d");
 		} else {
 			snprintf( filename, ARRAY_SIZE(filename), "%s.w3d", name);
@@ -1371,7 +1379,11 @@ RenderObjClass * W3DAssetManager::Create_Render_Obj(const char * name,float scal
 		char filename [MAX_PATH];
 		char *mesh_name = ::strchr (name, '.');
 		if (mesh_name != nullptr) {
-			::lstrcpyn (filename, name, ((int)mesh_name) - ((int)name) + 1);
+			// TheSuperHackers @port Milestone 13 (native port plan, Draft 37):
+			// same real pointer-difference fix as the other
+			// Create_Render_Obj() overload above (see that site's own
+			// comment for the full rationale).
+			::lstrcpyn (filename, name, static_cast<int>(mesh_name - name) + 1);
 			if (isGranny)
 				::lstrcat (filename, ".gr2");
 			else

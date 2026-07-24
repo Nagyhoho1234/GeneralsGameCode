@@ -34,7 +34,16 @@
 
 #define NO_DEBUG_CRC
 
+// TheSuperHackers @port Milestone 13 (native port plan, Draft 37): this
+// TU's only use of anything <windows.h> declares is the include itself -
+// no HWND/DWORD/Win32-API symbol is ever referenced in this file (grep-
+// confirmed, not assumed) - so guarding it behind #ifdef _WIN32 is a
+// zero-behavior-change fix on Windows (this branch stays untouched there),
+// matching the exact pattern Milestone 12 already established for
+// GameEngine.cpp's own WebBrowser.h guard.
+#ifdef _WIN32
 #include <windows.h>
+#endif
 
 #include "Common/crc.h"
 #include "Common/CRCDebug.h"
@@ -1233,7 +1242,15 @@ enum AnimParseType CPP_11(: Int)
 //-------------------------------------------------------------------------------------------------
 static void parseAnimation(INI* ini, void *instance, void * /*store*/, const void* userData)
 {
-	AnimParseType animType = (AnimParseType)(UnsignedInt)userData;
+	// TheSuperHackers @port Milestone 13 (native port plan, Draft 37):
+	// userData carries a small enum tag stuffed directly into the pointer
+	// value (see the field-parse table entries below, "(void*)ANIM_NORMAL"/
+	// "(void*)ANIM_IDLE") - a real round trip through UnsignedInt (32-bit)
+	// truncates a 64-bit pointer on LP64 targets; uintptr_t is the correct,
+	// width-matching integer type for this round trip on every platform,
+	// with zero behavior change on 32-bit Windows (uintptr_t == UnsignedInt
+	// there).
+	AnimParseType animType = (AnimParseType)(uintptr_t)userData;
 
 	AsciiString animName = ini->getNextAsciiString();
 	animName.toLower();
@@ -1447,7 +1464,11 @@ void W3DModelDrawModuleData::parseConditionState(INI* ini, void *instance, void 
 
 	ModelConditionInfo info;
 	W3DModelDrawModuleData* self = (W3DModelDrawModuleData*)instance;
-	ParseCondStateType cst = (ParseCondStateType)(UnsignedInt)userData;
+	// TheSuperHackers @port Milestone 13 (native port plan, Draft 37): same
+	// pointer-tag round trip as parseAnimation() above (PARSE_DEFAULT/
+	// PARSE_NORMAL/PARSE_ALIAS/PARSE_TRANSITION stuffed into userData by the
+	// field-parse table below) - uintptr_t is the width-matching fix.
+	ParseCondStateType cst = (ParseCondStateType)(uintptr_t)userData;
 	switch (cst)
 	{
 		case PARSE_DEFAULT:

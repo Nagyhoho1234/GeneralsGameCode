@@ -156,3 +156,17 @@ endif()
 if(NOT WIN32)
     add_subdirectory(PosixGameEngineHarness)
 endif()
+
+# Phase 5(a) Milestone 13 (native port plan, Draft 37, "rung 3b-ii-b") - a
+# real, named Object+Drawable, constructed through the real
+# ThingFactory::newObject()/GameLogic::sendObjectCreated()/
+# bindObjectAndDrawable() chain (unlocked by Milestone 12's own real
+# GameEngine::init()), rendered through the real W3DModelDraw draw module,
+# and picked back through the real W3DView::pickDrawable()/
+# TheGameClient->iterateDrawablesInRegion() - closing Milestone 11's own
+# scoped-down pickDrawable() proof for real. NOT WIN32 for the same reasons
+# as its twelve rendering/logic siblings and GameFileSystem. See
+# RenderNamedDrawable/CMakeLists.txt and main.cpp for the full plan.
+if(NOT WIN32)
+    add_subdirectory(RenderNamedDrawable)
+endif()

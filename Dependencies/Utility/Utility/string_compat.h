@@ -44,6 +44,14 @@ extern "C" inline char *_strlwr(char *str) {
 #define stricmp strcasecmp
 #define _stricmp strcasecmp
 #define strnicmp strncasecmp
+// TheSuperHackers @port Milestone 13 (native port plan, Draft 37):
+// _strnicmp is the same MSVC CRT case-insensitive-compare-with-length
+// function as strnicmp above (both real MSVC names for the same
+// semantics, matching the existing stricmp/_stricmp pair immediately
+// above) - first needed once W3DAssetManager.cpp joined the portable
+// build (Core/GameEngineDevice/.../W3DAssetManager.cpp's own
+// "ZHC"/"HOUSECOLOR" texture/mesh-name prefix checks).
+#define _strnicmp strncasecmp
 #define strcmpi strcasecmp
 
 // Win32 kernel32.dll "lstr*" string functions + MSVC CRT's _strdup (native
