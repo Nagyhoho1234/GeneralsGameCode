@@ -7188,6 +7188,21 @@ building on Milestone 13/14's real-Object-construction work would be
 needed to see the CRC move - a natural, explicitly-noted next step,
 not attempted here (matches this milestone's own non-goals).
 
+**Correction (added during Milestone 17, 2026-07-24)**: the
+`0x63FFB44F` value above is **not actually a stable constant** -
+Milestone 17's own Fable research pass traced it to
+`GameEngine::init()` reseeding the game-logic RNG from `time(nullptr)`
+(`Core/GameEngine/Source/Common/RandomValue.cpp:98-114`), which
+`GetGameLogicRandomSeedCRC()` folds into `getCRC()`
+(`GameLogic.cpp:4249-4262`). It is genuinely repeat-call-stable
+*within* a single process run (Milestone 15's real finding above,
+unaffected), but will differ across separate runs of the same
+harness at different wall-clock times. The fix (`InitRandom(0)`
+after `engine.init()`, matching real production call sites in
+`MainMenu.cpp`/`Shell.cpp`/`Recorder.cpp`) was backported to this
+harness in Milestone 17 Task 5, along with a corrected, genuinely
+stable golden value - see Draft 44 below.
+
 **Task 3 - explicitly deferred, with real evidence, not forced.**
 Attempted a genuine `-O0` vs `-O3` cross-check, isolating JUST the
 optimization-level variable: `CMAKE_BUILD_TYPE=Debug` with
@@ -7595,9 +7610,10 @@ this is reviewed).
 
 ## Draft 43: Milestone 17 plan — Phase 8 rung 1, making the CRC actually move
 
-**Status: APPROVED and IN PROGRESS** (2026-07-24, user authorized
-immediate auto-implementation for this thread while Phase 6/Milestone
-18 stays proposed). A deep Fable research pass, run in parallel with
+**Status: FULLY DONE** (2026-07-24, user authorized immediate auto-
+implementation for this thread while Phase 6/Milestone 18 stays
+proposed; achieved write-up in Draft 44 below). A deep Fable research
+pass, run in parallel with
 the Phase 6 research above, scoped the next real Phase 8 step: making
 the engine's own CRC (constant in Milestone 15's empty-world harness)
 actually vary, driven by real objects doing something.
@@ -7725,3 +7741,85 @@ ticks of this identical engine chain clean.
 `TheWritableGlobalData->m_partitionCellSize = 10.0f` before
 `ThePartitionManager->init()` (a production-realistic value) to shrink
 the grid to 100x100.
+
+
+## Draft 44: Milestone 17 achieved - the CRC actually moves (Tasks 0-5 complete; Stretch Task 6 dropped)
+
+**Status: FULLY DONE** (2026-07-24). A Sonnet worktree-isolated
+implementer delivered Tasks 0-5 of Draft 43's plan in full, clean on
+the first dispatch, no retry needed.
+
+**Task 0**: `InitRandom(0)` added immediately after `engine.init()` in
+`Tests/RenderNamedDrawable/main.cpp`. Confirmed by direct build/run
+that without it, `getCRC()` folds in a `time(nullptr)`-seeded value
+across separate process runs, exactly as Draft 43's research predicted
+- with it, the value is stable across repeated real runs.
+
+**Task 1**: two real `engine.update()` ticks over the existing static
+world (no live objects beyond the two named units), `getCRC(
+CRC_RECALC)` called twice per tick. Confirmed repeat-stable and
+constant across both ticks - the with-objects analog of Milestone 15's
+own empty-world constant finding.
+
+**Task 2**: `setPosition()` on one of the existing named units between
+two ticks. Confirmed the CRC changes and is independently repeat-
+stable at each of the two states - the first real proof that the
+engine's own lockstep CRC responds to real simulation state change,
+not just plumbing that runs without crashing.
+
+**Task 3 (the payoff)**: a new `M17PhysicsUnit` Object.ini template
+(reusing `M13NamedUnit`'s Draw/Body/die modules and already-loaded
+`M13.UNIT` mesh, adding `Behavior = PhysicsBehavior`), spawned airborne
+at `(500, 500, 800)`, ticked repeatedly. `PhysicsBehavior` needed zero
+`addModule()`/CMakeLists wiring - it was already registered by the
+stock `ModuleFactory::init()` (`ModuleFactory.cpp:330`), already part
+of this harness's linked closure. Confirmed both real observable
+motion (object's `z` strictly decreasing every tick under real engine
+gravity: 800 -> 799 -> 797 -> 794 -> 790 -> 785) and CRC variation
+tick-to-tick, driven entirely by the real engine with zero harness-
+side state mutation.
+
+**Genuine new implementation-time finding** (beyond anything Draft 43's
+research anticipated): a freshly-spawned object's first `PhysicsBehavior
+::update()` tick is a real engine-scheduled no-op (z stays exactly at
+spawn height) - `GameLogic::update()`'s per-frame dispatch list is
+fixed before the new object's module is appended mid-frame. Fixed with
+one harness-level "settle" tick before the measurement loop begins,
+matching this same file's own established Milestone 16 idiom for an
+analogous one-frame-late characteristic (`Mouse::createStreamMessages
+()`'s position-message lag). Documented in-code at the call site.
+
+**Task 4**: golden CRCs captured from real runs and confirmed cross-run
+stable (3 runs for `RenderNamedDrawableTest`, 2 for
+`PosixGameEngineHarnessTest`): `0xCA35125E` (final physics tick,
+`RenderNamedDrawableTest`) and `0x1ECFF0EC` (empty-world,
+`PosixGameEngineHarnessTest`) - both coupled to this exact harness's
+fixtures and the WSL2/GCC build, matching Milestone 15's own
+`kExpectedSimulationMathCrc` precedent.
+
+**Task 5**: `InitRandom(0)` plus the `0x1ECFF0EC` golden empty-world
+CRC backported to `Tests/PosixGameEngineHarness/main.cpp`. This is the
+doc correction Draft 43 flagged and Draft 40 above now records: the
+`0x63FFB44F` value from Milestone 15 was never a stable constant across
+process runs, only within one - the corrected, genuinely stable value
+for that harness (with `InitRandom(0)` pinned) is `0x1ECFF0EC`.
+
+**Stretch Task 6** (pristine-bone CRC via a harness-authored HLod):
+explicitly dropped, per the dispatch's own "drop without shame"
+framing - judged not worth the added scope given Tasks 0-5 already
+landed clean and fully verified.
+
+**Verification** (controller-independent re-verification after
+cherry-picking the implementer's single commit `fd49cd65b` onto
+`native-port-plan` as `e4795f7ae` - clean cherry-pick, zero conflicts,
+same base commit `abf5da980` both sides):
+- Reconfigured (`cmake -S . -B build/linux-x64`) after the `Data/INI/
+  Object.ini` change, per the standing configure-time-copy gotcha.
+- WSL2 scoped `g_gameenginedevice`/`z_gameenginedevice` build: exactly
+  33/33 pre-existing errors (11 `atlbase.h` + 8 `winsock.h` + 6
+  `imagehlp.h` + 6 `d3dx8math.h` + 2 `mbstring.h`), zero new.
+- MSVC: not attempted - correctly not needed, all three changed files
+  are `Tests/`-local only.
+- Full `ctest` suite: **15/15 green**, including `RenderNamedDrawable
+  Test` (1.98s) and `PosixGameEngineHarnessTest` (1.50s).
+- Pushed to `fork/native-port-plan` (`abf5da980..e4795f7ae`).
