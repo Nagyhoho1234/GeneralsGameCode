@@ -6948,10 +6948,29 @@ follow-up).
 
 ## Draft 38: Milestone 14 plan — closing rung 3, multiple real `Drawable`s
 
-**Status: APPROVED and IN PROGRESS** (user authorized direct Sonnet
-implementation, 2026-07-24, judged low-risk enough not to need a
-Fable research pass first - the entire construction chain is already
-proven by Milestone 13). Milestone 13 proved ONE real, named
+**Status: FULLY DONE** (user authorized direct Sonnet implementation,
+2026-07-24, judged low-risk enough not to need a Fable research pass
+first - correctly, it landed clean). Commit `c9c53dd83`, cherry-picked
+onto `native-port-plan` as `fbb6401e8`. All three required proofs
+passed for real on the first attempt: `iterateDrawablesInRegion()`
+fires exactly twice for a region containing both units, `pickDrawable()`
+distinguishes unit A from unit B by identity and template name in both
+directions, and single-unit region queries correctly exclude the other
+unit. The direct-call investigation Draft 38 asked for resolved
+cleanly too: for this milestone's two-unit configuration, `W3DView::
+update()`'s own internal traversal already pushes both drawables'
+render-object transforms automatically - Milestone 13's manual
+`drawable->draw()` workaround was not needed here (kept only as an
+evidence-gated fallback, never triggered), a genuine, disclosed
+difference from Milestone 13's single-unit finding, not a
+contradiction. Independently re-verified after merging: WSL2 baseline
+exactly 33/33, full `ctest` suite 15/15 (after fixing a benign build-
+process gotcha on the controller's side - `Data/` fixture files copy
+at CMake *configure* time, not build time, so a reconfigure was
+needed after the cherry-pick; the merge itself was clean). **Rung 3
+(Draft 35's original scope) is now fully closed.**
+
+Milestone 13 proved ONE real, named
 `Object`+`Drawable` constructs, renders, and gets picked correctly.
 Draft 35's findings 12 and 13 describe MULTI-object behavior
 specifically - `iterateDrawablesInRegion()`'s real traversal of more
