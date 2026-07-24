@@ -246,6 +246,40 @@ jobs:
         run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ctest --test-dir build/linux-x64 -R '^RenderViewUpdateDrawTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
         continue-on-error: true
 
+      - name: Build PosixGameEngineHarnessTest (Phase 5(a) Milestone 12 - rung 2b, the real GameEngine::init()/update()/execute())
+        id: build-posixgameenginehariness
+        run: cmake --build --preset linux-x64 --target PosixGameEngineHarnessTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run PosixGameEngineHarnessTest (no display needed - pure headless logic test)
+        id: run-posixgameenginehariness
+        if: steps.build-posixgameenginehariness.outcome == 'success'
+        # Like GameFileSystemTest above, this harness has zero GL/display
+        # dependency (no WW3D/GLFW involvement at all - grep-confirmed) but
+        # does author real state into a scratch cwd, so it needs ctest for
+        # the same WORKING_DIRECTORY reason (posixgameengine_scratch).
+        run: ctest --test-dir build/linux-x64 -R '^PosixGameEngineHarnessTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Build RenderNamedDrawableTest (Phase 5(a) Milestones 13/14/16 - rung 3b-ii-b + Phase 4 rung 0)
+        id: build-rendernameddrawable
+        run: cmake --build --preset linux-x64 --target RenderNamedDrawableTest -- -k0 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
+      - name: Run RenderNamedDrawableTest (headless Mesa software rendering)
+        id: run-rendernameddrawable
+        if: steps.build-rendernameddrawable.outcome == 'success'
+        # Like RenderViewUpdateDrawTest above, this harness needs a display for
+        # GLFW/GL even though rendering itself goes to an offscreen FBO (or a
+        # hidden real window - PORTABLE_D3D8_HIDDEN=1 is already set directly
+        # on this test's own ctest ENVIRONMENT property by Milestone 16, not
+        # duplicated here) - xvfb-run supplies the virtual X server bare
+        # GitHub-hosted runners lack either way. Invoked via ctest for the
+        # same WORKING_DIRECTORY reason as every scratch-archive harness
+        # above (rendernameddrawable_scratch).
+        run: xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ctest --test-dir build/linux-x64 -R '^RenderNamedDrawableTest$' --output-on-failure 2>&1 | tee -a configure-log.txt
+        continue-on-error: true
+
       - name: Upload configure/build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -321,6 +355,16 @@ jobs:
           echo "Build outcome: ${{ steps.build-renderviewupdatedraw.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "Run outcome: ${{ steps.run-renderviewupdatedraw.outcome }}" >> $GITHUB_STEP_SUMMARY
           echo "The real, unmodified W3DView::update()/drawView()(->draw())/pickDrawable() run their full, always-executed control flow in an empty-world configuration, on top of real TheGameLogic/TheScriptEngine and minimal concrete stub subclasses for GameClient/InGameUI/Display/FontLibrary/Mouse - the first GameLogic, ScriptEngine, GameClient, InGameUI, Display, and FontLibrary ever constructed and executed on POSIX. Includes pickDrawable()'s real ray-cast chain (screen ray -> world ray -> RTS3DScene::castRay -> user-data extraction), hit and miss both checked against a sentinel DrawableInfo. Landed in two passes: a first attempt shipped pickDrawable() alone after finding a much larger link closure than estimated (a stub subclass overriding only an abstract base's pure virtuals still forces the linker to pull in the base's full real .cpp, since vtables need every virtual method resolved); a retry adopted Milestone 10's technique of linking the real source closure wholesale instead of hand-picked files, which resolved the closure and delivered the full original scope. Milestone 11's exit criterion." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestone 12: the real GameEngine::init()/update()/execute(), rung 2b (Tests/PosixGameEngineHarness)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-posixgameenginehariness.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-posixgameenginehariness.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "The real, unmodified GameEngine::init()/update()/execute() running on POSIX for the first time - a harness-local PosixGameEngine overriding only the 11 pure factory methods, not a bypass and not hand-constructed singletons. All three blockers a prior draft deferred as unscoped (an ATL/COM browser include, a proprietary audio SDK dependency, GameClient::update()'s ~13-singleton chain) were retired or recast once traced for real. Milestone 12's exit criterion." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Phase 5(a) Milestones 13/14/16: a real named Object+Drawable, constructed/rendered/picked/multiplied, plus real windowed input (Tests/RenderNamedDrawable)" >> $GITHUB_STEP_SUMMARY
+          echo "Build outcome: ${{ steps.build-rendernameddrawable.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "Run outcome: ${{ steps.run-rendernameddrawable.outcome }}" >> $GITHUB_STEP_SUMMARY
+          echo "A real, named Object+Drawable constructed through the real ThingFactory::newObject()/GameLogic::sendObjectCreated()/bindObjectAndDrawable() chain (unlocked by Milestone 12's real GameEngine::init()), rendered through the real W3DModelDraw draw module, and picked back through the real W3DView::pickDrawable()/TheGameClient->iterateDrawablesInRegion() (Milestone 13); extended to two real named units proving multi-entry traversal and pick-by-identity both directions (Milestone 14); then extended again with real GlfwKeyboard/GlfwMouse input classes feeding the real, unmodified translator chain (WindowTranslator->MetaEventTranslator->SelectionTranslator) through to a real pick from real input events - the first milestone in this whole port with genuine, human-observable visual+interactive proof, not just an offscreen pixel comparison (Milestone 16)." >> $GITHUB_STEP_SUMMARY
 
       - name: Fail if unexpected error count
         if: always()
