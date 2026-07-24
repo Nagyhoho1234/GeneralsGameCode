@@ -7258,13 +7258,12 @@ milestone.
 
 ## Draft 41: Milestone 16 plan — Phase 4 rung 0, a real window with real input driving a real pick
 
-**Status: PROPOSED, research-backed by real code tracing and a real
-compile spike, not yet approved for implementation.** Phase 4
+**Status: APPROVED and IN PROGRESS** (2026-07-24). Phase 4
 ("Windowing + input") had never been started - the stated plan was
 always that Phase 5's rendering-side groundwork would inform it. A
-deep Fable research pass (2026-07-24) found that groundwork is now
-sufficient to make a real first slice tractable, genuinely smaller
-than "Windowing + input" sounds as a phase name.
+deep Fable research pass found that groundwork is now sufficient to
+make a real first slice tractable, genuinely smaller than "Windowing
++ input" sounds as a phase name.
 
 **Four structural discoveries that collapse the problem:**
 
@@ -7370,7 +7369,5 @@ than the translator-emitted hint - still delivers a real, visible,
 clickable window, with the cascade recorded for a follow-up, matching
 Milestone 11's own established de-scope precedent.
 
-**Not yet approved for implementation** - proposed plan only, pending
-user sign-off (this round's instruction was explicitly to review
-Phase 4 with Fable, matching Phase 8's own explore-then-decide
-rhythm).
+**APPROVED for implementation** (2026-07-24) - dispatched as a single
+worktree-isolated implementer, following this plan directly.
