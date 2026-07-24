@@ -6780,3 +6780,118 @@ same standing gotcha already recorded in this port's session notes
 no-ops here) and misdiagnosed a broken invocation as a missing SDK,
 rather than actually being blocked. **Verified outcome, replacing the
 incorrect claim: real MSVC win32 build, 0 errors, confirmed clean.**
+
+
+## Draft 37: Milestone 13 plan — rung 3b-ii-b, a real named `Drawable` rendered and picked
+
+**Status: APPROVED and IN PROGRESS** (user authorized automatic
+implementation, 2026-07-24, immediately following Milestone 12's
+completion). Draft 35 deferred rung 3b-ii-b as blocked on a
+`ThingTemplate`/`Object`/`Drawable` bring-up "this port hasn't
+approached yet" and "likely entangled with rung 2b's real gameplay
+loop being alive." A deep Fable research pass, backed by real WSL2
+compile spikes, re-assessed this the same session Milestone 12 (rung
+2b) landed - and found the entanglement condition is now genuinely
+satisfied, not just theoretically possible.
+
+**Verdict: tractable, Milestone-11/12-sized. Milestone 12 is precisely
+what unlocks it**, verified by direct chain-tracing, not inference:
+
+1. **`Drawable.cpp`/`Object.cpp` already compile and link on POSIX
+   today** - both files are already inside Milestone 11's and
+   Milestone 12's shared source closure (neither is excluded by the
+   Windows-only filter list), running as dead code in every green
+   test right now. The "does this even compile" question Draft 35
+   worried about is already answered by the existing build.
+2. **A real `ThingTemplate` is already parsed by the real INI parser
+   in Milestone 12's shipping harness** - `Data/INI/Object.ini`'s
+   placeholder object goes through the full real
+   `ThingFactory::parseObjectDefinition`/`initFromINI`/`validate()`
+   path in every M12 run today. Template parsing is done work, not
+   future work.
+3. **Object+Drawable construction is two real one-liners**:
+   `ThingFactory::newObject` -> `GameLogic::friend_createObject` ->
+   `Object`'s constructor automatically creates and binds the
+   `Drawable` via `sendObjectCreated()` ->
+   `TheThingFactory->newDrawable()` ->
+   `TheGameClient->friend_createDrawable()`.
+4. **Every singleton `Drawable::Drawable()` unconditionally
+   dereferences is already real in Milestone 12 - and ONLY because of
+   Milestone 12.** `TheDisplayStringManager`/`TheFontLibrary`/
+   `TheInGameUI`/`TheGameLODManager`/`TheModuleFactory`/
+   `TheMappedImageCollection`/`TheAnim2DCollection` are all
+   real-constructed by the real `GameEngine::init()`/`GameClient::init()`
+   chain M12 already runs. Without M12, each was bespoke hand-work
+   (as Milestone 11 found); with M12, they cost zero.
+5. Same story for `Object`'s own constructor - `ThePlayerList`/
+   `TheRadar`/`TheGameLogic`/`TheScriptEngine`/`ThePartitionManager`
+   are all real-constructed by the same M12 init chain.
+
+**Three genuinely new costs, each measured with real evidence:**
+
+- **Cost A - the team bootstrap** (~4 harness lines): `Player::
+  m_defaultTeam` and `ThePartitionManager`'s cells are both left in a
+  not-yet-real state after M12's `init()` (by design - both are meant
+  to be finished by `startNewGame`, which this milestone doesn't run).
+  Fix, entirely real public API, no engine changes: `TheSidesList->
+  validateSides()` (self-heals an empty sides list, adds the neutral
+  side + default team), `ThePlayerList->newGame()` (resolves
+  `getDefaultTeam()`), `ThePartitionManager->init()` (its own code
+  already self-heals the no-map case).
+- **Cost B - one stub upgrade** (1 line): Milestone 12's
+  `GameClientStub::friend_createDrawable` currently returns `nullptr`
+  (would crash `bindObjectAndDrawable`) - fix by copying
+  `W3DGameClient::friend_createDrawable`'s real one-line body
+  (`newInstance(Drawable)(tmplate, statusBits)`, `Drawable` is a
+  concrete GameEngine-tier class already in the closure).
+- **Cost C - the rendering tier, spiked with real compiler runs**:
+  `W3DModelDraw.cpp` (4323 lines, WIN32-gated, never compiled non-MSVC
+  before) needs the same `#ifdef _WIN32`-guard-on-`<windows.h>`
+  treatment Milestone 12 already applied to `GameEngine.cpp`, plus two
+  `uintptr_t` casts (`:1236`, `:1450`) - a real spike landed at exactly
+  2 remaining errors. `W3DAssetManager.cpp` (1675 lines, needed since
+  `W3DDisplay::m_assetManager` is typed as the derived class) needs
+  `strnicmp`/pointer-diff-cast fixes, same established pattern as
+  every prior milestone's portability fixes. Module registration needs
+  no device factory - a harness-local `ModuleFactoryStub` doing base
+  init + one `addModule(W3DModelDraw)` call confines the link cost.
+  The one hard link requirement is a harness-local out-of-line
+  `W3DDisplay::m_assetManager` definition, same technique Milestone 11
+  already used for `m_3DScene`/`m_2DScene`.
+
+**Minimal INI for the named unit** (mirrors the engine's own
+`ThingTemplate.cpp::initForLTA` - the developers' own statement of a
+minimal viable template): one `Object` block with a `Draw =
+W3DModelDraw` module referencing a `DefaultConditionState` (required -
+`findBestInfo()` throws otherwise), a `Behavior = DestroyDie`, and a
+`Behavior = InactiveBody`. Full block recorded in the research
+transcript; the implementer should read it directly rather than have
+it re-transcribed here with a risk of a typo.
+
+**Milestone 13 concrete shape**: one new harness extending Milestone
+12's `PosixGameEngineHarness` with Milestone 11's render-stack sources
+(`W3DView.cpp`, `W3DScene.cpp`, `W3DShroud.cpp`, `W3DStatusCircle.cpp`,
+`W3DConvert.cpp`, `W3DFileSystem.cpp`, `matrixmapper.cpp`,
+`wwdebugstub.cpp`) plus the two new files above. Sequence: WW3D/GL
+init + `W3DAssetManager` + `Load_3D_Assets` (reusing `RenderGameAssets`/
+`RenderW3DMesh`'s existing asset-authoring code) -> the team-bootstrap
+fix (Cost A) -> `TheThingFactory->newObject(...)` for the real named
+unit -> run real frames -> assert the drawable is in `TheGameClient`'s
+list by name, pixel-check the rendered mesh, confirm `pickDrawable()`
+returns the REAL drawable (identity + template name, not a sentinel -
+closing Milestone 11's own scoped-down proof for real), and confirm
+`iterateDrawablesInRegion()`'s point-pick callback actually fires with
+a live entry (Draft 35 findings 12 and 13, both closed for real).
+
+**Explicit non-goals, unchanged from every prior rung-3b assessment**:
+`W3DDisplay.cpp`, the real `W3DGameClient`, map loading, terrain
+rendering, animation/LOD content, `WorldHeightMap`. The named unit
+renders at world origin over Milestone 11's existing empty-world
+scene - exactly rung 3b-ii-b as Draft 35 defined it, nothing bigger.
+
+**Mandatory step 0** (same discipline that made Milestones 10-12 all
+land clean): a real link+run attempt before writing final assertions,
+retiring the handful of individually-small runtime-verify items the
+research pass flagged (the shroud path with a live object, `Radar::
+addObject` with the minimal template, the neutral-side name-key
+resolution fallback, exact `W3DModelDrawModuleData` parse fields).
