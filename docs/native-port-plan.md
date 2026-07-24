@@ -7371,3 +7371,44 @@ Milestone 11's own established de-scope precedent.
 
 **APPROVED for implementation** (2026-07-24) - dispatched as a single
 worktree-isolated implementer, following this plan directly.
+
+### Milestone 16 achieved (2026-07-24)
+
+**Landed in full on the first attempt** - commit `d06ccdf9a`
+(cherry-picked clean onto `native-port-plan` as `0ca191fa6`). All
+three pre-traced gotchas confirmed and fixed exactly as scoped
+(`TheShell->hideShell()`, a real `Keyboard` alongside the real
+`Mouse`, `TheTacticalView` reassigned to the real `W3DView`), plus
+five MORE real, previously-undiscovered gotchas found and fixed:
+`SelectionInfo::contextCommandForNewSelection()`'s unguarded
+`ThePlayerList->getLocalPlayer()` deref (fixed by assigning the
+neutral player as local); `TheGlobalData->m_shroudOn` defaulting
+`TRUE` silently empties the pick list with no real vision system ever
+clearing it (turned off, fog-of-war is out of scope); `InactiveBody`
+marks objects "effectively dead" by design, gating selectability
+(fixed via the engine's own `KINDOF_ALWAYS_SELECTABLE` escape hatch,
+not by swapping body modules); a real one-frame-late position-message
+characteristic in `Mouse::createStreamMessages()` (worked around by
+running two frames per synthetic move); and the first-ever real
+`Mouse`/`Keyboard` destructor run in this port crashed on stack
+teardown (every prior milestone's input class was heap-leaked by
+design - fixed by heap-allocating these too, matching precedent,
+not by debugging a new engine-teardown bug out of scope).
+
+**Verified two ways, both real**: headless (`PORTABLE_D3D8_HIDDEN=1`,
+the CI-safe mode) and with an actual visible GLFW window under WSLg -
+both exit 0, 96/96 checks pass. This is the first milestone in the
+whole port with genuine, human-observable visual+interactive proof,
+not just an offscreen FBO comparison. Independently re-verified by
+the controller after merging: WSL2 baseline exactly 33/33, full
+`ctest` suite 15/15 (reconfigure required first - `Data/INI/Object.ini`
+was touched, the same configure-time fixture-copy gotcha Milestone 14
+surfaced). No engine/Core files touched - entirely `Tests/`-local.
+
+**Not yet done**: CI wiring for `RenderNamedDrawableTest`'s expanded
+scope (it was already wired from Milestone 13; the new input checks
+ride the same CI entry, so no NEW wiring is needed, but worth noting
+the existing entry now covers substantially more). The honest Phase 4
+remainder (real `Win32GameEngine` device-tier factories, real UI/
+`ControlBar`, cursor rendering, fullscreen) stays exactly as scoped -
+untouched, multiple future milestones.
