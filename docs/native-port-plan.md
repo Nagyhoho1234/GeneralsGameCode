@@ -7479,7 +7479,7 @@ isn't rediscovered from scratch next time CI speed becomes a real
 friction point.
 
 
-## Draft 42: Milestone 17 plan (proposed) — Phase 6 rung 0, a real OpenAL device with real deterministic samples
+## Draft 42: Milestone 18 plan (proposed) — Phase 6 rung 0, a real OpenAL device with real deterministic samples
 
 **Status: PROPOSED, research-backed by a real fetch-and-read of an
 existing upstream PR plus a real FetchContent+link+run spike, not yet
@@ -7530,7 +7530,7 @@ with zero hardware and zero env config, bit-identical across runs -
 the audio equivalent of Milestone 16's synthetic input injection
 (real assertions, no human, no sound card needed).
 
-**Milestone 17 scope (rung 0 - the small, ready-now slice)**: new
+**Milestone 18 scope (rung 0 - the small, ready-now slice)**: new
 `Tests/OpenALAudioDevice/` harness. `FetchContent` openal-soft in the
 harness's own `CMakeLists.txt` (not root/`cmake/` yet - see
 parallelism guardrail below). Port only `OpenALAudioStream.h`/`.cpp`
@@ -7591,3 +7591,137 @@ Phase 6 with Fable, matching Phase 8/Phase 4's own explore-then-decide
 rhythm; Phase 8 itself was authorized for immediate auto-implementation
 in the same round, so it is likely to be further ahead by the time
 this is reviewed).
+
+
+## Draft 43: Milestone 17 plan — Phase 8 rung 1, making the CRC actually move
+
+**Status: APPROVED and IN PROGRESS** (2026-07-24, user authorized
+immediate auto-implementation for this thread while Phase 6/Milestone
+18 stays proposed). A deep Fable research pass, run in parallel with
+the Phase 6 research above, scoped the next real Phase 8 step: making
+the engine's own CRC (constant in Milestone 15's empty-world harness)
+actually vary, driven by real objects doing something.
+
+**A genuinely new, previously-undisclosed finding, found via a real
+experiment**: Milestone 15's own recorded CRC value was never a stable
+constant. Running the existing `PosixGameEngineHarnessTest` binary
+repeatedly produced a DIFFERENT frame-1 CRC every process run
+(`0x82DA7674`, `0xC271EEF8`, `0xD384BD07`, ...) - each run internally
+repeat-stable (so M15's own in-process assertions all remain valid),
+but not stable cross-run. Root cause traced then experimentally
+confirmed: `GameEngine::init()` calls no-arg `InitRandom()`
+(`GameEngine.cpp:411`), which seeds the game-logic RNG from
+`time(nullptr)`, and `GameLogic::getCRC()` folds a CRC of that live
+seed state into its result (`GetGameLogicRandomSeedCRC()`,
+`GameLogic.cpp:4249-4262`). With `time()` pinned via a real `LD_PRELOAD`
+interposer (scratch-only, deleted after), two separate process runs
+produced the IDENTICAL CRC `0x4DDEC6FA`. **Fix: one real, public engine
+call the production code already uses in exactly this spot** -
+`InitRandom(0)` after `engine.init()` (precedent: `MainMenu.cpp:313`,
+`Shell.cpp:557`; replay playback uses `InitRandom(m_gameInfo.getSeed())`,
+`Recorder.cpp:1202`). This is what actually unlocks checked-in golden
+CRC values for the first time - without it, no cross-run regression
+tripwire is possible at all.
+
+**Position IS in the lockstep CRC, confirmed by reading, not
+assumed**: `Object::crc()` (`Object.cpp:3979`) xfers the full 48-byte
+transform matrix among other real per-object state
+(`XferCRC::addCRC` folds raw bytes, so any transform change changes
+the CRC). A static object contributes constant bytes across ticks
+(generalizing M15's empty-world finding); real frame-to-frame
+variation needs state that genuinely changes per tick.
+
+**Ghost objects: confirmed dead end for CRC verification, by
+design** - `GhostObject::crc()`/`W3DGhostObject::crc()` are empty
+bodies, and `getCRC()`'s own walk never visits ghost objects at all.
+Any future ghost-object determinism check would need to be behavioral
+(snapshot/restore parity), not CRC-based - separate, lower-priority
+scope, not attempted here.
+
+**Terrain height: honestly untestable until real map loading lands**
+- the base `TerrainLogic::getGroundHeight()` flat-0 body is already
+confirmed; real height determinism lives in `W3DTerrainLogic`/
+`WorldHeightMap`, which needs an actual map file, the same standing
+blocker every milestone has deferred. It gets covered for free once a
+real map loads and units path across it - not forced into this
+milestone.
+
+**Bone-transform/animation: tractable for the lockstep-relevant slice,
+but with an important correction to this draft's own original
+premise** - no `crc()` exists anywhere near `htree.cpp` today. Game
+LOGIC only ever consumes bones through the PRISTINE path
+(`Drawable::getPristineBonePositions()`, a cached fixed-frame pose,
+used for real gameplay hooks like bridge/flight-deck/weapon fire
+points) - live per-frame animation playback is client-visual only,
+outside the lockstep CRC by the same design that excludes ghost
+objects. Also: `Tests/RenderW3DMesh` does static HLod/skin BINDING,
+NOT time-varying animation playback (zero `HAnimClass`/animation-chunk
+authoring anywhere in `Tests/`) - a correction to what this research
+round assumed going in. A pristine-bone CRC check is a reasonable
+stretch task for this milestone; full `HAnimClass` animation
+determinism is genuinely separate, lower-value scope.
+
+**Harness choice, clear verdict**: extend `Tests/RenderNamedDrawable`,
+not `Tests/PosixGameEngineHarness`. The latter cannot construct a real
+`Object` today at all (`GameClientStub::friend_createDrawable` still
+returns `nullptr` - Milestone 13's fix was never backported there) and
+lacks a `PartitionManager` init/team bootstrap - closing that gap would
+re-do most of Milestone 13. `RenderNamedDrawable` already has two real
+objects, a real inited `ThePartitionManager`, and the full Milestone
+12 engine - it just never calls `engine.update()` or `getCRC()`. Both
+are additive extensions, matching Milestone 14/16's own established
+precedent for this file.
+
+**Milestone 17 concrete shape** (Tests-local only, Milestone-14-sized):
+extends `Tests/RenderNamedDrawable/main.cpp` after the Milestone 16
+checks.
+1. **Task 0**: `InitRandom(0)` immediately after `engine.init()` - the
+   determinism pin found above.
+2. **Task 1 (static control)**: two real `engine.update()` calls
+   (first-ever real logic ticks in this harness), `getCRC()` after
+   each, repeat-checked - asserts static world + live objects still
+   yields a constant CRC, the with-objects analog of Milestone 15's
+   finding.
+3. **Task 2 (harness-driven variation)**: `setPosition()` between two
+   ticks, assert the CRC changes (the `Object.cpp:4006` mechanism) and
+   is repeat-stable at each state.
+4. **Task 3, the payoff (engine-driven variation)**: a third template,
+   `M17PhysicsUnit` (copies `M13NamedUnit`'s draw/body/die modules,
+   adds `Behavior = PhysicsBehavior`, a real, safely-defaulting
+   GameEngine-tier module), spawned airborne inside
+   `HarnessTerrainLogic`'s extent. Real gravity (`GlobalData.cpp:874`)
+   makes it fall over several real ticks with no special harness code -
+   assert both real, observable motion (`getPosition()->z` strictly
+   decreasing) AND the real engine's own CRC changing tick to tick,
+   driven entirely by real physics, zero harness mutation of state.
+5. **Task 4 (golden tripwire)**: with `InitRandom(0)` pinned, check in
+   one golden final-tick CRC value, with an explicit comment that it's
+   coupled to this harness's exact fixtures and WSL2/GCC build.
+6. **Task 5 (small, separate)**: backport the `InitRandom(0)` seed pin
+   to `Tests/PosixGameEngineHarness/main.cpp` too, plus a golden
+   empty-world CRC there - and correct Milestone 15's own doc record
+   (its `0x63FFB44F` was a per-run time-seeded value, never a stable
+   constant; its in-process repeat-stability claims remain fully
+   valid, only the "here is THE value" framing needs the correction).
+7. **Stretch Task 6, drop without shame if it adds friction**: a real
+   pristine-bone CRC check via `getSingleLogicalBonePosition()` against
+   a harness-authored HLod (copying `Tests/RenderW3DMesh`'s chunk-
+   authoring code) - first real coverage of the logic-facing bone
+   path. Shares no fate with Tasks 0-5; genuinely optional.
+
+**Pre-committed fallback**: if `engine.update()` with live objects hits
+an unforeseen runtime cascade (the one genuinely unproven interaction
+this research flagged), scope Task 3 down to Task 2's `setPosition`-
+only variation (already sufficient to prove "CRC responds to real
+simulation state") and record the cascade precisely. If even ticking
+with live objects fails outright, fall back further to CRC-around-
+`setPosition` with no ticking at all - still a real, honest first,
+though considered unlikely given Milestone 15 already ran 10 real
+ticks of this identical engine chain clean.
+
+**Known cost note**: `PartitionManager::crc()` now walks the real
+1000x1000 cell grid per call (tens of MB) - expect ~0.1-0.3s per
+`getCRC()` call; if that meaningfully bothers the ctest budget, set
+`TheWritableGlobalData->m_partitionCellSize = 10.0f` before
+`ThePartitionManager->init()` (a production-realistic value) to shrink
+the grid to 100x100.
