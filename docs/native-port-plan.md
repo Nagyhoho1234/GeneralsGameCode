@@ -7436,3 +7436,44 @@ deferred gaps rather than leave them open indefinitely:
   multi-GB build directory). Left the one pre-existing worktree from
   an earlier session (`agent-a2548fd9ff0c7a152`) alone, per this
   port's own standing "harmless to leave" precedent for it.
+
+### TODO before the next real CI run: `linux-native.yml` has zero caching
+
+CI runs currently take 30+ minutes, and it's an honest cost, not
+waste - `.github/workflows/linux-native.yml` has **no caching
+anywhere**: every run does a completely cold `apt-get update &&
+install`, then a from-scratch CMake configure and build of the whole
+engine (13 sequential `cmake --build --target` steps, each pulling in
+more of the shared closure) against a `build/linux-x64` directory that
+starts empty every time, on a standard 2-4 core `ubuntu-latest`
+runner. Confirmed by grepping the workflow file for `cache` - zero
+hits.
+
+**Do this before the next milestone's CI-confirmation run, not during
+one** (this was explicitly deferred rather than actioned mid-session -
+"not worth it to rerun now on GitHub, but write it up for next time"):
+
+1. **Highest value: add `ccache` + `actions/cache`.** Since most CI
+   triggers only change one or two `Tests/` files, ccache should turn
+   a warm-cache run from "recompile everything" into "recompile the
+   handful of changed files, reuse the rest" - likely cutting a warm
+   run from ~30 min down to a few minutes. This is the standard,
+   well-proven fix for exactly this situation (a large C++ codebase
+   rebuilt from scratch repeatedly with mostly-unchanged source
+   between runs).
+2. **Smaller, complementary: cache the `apt-get install` packages
+   too** (`ninja-build`/`cmake`/`g++`/the Mesa/X11 dev packages) -
+   saves a couple minutes per run on top of (1).
+3. **Bigger, more invasive, needs explicit user go-ahead before
+   attempting**: split the growing sequential list of build+test steps
+   (13 targets and counting, one per harness) into parallel GitHub
+   Actions jobs (a matrix). Genuinely faster wall-clock, but costs
+   more total runner-minutes (each parallel job pays its own
+   checkout+dependency-install overhead unless that's also cached) and
+   is a much bigger structural change to shared CI infrastructure -
+   don't attempt without asking first, unlike (1)/(2) which are small,
+   low-risk, purely-additive changes.
+
+Not done this session - deliberately deferred, recorded here so it
+isn't rediscovered from scratch next time CI speed becomes a real
+friction point.
