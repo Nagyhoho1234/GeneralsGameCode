@@ -7477,3 +7477,117 @@ one** (this was explicitly deferred rather than actioned mid-session -
 Not done this session - deliberately deferred, recorded here so it
 isn't rediscovered from scratch next time CI speed becomes a real
 friction point.
+
+
+## Draft 42: Milestone 17 plan (proposed) — Phase 6 rung 0, a real OpenAL device with real deterministic samples
+
+**Status: PROPOSED, research-backed by a real fetch-and-read of an
+existing upstream PR plus a real FetchContent+link+run spike, not yet
+approved for implementation.** Phase 6 ("Audio") had never been
+started. A deep Fable research pass (2026-07-24), run in parallel with
+a Phase 8 continuation research pass, found it tractable now - the
+same "smaller than it looked" pattern as rung 2b/Phase 8 rung 0/Phase
+4 rung 0 - for a decisive, concrete reason: **a complete, engine-
+shaped OpenAL audio manager already exists, written by the openSAGE
+lead, sitting unmerged upstream.**
+
+**The decisive find**: TheSuperHackers PR #784 ("OpenAL support",
+author feliwir, 18 files, +4450 lines, closed unmerged 2026-04-28,
+stale not rejected on technical grounds) contains a full
+`OpenALAudioManager : public AudioManager` (3068 lines, mirrors the
+real `MilesAudioManager`'s architecture - `PlayingAudio`/provider/
+cache) and a pure-OpenAL `OpenALAudioStream` (no FFmpeg dependency at
+all). Fetched and read directly (`refs/pull/784/head`, commits
+`5ddfeb108`/`eb62dd988`/`50ba331cc`). FFmpeg only enters via
+`OpenALAudioFileCache` (asset decode) and a video-audio bridge class -
+the port already has a dormant `FFmpegFile.cpp` behind
+`RTS_BUILD_OPTION_FFMPEG` (currently OFF) this could eventually
+attach to.
+
+**Confirmed the abstract base needs zero new work**: `AudioManager`
+(`Core/GameEngine/Include/Common/GameAudio.h`) has a large, fully
+portable non-pure-virtual body (constructor, `init()`'s 10 INI-
+directory loads, `update()`'s listener/zoom math) already compiling,
+linking, and running for real on POSIX today inside Milestone 12's
+harness via the existing `AudioManagerStub`. The real Miles SDK
+coupling is confirmed construction-isolated (`MilesAudioManager.h`
+included from exactly the two `Win32GameEngine.h` factory headers plus
+two Windows-only tools) - the same "no leakage past the device
+classes" shape Draft 41 already found for `WindowManager`.
+`WWVegas/WWAudio` is a red herring - the Renegade-era library, not
+this engine's real audio path; do not port it.
+
+**Real spike evidence (WSL2, scratch dirs only, all cleaned up)**:
+`FetchContent` of openal-soft 1.24.3 configures and builds clean from
+cold in ~2-3 minutes, matching the established doctest/glfw dependency
+pattern - no system packages needed. Found the real headless-CI
+gotcha up front: plain `alcOpenDevice(NULL)` FAILS in headless WSL2
+(no automatic null-backend fallback) - fixed with
+`ALSOFT_DRIVERS=null`, the exact audio analog of
+`PORTABLE_D3D8_HIDDEN=1`. Found a stronger exit-criterion instrument:
+`ALC_SOFT_loopback` renders real audio samples into a client buffer
+with zero hardware and zero env config, bit-identical across runs -
+the audio equivalent of Milestone 16's synthetic input injection
+(real assertions, no human, no sound card needed).
+
+**Milestone 17 scope (rung 0 - the small, ready-now slice)**: new
+`Tests/OpenALAudioDevice/` harness. `FetchContent` openal-soft in the
+harness's own `CMakeLists.txt` (not root/`cmake/` yet - see
+parallelism guardrail below). Port only `OpenALAudioStream.h`/`.cpp`
+from PR #784 (pure AL, zero FFmpeg, zero signature drift against
+current source). Exit criteria: null-driver device+context open, a
+real `OpenALAudioStream` playing (a) synthesized PCM and (b) one
+hand-authored `.wav` fixture loaded through the REAL
+`TheFileSystem`/`AudioEventRTS::generateFilename()` asset-resolution
+path (real bytes, real base-class code, no decode dependency needed
+for this rung), both rendered via `ALC_SOFT_loopback` and asserted
+non-silent and deterministic. Zero `Core/` files touched, zero MSVC
+obligation.
+
+**Explicit non-goal of rung 0, deferred to a future "rung 1"**:
+porting PR #784 wholesale into `Core/GameEngineDevice/`, reconciling
+its real signature drift against current source (found by reading,
+not assumed - e.g. `void nextMusicTrack(void)` vs current
+`AsciiString nextMusicTrack()`, an `RTS_INTERNAL`-vs-`RTS_DEBUG` guard
+mismatch, newer base-side `MuteAudioReason` machinery), enabling
+`RTS_BUILD_OPTION_FFMPEG` on the Linux preset (needs real
+`libavcodec`/`libavformat`/`libavutil`/`libswresample` dev packages
+plus a `cmake/FindFFMPEG.cmake` module - none exists yet, the current
+`find_package(FFMPEG REQUIRED)` is vcpkg-shaped), and swapping a real
+`OpenALAudioManager` into the actual engine loop in place of
+`AudioManagerStub`. Roughly Milestone-12-sized: real port/adapt of
+already-working code (the roadmap's own stated preference), not a
+3000-line reimplementation from scratch - but genuinely separate scope
+from rung 0, and should be sequenced AFTER whatever Phase 8 milestone
+is running in parallel with rung 0 merges (see guardrail below).
+
+**Parallelism verdict (the specific question asked alongside this
+research): YES, rung 0 can run genuinely parallel to Phase 8's next
+milestone, with one named guardrail.** File-touch tracing: Phase 8's
+next milestone (CRC variation via real Objects) extends
+`Tests/PosixGameEngineHarness/` and/or `Tests/RenderNamedDrawable/` in
+place (Milestone 14/16's own precedent) - it should never need to
+touch `Tests/CMakeLists.txt` or CI wiring at all. Rung 0 is an
+entirely NEW `Tests/OpenALAudioDevice/` directory plus one append
+block in `Tests/CMakeLists.txt` - zero `Core/` overlap, zero audio-
+file overlap with either Phase 8 harness. **The one real named
+guardrail**: rung 0 must NOT touch `Tests/PosixGameEngineHarness/` or
+`Tests/RenderNamedDrawable/` this cycle - the tempting "swap
+`AudioManagerStub` for the real thing inside the existing engine
+harness" move belongs to rung 1, sequenced after Phase 8's milestone
+merges, to avoid a head-on collision with Phase 8's own likely edits
+to those exact files. Residual shared touchpoints
+(`Tests/CMakeLists.txt`, `linux-native.yml`) are append-only and
+low-risk, matching two already-solved conflicts this session
+(Milestone 10/11's `Tests/CMakeLists.txt` merge, the session-end
+cleanup pass's CI-wiring commit) - recommend Phase 6 defers its own
+CI wiring to a controller-side commit after both workstreams merge,
+same pattern as the cleanup pass, and ideally after the standing
+ccache TODO lands too.
+
+**Not yet approved for implementation** - proposed plan only, pending
+user sign-off (this round's instruction was explicitly to explore
+Phase 6 with Fable, matching Phase 8/Phase 4's own explore-then-decide
+rhythm; Phase 8 itself was authorized for immediate auto-implementation
+in the same round, so it is likely to be further ahead by the time
+this is reviewed).
