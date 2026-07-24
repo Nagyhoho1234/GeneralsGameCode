@@ -7023,12 +7023,11 @@ real-substantive-final-report discipline as every prior dispatch.
 
 ## Draft 39: Milestone 15 plan — Phase 8 rung 0, first determinism readings on POSIX
 
-**Status: PROPOSED, research-backed by real cross-toolchain compile
-spikes, not yet approved for implementation.** Phase 8
+**Status: APPROVED and IN PROGRESS** (2026-07-24). Phase 8
 ("Determinism validation") had never been started before this
-research pass - a deep Fable analysis (2026-07-24), run in parallel
-with Milestone 14's implementation, found it in a genuinely different
-shape than expected.
+research pass - a deep Fable analysis, run in parallel with Milestone
+14's implementation, found it in a genuinely different shape than
+expected.
 
 **Headline finding: this engine already ships a complete, portable
 lockstep CRC/desync-detection stack, already compiled into every
@@ -7127,7 +7126,7 @@ game-minutes, not immediately), deterministic-math remediation only
 once measurement identifies which call sites actually matter -
 not attempted blind.
 
-**Not yet approved for implementation** - proposed plan only, pending
-user sign-off (this round's instruction was explicitly to explore
-Phase 8 with Fable, not to auto-implement it the way the last several
-milestones were).
+**APPROVED for implementation** (2026-07-24) - dispatched as a single
+worktree-isolated implementer, following this plan directly (the
+research pass was already thorough and evidence-backed, no further
+Fable pass needed before starting).
