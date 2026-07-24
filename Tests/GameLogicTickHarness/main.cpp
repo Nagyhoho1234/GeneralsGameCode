@@ -101,6 +101,7 @@
 #include "GameLogic/TerrainLogic.h"
 #include "GameClient/GameClient.h"
 #include "Common/FramePacer.h"
+#include "Common/Diagnostic/SimulationMathCrc.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -147,6 +148,18 @@ namespace
 		virtual SnowManager *createSnowManager() override { return nullptr; }
 		virtual void setFrameRate(Real) override {}
 	};
+
+	// TheSuperHackers @info Milestone 15 (native port plan, Draft 39, "Phase
+	// 8 rung 0") Task 1: the checked-in expected value for
+	// SimulationMathCrc::calculate()'s first-ever real call on this port -
+	// WSL2 GCC, build/linux-x64 (Release, -O3), the SAME toolchain/optimization
+	// level this repo's own scoped-build verification step already builds
+	// with (see docs/native-port-plan.md's Global Constraints). Draft 39's
+	// own real 5-toolchain spike (WSL2 GCC -O0/-O2/-O3, real MSVC x64/x86)
+	// already found this exact computation bit-identical across all five -
+	// this constant is this harness's own regression tripwire against that
+	// same real value, not a fresh, unverified guess.
+	const UnsignedInt kExpectedSimulationMathCrc = 0x97B538BFu;
 
 	bool g_AnyFailure = false;
 
@@ -433,6 +446,34 @@ int main()
 		printf("=== Check 4: ThePartitionManager/TheAI survived 5 real ticks with no crash ===\n");
 		Check(ThePartitionManager != nullptr, "4a. ThePartitionManager still alive after 5 ticks");
 		Check(TheAI != nullptr, "4b. TheAI still alive after 5 ticks");
+
+		// ---- Check 5 (Milestone 15, native port plan Draft 39, "Phase 8
+		// rung 0"): the first-ever call anywhere in this fork of
+		// SimulationMathCrc::calculate() - a purpose-built, already-upstream,
+		// cross-platform floating-point-determinism probe
+		// (Core/GameEngine/Source/Common/Diagnostic/SimulationMathCrc.cpp),
+		// already compiled into this harness's own link closure (it lives in
+		// Core/GameEngine/CMakeLists.txt's GAMEENGINE_SRC, consumed here via
+		// corei_gameengine_private's INTERFACE_SOURCES - see this file's own
+		// header comment) but never once invoked before this milestone.
+		// Two checks: (a) repeat-call stability - calling it twice in the
+		// same run, with no intervening state to diverge on (it is a pure,
+		// self-contained computation over compile-time-constant inputs, not a
+		// function of TheGameLogic's own simulation state), must produce the
+		// identical CRC; (b) the value itself matches a checked-in expected
+		// constant (kExpectedSimulationMathCrc, above) - a real regression
+		// tripwire a future toolchain/optimization-flag/libm change would trip,
+		// not merely a "did it crash" smoke test. ----
+		printf("=== Check 5: SimulationMathCrc::calculate() - first-ever real call (Draft 39 Task 1) ===\n");
+		const UnsignedInt simMathCrcFirstCall = SimulationMathCrc::calculate();
+		const UnsignedInt simMathCrcSecondCall = SimulationMathCrc::calculate();
+
+		char simMathLabel[192];
+		snprintf(simMathLabel, sizeof(simMathLabel), "5a. SimulationMathCrc::calculate() == 0x%8.8X (checked-in expected value, WSL2 GCC build/linux-x64)", simMathCrcFirstCall);
+		Check(simMathCrcFirstCall == kExpectedSimulationMathCrc, simMathLabel);
+
+		snprintf(simMathLabel, sizeof(simMathLabel), "5b. repeat call in same run produces an identical CRC (0x%8.8X == 0x%8.8X, stability proof)", simMathCrcSecondCall, simMathCrcFirstCall);
+		Check(simMathCrcSecondCall == simMathCrcFirstCall, simMathLabel);
 
 		// ---- No teardown of TheGameEngine/TheGameLogic/TheAI/TheScriptEngine/
 		// ThePartitionManager/TheTerrainLogic or any of the other singletons

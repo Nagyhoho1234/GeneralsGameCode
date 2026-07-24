@@ -268,6 +268,11 @@ int main()
 		// own "matching Milestone 10's precedent" exit criterion). ----
 		printf("=== Check 3: N=5 real ticks through the unmodified GameEngine::update() ===\n");
 		const int kNumTicks = 5;
+		// TheSuperHackers @info Milestone 15 (native port plan, Draft 39,
+		// "Phase 8 rung 0") Task 2: recorded across the tick loop below and
+		// printed once more after the loop - the first real values this port
+		// has ever read from GameLogic::getCRC(CRC_RECALC).
+		UnsignedInt tickCrcValues[kNumTicks];
 		for (int tick = 0; tick < kNumTicks; ++tick)
 		{
 			engine.update();
@@ -278,6 +283,35 @@ int main()
 
 			snprintf(label, sizeof(label), "3.%d. TheGameLogic->hasUpdated() == TRUE after tick %d", tick, tick);
 			Check(TheGameLogic->hasUpdated() == TRUE, label);
+
+			// ---- Milestone 15 Task 2: the first real call anywhere in this
+			// fork of GameLogic::getCRC(CRC_RECALC) - a full sim-state CRC
+			// over every Object/the logic random seed/ThePartitionManager/
+			// ThePlayerList/TheAI (GameLogic.cpp:4195-4321), exercising
+			// XferCRC::xferSnapshot() for real over real, live objects on
+			// POSIX for the first time. Called TWICE back-to-back, with no
+			// intervening real tick (no engine.update() between the two
+			// calls) - getCRC(CRC_RECALC)'s own real body (read in full
+			// during this milestone's implementation) constructs a scratch
+			// XferCRC, walks state, deletes it - it does not mutate
+			// TheGameLogic/ThePartitionManager/ThePlayerList/TheAI's own
+			// state, so two calls over the SAME real, unchanged simulation
+			// state must produce the identical CRC - a genuine "same real
+			// inputs produce the same real CRC" proof, repeated independently
+			// at 5 different real simulation states (frames 1 through 5), not
+			// just once. ----
+			const UnsignedInt crcFirstCall = TheGameLogic->getCRC(CRC_RECALC);
+			const UnsignedInt crcSecondCall = TheGameLogic->getCRC(CRC_RECALC);
+			tickCrcValues[tick] = crcFirstCall;
+
+			snprintf(label, sizeof(label), "3.%d. getCRC(CRC_RECALC) repeat call (same real state, frame %d) == first call (0x%8.8X == 0x%8.8X, run-to-run stability proof)", tick, tick + 1, crcSecondCall, crcFirstCall);
+			Check(crcSecondCall == crcFirstCall, label);
+		}
+
+		printf("=== Check 3 (continued): real getCRC(CRC_RECALC) values across 5 real ticks (Milestone 15 Task 2 finding) ===\n");
+		for (int tick = 0; tick < kNumTicks; ++tick)
+		{
+			printf("  frame %d CRC = 0x%8.8X\n", tick + 1, tickCrcValues[tick]);
 		}
 
 		// ---- Check 4: the real execute() loop, exited through a real,
@@ -301,6 +335,19 @@ int main()
 		Check(engine.getQuitting() == TRUE, "4b. engine.getQuitting() == TRUE after execute() returns (real, clean quit-message exit)");
 		Check(quitTranslator->getFramesSeen() >= kFramesBeforeQuit, "4c. QuitAfterFramesTranslator observed >= 5 real MSG_FRAME_TICK messages");
 		Check(TheGameLogic->getFrame() > frameBeforeExecute, "4d. TheGameLogic->getFrame() advanced further during execute()'s real internal update() loop");
+
+		// ---- Milestone 15 Task 2, continued: a second, independent
+		// repeat-call stability proof at a different real vantage point -
+		// AFTER execute()'s own further real internal update() loop (more
+		// frames, more real TheMessageStream/TheGameClient traffic than
+		// Check 3's tick loop saw), not just once at the very end of the run.
+		// Two consecutive getCRC(CRC_RECALC) calls with no real tick between
+		// them, over this run's final real simulation state. ----
+		const UnsignedInt crcAfterExecuteFirstCall = TheGameLogic->getCRC(CRC_RECALC);
+		const UnsignedInt crcAfterExecuteSecondCall = TheGameLogic->getCRC(CRC_RECALC);
+		char crcLabel[192];
+		snprintf(crcLabel, sizeof(crcLabel), "4e. getCRC(CRC_RECALC) repeat call after execute() (0x%8.8X == 0x%8.8X, second independent stability proof) - final frame %u", crcAfterExecuteSecondCall, crcAfterExecuteFirstCall, TheGameLogic->getFrame());
+		Check(crcAfterExecuteSecondCall == crcAfterExecuteFirstCall, crcLabel);
 
 		// ---- No teardown: matches every prior milestone's own established
 		// "no meticulous teardown for objects that don't need it" precedent

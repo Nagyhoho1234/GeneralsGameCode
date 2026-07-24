@@ -7130,3 +7130,127 @@ not attempted blind.
 worktree-isolated implementer, following this plan directly (the
 research pass was already thorough and evidence-backed, no further
 Fable pass needed before starting).
+
+## Draft 40: Milestone 15 achieved - the first real determinism
+readings on POSIX (Tasks 1+2 complete; Task 3 deferred with real
+evidence)
+
+**Task 1** (`Tests/GameLogicTickHarness/main.cpp`, Check 5): the
+first-ever call anywhere in this fork of `SimulationMathCrc::
+calculate()`. Confirmed: it was genuinely uncalled before this
+milestone (grepped the whole tree - only its own definition and this
+new call site reference it). Real value on WSL2 GCC 15.2.0, `build/
+linux-x64` (Release, `-O3`): `0x97B538BF`, checked into the harness as
+`kExpectedSimulationMathCrc` - a real regression tripwire, not a "did
+it crash" smoke test. Repeat-call stability (called twice in the same
+run) confirmed identical. This dispatch's own scope (WSL2 + MSVC-only-
+if-Core-touched) means only the WSL2 GCC value was captured and
+checked in this pass - Draft 39's own 5-toolchain spike already found
+this exact computation bit-identical across WSL2 GCC `-O0`/`-O2`/`-O3`
+and real MSVC x64/x86, but that was a standalone spike, not this
+harness's own checked-in value on those other toolchains.
+
+**Task 2** (`Tests/PosixGameEngineHarness/main.cpp`, Check 3 continued
++ Check 4e): the first-ever real calls of `GameLogic::getCRC(
+CRC_RECALC)` on POSIX, exercising `XferCRC::xferSnapshot()` over real,
+live `ThePartitionManager`/`ThePlayerList`/`TheAI` for the first time.
+Called twice back-to-back at 6 independent real vantage points (once
+per tick across 5 real ticks, frames 1-5, plus once more after
+`execute()`'s own further real internal update loop, final frame 10) -
+all 6 repeat-call pairs identical, a genuine "same real inputs produce
+the same real CRC" proof at 6 different real simulation states, not
+just once.
+
+**Real, disclosed finding from Task 2** (the "read what it actually
+touches, report anything surprising" discipline every prior milestone
+has used): the CRC is **trivially constant at `0x63FFB44F` across all
+10 real frames** in this harness's empty-world configuration - not a
+bug, a real scope characterization. Traced why, by reading each real
+`crc()` body reached: `Object::crc()` (`Object.cpp:3979`) never
+executes at all (`m_objList` is empty - no map, no `ThingFactory::
+newObject()` calls in this harness); `PartitionManager::crc()`
+(`PartitionManager.cpp:4664`)'s loop runs zero iterations (`m_cells`
+never allocated - `m_totalCellCount == 0`, no map `init()` call);
+`PlayerList::crc()` -> `Player::crc()` (`PlayerList.cpp:434`,
+`Player.cpp:4031`) DOES run for real (the one default player
+`GameLogicTickHarness`/Milestone 10 already found is load-bearing) but
+touches only static-for-this-run fields (`m_battlePlanBonuses` stays
+null-guarded, `m_skillPoints`/`m_sciencePurchasePoints` never change);
+`AI::crc()` -> `Pathfinder::crc()` (`AIPathfind.cpp:11376`) and
+`TAiData::crc()` (`AI.cpp:961`/`1009`) DO run for real too, over plain
+data members that also never change in this harness's zero-object
+world. Milestone 15 proves the `getCRC()` plumbing runs for real,
+crash-free, and is repeat-call-deterministic on POSIX for the first
+time - it does not yet exercise a scenario where the CRC actually
+*varies* frame-to-frame, since nothing in this harness's own
+configuration changes game state between ticks. A future milestone
+building on Milestone 13/14's real-Object-construction work would be
+needed to see the CRC move - a natural, explicitly-noted next step,
+not attempted here (matches this milestone's own non-goals).
+
+**Task 3 - explicitly deferred, with real evidence, not forced.**
+Attempted a genuine `-O0` vs `-O3` cross-check, isolating JUST the
+optimization-level variable: `CMAKE_BUILD_TYPE=Debug` with
+`RTS_BUILD_OPTION_DEBUG` correctly left at its OFF default (the same
+code path as the `linux-x64` Release preset), NOT the `linux-x64-
+debug` CMake preset, which additionally flips `RTS_BUILD_OPTION_DEBUG=
+ON` and hits a completely separate, real, pre-existing, unrelated
+portability gap first (`WWDebug.cpp`'s Windows-only debug-build code
+path - `HANDLE`/`MessageBoxA`/`ExitProcess`/`__int64` etc, ~21.5K raw
+error-substring matches - never before exercised on this port at all,
+itself worth a future dedicated look, not Milestone 15's territory).
+With the debug-macro variable correctly isolated out, **both harnesses
+genuinely fail to LINK (not compile) at `-O0`**:
+- `GameLogicTickHarnessTest`: undefined reference to `ReloadAllTextures()`
+  (`ScriptEngine.cpp:10366`, a debug/cheat script-action callback) and
+  `TheSubsystemList` (`SubsystemInterface.cpp:51-60` - real, genuinely
+  null-guarded `if (TheSubsystemList) {...}` code, so a trivially safe
+  stub matching this harness's own established `link_stubs.cpp`
+  pattern).
+- `PosixGameEngineHarnessTest`: undefined reference to `ApplicationHWnd`/
+  `ApplicationHInstance` (real Win32 `HWND`/`HINSTANCE` globals,
+  `GameEngine.cpp:251-267`'s `updateWindowTitle()`/constructor -
+  genuinely only ever *defined* in each real executable's own
+  `WinMain.cpp`, which no harness in this port links) and `_Module`
+  (ATL `CComModule`, `GameEngine.cpp:267`/`315`).
+
+Root cause (confirmed via source reading, not full linker-internals
+tracing): at `-O3`, `--gc-sections`' reachability analysis (already-
+standing flags every harness compiles with) apparently proves these
+specific call sites are unreached within each harness's own real,
+exercised construction+tick sequence and discards the referencing
+`.text` sections before the linker ever needs the symbol; at `-O0`,
+the textual call sites survive un-eliminated and the linker needs real
+symbols this port's own harness-closure DEFER+regex-exclusion
+technique (Milestone 10/12's own established design) deliberately
+never links. This is a genuine, disclosed finding about how this
+port's own harness link-closure technique interacts with optimization
+level - not a Milestone 15 regression (Task 1+2's own real, checked-
+in-constant results at the standard `-O3` build are correct and
+unaffected), and not something any prior milestone's own CI/build
+verification has ever exercised either (CI only ever builds the
+`linux-x64`/Release preset). A clean fix looks plausible (`
+TheSubsystemList` is a trivially safe null-initialized stub matching
+precedent; the other three would need individual runtime-safety review
+before stubbing, since unlike `TheSubsystemList`'s real null-guard,
+they are unconditionally dereferenced and would need confirmation the
+calling branch is genuinely unreached in each harness's exact
+configuration before a stub could be trusted) - real, separately-
+scoped work, deferred rather than forced, per this milestone's own
+pre-committed fallback language. Both exploratory build directories
+were removed after evidence was captured; nothing was committed from
+them (`/build*` is gitignored regardless).
+
+**Verification**: WSL2 scoped `g_gameenginedevice`/`z_gameenginedevice`
+build held at exactly 33/33 pre-existing errors, zero new (unaffected -
+only `Tests/`-local files touched). MSVC win32 rebuild not attempted -
+no per-tree/Core file was touched, matching this milestone's own
+predicted scope. Full `ctest` suite: **15/15 green** (`ctest --test-
+dir build/linux-x64 --output-on-failure`, real WSLg-provided Mesa
+`llvmpipe` GL context, no `xvfb-run` needed in this environment - all
+13 prior harnesses plus this milestone's own two rebuilt and re-
+verified). Note: the dispatch brief's own count of "16 entries" does
+not match the real, `add_test()`-grepped total of 15 registered ctest
+entries in this tree as of this dispatch - a minor pre-existing
+discrepancy in the brief's own tracking, not introduced by this
+milestone.
